@@ -1,461 +1,453 @@
 /* ============================================================
    VEHICLE REGISTRATION ANALYTICS DASHBOARD
-   File: /js/script.js
+   File: script.js
 
-   Vanilla JavaScript
-   Supabase JavaScript client
-   ES6+
-   async/await
-   try/catch/finally
+   COMPLETE FRONTEND FIX
 
-   No frontend framework.
-   No fake data.
+   This version:
+   - Connects to Supabase
+   - Uses the three PostgreSQL RPC functions
+   - Loads real data
+   - Loads filters
+   - Loads KPIs
+   - Supports RTO / category filtering
+   - Supports maker search
+   - Supports sorting
+   - Supports pagination
+   - Shows real Supabase errors
+   - Does not use fake data
    ============================================================ */
 
 
 /* ============================================================
-   1. CONFIGURATION
+   1. SUPABASE CONFIGURATION
    ============================================================ */
 
-/*
- * IMPORTANT:
- *
- * Replace these with your actual Supabase project values.
- *
- * Use ONLY:
- * - Supabase project URL
- * - public anon/publishable key
- *
- * NEVER put a service-role key in this file.
- */
+const SUPABASE_URL =
+    'https://yifnagndjbeqszexzaem.supabase.co';
 
-const SUPABASE_URL = 'https://yifnagndjbeqszexzaem.supabase.co';
-
-const SUPABASE_ANON_KEY = 'sb_publishable_HOBG1-ykEePfvvoJdm4X9w_3DU0itBG';
+const SUPABASE_ANON_KEY =
+    'sb_publishable_HOBG1-ykEePfvvoJdm4X9w_3DU0itBG';
 
 
-/*
- * Central analytical data source.
- *
- * RPC mode is the recommended architecture.
- *
- * These function names are placeholders until the
- * PostgreSQL RPC layer has been created.
- */
+/* ============================================================
+   2. RPC FUNCTION NAMES
+   ============================================================ */
 
-const DATA_SOURCE = {
+const RPC = {
 
-    mode: 'rpc',
-
-    summaryRpc:
+    summary:
         'get_vehicle_registration_summary',
 
-    filterOptionsRpc:
+    filters:
         'get_vehicle_registration_filter_options',
 
-    kpiRpc:
-        'get_vehicle_registration_kpis',
-
-    /*
-     * Optional future VIEW mode.
-     */
-
-    viewName:
-        'vehicle_registration_fact',
-
-    viewColumns: {
-
-        year:
-            'year',
-
-        region:
-            'rto',
-
-        maker:
-            'maker',
-
-        category:
-            'category',
-
-        subcategory:
-            'subcategory',
-
-        registrations:
-            'registrations'
-    }
+    kpis:
+        'get_vehicle_registration_kpis'
 
 };
 
 
-/*
- * RPC parameter names.
- *
- * If your actual PostgreSQL function uses different
- * parameter names, change them here only.
- */
+/* ============================================================
+   3. APPLICATION CONFIG
+   ============================================================ */
 
-const RPC_PARAMS = {
+const CONFIG = {
 
-    year:
-        'p_year',
+    allValue: 'all',
 
-    fromYear:
-        'p_from_year',
+    pageSize: 25,
 
-    toYear:
-        'p_to_year',
-
-    maker:
-        'p_maker',
-
-    region:
-        'p_rto',
-
-    category:
-        'p_category',
-
-    subcategory:
-        'p_subcategory',
-
-    ignoreDimension:
-        'p_ignore_dimension'
-
-};
-
-
-/*
- * Application configuration.
- */
-
-const APP_CONFIG = {
-
-    allValue:
-        'all',
-
-    defaultPageSize:
-        25,
-
-    pageSizes: [
+    allowedPageSizes: [
         25,
         50,
         100
-    ],
+    ]
 
-    searchDebounceMs:
-        150
 };
 
 
 /* ============================================================
-   2. SUPABASE CLIENT
+   4. SUPABASE CLIENT
    ============================================================ */
 
 let supabaseClient = null;
 
 
 /* ============================================================
-   3. CENTRAL FILTER STATE
+   5. APPLICATION STATE
    ============================================================ */
 
-const filterState = {
+const state = {
 
-    year:
-        APP_CONFIG.allValue,
+    rows: [],
 
-    fromYear:
-        APP_CONFIG.allValue,
+    searchTerm: '',
 
-    toYear:
-        APP_CONFIG.allValue,
+    sortKey: 'registrations',
 
-    maker:
-        APP_CONFIG.allValue,
+    sortDirection: 'desc',
 
-    region:
-        APP_CONFIG.allValue,
+    currentPage: 1,
 
-    category:
-        APP_CONFIG.allValue,
+    pageSize: CONFIG.pageSize,
 
-    subcategory:
-        APP_CONFIG.allValue
+    requestId: 0,
+
+    filters: {
+
+        year: 'all',
+
+        fromYear: 'all',
+
+        toYear: 'all',
+
+        maker: 'all',
+
+        region: 'all',
+
+        category: 'all',
+
+        subcategory: 'all'
+
+    }
 
 };
 
 
 /* ============================================================
-   4. APPLICATION STATE
+   6. DOM HELPERS
    ============================================================ */
 
-const applicationState = {
+function getElement(id) {
 
-    initialized:
-        false,
-
-    initializing:
-        false,
-
-    /*
-     * Available database years.
-     */
-
-    availableYears:
-        [],
-
-    /*
-     * Current cascading filter options.
-     */
-
-    filterOptions: {
-
-        makers:
-            [],
-
-        regions:
-            [],
-
-        categories:
-            [],
-
-        subcategories:
-            []
-    },
-
-    /*
-     * Current maker summary.
-     */
-
-    makerRows:
-        [],
-
-    /*
-     * Current KPI values.
-     */
-
-    kpis: {
-
-        totalRegistrations:
-            0,
-
-        totalMakers:
-            0,
-
-        twoWRegistrations:
-            null,
-
-        threeWRegistrations:
-            null,
-
-        twoWPercentage:
-            null,
-
-        threeWPercentage:
-            null
-    },
-
-    /*
-     * Client-side table state.
-     */
-
-    searchTerm:
-        '',
-
-    sortKey:
-        'registrations',
-
-    sortDirection:
-        'desc',
-
-    currentPage:
-        1,
-
-    pageSize:
-        APP_CONFIG.defaultPageSize,
-
-    /*
-     * Request generation.
-     *
-     * Only the newest request may update the UI.
-     */
-
-    requestId:
-        0,
-
-    /*
-     * Search debounce timer.
-     */
-
-    searchTimer:
-        null,
-
-    /*
-     * Prevent filter-option refresh loops.
-     */
-
-    updatingFilterOptions:
-        false
-
-};
-
-
-/* ============================================================
-   5. DOM REFERENCES
-   ============================================================ */
-
-const dom = {};
-
-
-/*
- * Cache DOM elements once.
- */
-
-function cacheDOMElements() {
-
-    const ids = [
-
-        /* Filters */
-
-        'yearFilter',
-        'fromYearFilter',
-        'toYearFilter',
-        'makerFilter',
-        'regionFilter',
-        'categoryFilter',
-        'subcategoryFilter',
-        'clearFiltersButton',
-
-        /* Table */
-
-        'makerSummaryTable',
-        'makerSummaryTableBody',
-        'makerSummaryTotal',
-        'makerSummaryMarketShare',
-        'makerSearch',
-
-        /* Pagination */
-
-        'previousPageButton',
-        'nextPageButton',
-        'pageIndicator',
-        'pageSizeSelect',
-
-        /* KPIs */
-
-        'totalRegistrations',
-        'totalMakers',
-        'twoWRegistrations',
-        'threeWRegistrations',
-        'twoWPercentage',
-        'threeWPercentage',
-
-        /* Header */
-
-        'data-year-range',
-        'activeFilters',
-
-        /* Loading / state */
-
-        'globalLoading',
-        'tableLoading',
-        'tableEmpty',
-        'tableError',
-        'tableContent'
-    ];
-
-
-    ids.forEach(id => {
-
-        const key =
-            id.replace(
-                /-([a-z])/g,
-                (_, letter) =>
-                    letter.toUpperCase()
-            );
-
-
-        dom[key] =
-            document.getElementById(id);
-
-    });
+    return document.getElementById(id);
 
 }
 
 
-/*
- * Verify important DOM elements.
- */
+function setText(id, value) {
 
-function validateRequiredDOM() {
+    const element =
+        getElement(id);
 
-    const requiredIds = [
+    if (!element) {
+        return;
+    }
 
-        'yearFilter',
-        'fromYearFilter',
-        'toYearFilter',
-        'makerFilter',
-        'regionFilter',
-        'categoryFilter',
-        'subcategoryFilter',
-        'clearFiltersButton',
+    element.textContent =
+        value === null ||
+        value === undefined
+            ? ''
+            : String(value);
 
-        'makerSummaryTable',
-        'makerSummaryTableBody',
-
-        'makerSearch',
-
-        'previousPageButton',
-        'nextPageButton',
-        'pageIndicator',
-        'pageSizeSelect',
-
-        'totalRegistrations',
-        'totalMakers',
-        'twoWRegistrations',
-        'threeWRegistrations',
-
-        'twoWPercentage',
-        'threeWPercentage',
-
-        'data-year-range',
-        'activeFilters',
-
-        'globalLoading',
-        'tableLoading',
-        'tableEmpty',
-        'tableError',
-        'tableContent'
-    ];
+}
 
 
-    const missing =
-        requiredIds.filter(
-            id =>
-                !document.getElementById(id)
-        );
+/* ============================================================
+   7. NUMBER HELPERS
+   ============================================================ */
+
+function toNumber(value) {
+
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return 0;
+    }
+
+    if (
+        typeof value === 'number'
+    ) {
+
+        return Number.isFinite(value)
+            ? value
+            : 0;
+
+    }
+
+    const cleaned =
+        String(value)
+            .replace(/,/g, '')
+            .trim();
+
+    const number =
+        Number(cleaned);
+
+    return Number.isFinite(number)
+        ? number
+        : 0;
+
+}
 
 
-    if (missing.length > 0) {
+function formatNumber(value) {
 
-        console.warn(
-            'Dashboard DOM elements missing:',
-            missing
+    return new Intl.NumberFormat(
+        'en-IN',
+        {
+            maximumFractionDigits: 0
+        }
+    ).format(
+        toNumber(value)
+    );
+
+}
+
+
+function formatPercentage(value) {
+
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return '—';
+    }
+
+    const number =
+        toNumber(value);
+
+    return `${number.toFixed(2)}%`;
+
+}
+
+
+/* ============================================================
+   8. FILTER HELPERS
+   ============================================================ */
+
+function normalizeFilter(value) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return CONFIG.allValue;
+    }
+
+    const normalized =
+        String(value).trim();
+
+    if (
+        normalized === '' ||
+        normalized.toLowerCase() === 'all'
+    ) {
+        return CONFIG.allValue;
+    }
+
+    return normalized;
+
+}
+
+
+function isAll(value) {
+
+    return normalizeFilter(value) ===
+        CONFIG.allValue;
+
+}
+
+
+/* ============================================================
+   9. READ FILTERS FROM HTML
+   ============================================================ */
+
+function readFilters() {
+
+    return {
+
+        year:
+            normalizeFilter(
+                getElement('yearFilter')?.value
+            ),
+
+        fromYear:
+            normalizeFilter(
+                getElement('fromYearFilter')?.value
+            ),
+
+        toYear:
+            normalizeFilter(
+                getElement('toYearFilter')?.value
+            ),
+
+        maker:
+            normalizeFilter(
+                getElement('makerFilter')?.value
+            ),
+
+        region:
+            normalizeFilter(
+                getElement('regionFilter')?.value
+            ),
+
+        category:
+            normalizeFilter(
+                getElement('categoryFilter')?.value
+            ),
+
+        subcategory:
+            normalizeFilter(
+                getElement('subcategoryFilter')?.value
+            )
+
+    };
+
+}
+
+
+/* ============================================================
+   10. BUILD RPC PARAMETERS
+   ============================================================ */
+
+function buildRpcParameters(filters) {
+
+    const params = {};
+
+    if (!isAll(filters.year)) {
+
+        params.p_year =
+            Number(filters.year);
+
+    }
+
+    if (!isAll(filters.fromYear)) {
+
+        params.p_from_year =
+            Number(filters.fromYear);
+
+    }
+
+    if (!isAll(filters.toYear)) {
+
+        params.p_to_year =
+            Number(filters.toYear);
+
+    }
+
+    if (!isAll(filters.maker)) {
+
+        params.p_maker =
+            filters.maker;
+
+    }
+
+    if (!isAll(filters.region)) {
+
+        params.p_rto =
+            filters.region;
+
+    }
+
+    if (!isAll(filters.category)) {
+
+        params.p_category =
+            filters.category;
+
+    }
+
+    if (!isAll(filters.subcategory)) {
+
+        params.p_subcategory =
+            filters.subcategory;
+
+    }
+
+    return params;
+
+}
+
+
+/* ============================================================
+   11. SUPABASE RPC CALL
+   ============================================================ */
+
+async function callRpc(
+    functionName,
+    parameters = {}
+) {
+
+    if (!supabaseClient) {
+
+        throw new Error(
+            'Supabase client has not been initialized.'
         );
 
     }
 
+    console.log(
+        `[Supabase] Calling ${functionName}`,
+        parameters
+    );
+
+    const result =
+        await supabaseClient.rpc(
+            functionName,
+            parameters
+        );
+
+    if (result.error) {
+
+        console.error(
+            `[Supabase] ${functionName} failed`,
+            result.error
+        );
+
+        throw result.error;
+
+    }
+
+    console.log(
+        `[Supabase] ${functionName} response`,
+        result.data
+    );
+
+    return result.data;
+
 }
 
 
 /* ============================================================
-   6. SUPABASE INITIALIZATION
+   12. INITIALIZE SUPABASE
    ============================================================ */
 
+async function initializeSupabase() {
 
-/*
- * Initialize the browser Supabase client.
- */
+    /*
+     * index.html already loads:
+     *
+     * https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2
+     *
+     * Because that script uses defer, wait until the global
+     * Supabase object is available.
+     */
 
-function initializeSupabase() {
+    let attempts = 0;
+
+    while (
+        (
+            !window.supabase ||
+            typeof window.supabase.createClient !==
+                'function'
+        ) &&
+        attempts < 100
+    ) {
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+
+        attempts++;
+
+    }
+
 
     if (
         !window.supabase ||
@@ -464,33 +456,25 @@ function initializeSupabase() {
     ) {
 
         throw new Error(
-            'Supabase JavaScript client is not loaded.'
+            'Supabase browser library could not be loaded. Check the Supabase CDN script in index.html.'
         );
 
     }
 
 
-    if (
-        !SUPABASE_URL ||
-        SUPABASE_URL ===
-            'YOUR_SUPABASE_URL'
-    ) {
+    if (!SUPABASE_URL) {
 
         throw new Error(
-            'SUPABASE_URL has not been configured.'
+            'Supabase URL is missing.'
         );
 
     }
 
 
-    if (
-        !SUPABASE_ANON_KEY ||
-        SUPABASE_ANON_KEY ===
-            'YOUR_SUPABASE_ANON_KEY'
-    ) {
+    if (!SUPABASE_ANON_KEY) {
 
         throw new Error(
-            'SUPABASE_ANON_KEY has not been configured.'
+            'Supabase publishable/anon key is missing.'
         );
 
     }
@@ -502,356 +486,238 @@ function initializeSupabase() {
             SUPABASE_ANON_KEY
         );
 
+
+    console.log(
+        '[Supabase] Client initialized.'
+    );
+
 }
 
 
 /* ============================================================
-   7. INITIALIZATION
+   13. LOADING UI
    ============================================================ */
 
-async function initializeDashboard() {
+function showLoading() {
 
-    if (
-        applicationState.initialized ||
-        applicationState.initializing
-    ) {
+    const globalLoading =
+        getElement('globalLoading');
 
-        return;
+    const tableLoading =
+        getElement('tableLoading');
+
+    const tableContent =
+        getElement('tableContent');
+
+    const tableEmpty =
+        getElement('tableEmpty');
+
+    const tableError =
+        getElement('tableError');
+
+
+    if (globalLoading) {
+
+        globalLoading.hidden =
+            false;
 
     }
 
 
-    applicationState.initializing =
+    if (tableLoading) {
+
+        tableLoading.hidden =
+            false;
+
+    }
+
+
+    if (tableContent) {
+
+        tableContent.hidden =
+            true;
+
+    }
+
+
+    if (tableEmpty) {
+
+        tableEmpty.hidden =
+            true;
+
+    }
+
+
+    if (tableError) {
+
+        tableError.hidden =
+            true;
+
+    }
+
+}
+
+
+function hideLoading() {
+
+    const globalLoading =
+        getElement('globalLoading');
+
+    const tableLoading =
+        getElement('tableLoading');
+
+
+    if (globalLoading) {
+
+        globalLoading.hidden =
+            true;
+
+    }
+
+
+    if (tableLoading) {
+
+        tableLoading.hidden =
+            true;
+
+    }
+
+}
+
+
+/* ============================================================
+   14. ERROR DISPLAY
+   ============================================================ */
+
+function clearError() {
+
+    const errorBox =
+        getElement('tableError');
+
+    if (!errorBox) {
+        return;
+    }
+
+    errorBox.hidden =
         true;
 
+}
 
-    cacheDOMElements();
 
-    validateRequiredDOM();
+function getErrorMessage(error) {
 
-    initializePageSize();
+    if (!error) {
 
-    attachEventListeners();
+        return 'Unknown error.';
 
-    showLoading();
+    }
 
+    if (
+        typeof error === 'string'
+    ) {
+
+        return error;
+
+    }
+
+    const parts = [];
+
+    if (error.message) {
+
+        parts.push(
+            `Message: ${error.message}`
+        );
+
+    }
+
+    if (error.details) {
+
+        parts.push(
+            `Details: ${error.details}`
+        );
+
+    }
+
+    if (error.hint) {
+
+        parts.push(
+            `Hint: ${error.hint}`
+        );
+
+    }
+
+    if (error.code) {
+
+        parts.push(
+            `Code: ${error.code}`
+        );
+
+    }
+
+    if (parts.length) {
+
+        return parts.join(' | ');
+
+    }
 
     try {
 
-        initializeSupabase();
-
-
-        /*
-         * Years are global metadata.
-         */
-
-        await loadAvailableYears();
-
-
-        /*
-         * Initial filter options.
-         */
-
-        await loadFilterOptions(
-            createAllFilters()
-        );
-
-
-        /*
-         * Initial dashboard.
-         */
-
-        await applyFilters({
-            skipOptionRefresh: true
-        });
-
-
-        applicationState.initialized =
-            true;
-
-
-    } catch (error) {
-
-        console.error(
-            'Dashboard initialization failed:',
+        return JSON.stringify(
             error
         );
 
+    } catch {
 
-        displayError(
-            'Unable to load data. Please try again.'
-        );
-
-
-    } finally {
-
-        applicationState.initializing =
-            false;
-
-        hideLoading();
+        return String(error);
 
     }
 
 }
 
 
-/* ============================================================
-   8. FILTER STATE
-   ============================================================ */
+function showError(error) {
 
-
-/*
- * Read current UI values.
- */
-
-function getSelectedFilters() {
-
-    return {
-
-        year:
-            normalizeFilterValue(
-                dom.yearFilter?.value
-            ),
-
-        fromYear:
-            normalizeFilterValue(
-                dom.fromYearFilter?.value
-            ),
-
-        toYear:
-            normalizeFilterValue(
-                dom.toYearFilter?.value
-            ),
-
-        maker:
-            normalizeFilterValue(
-                dom.makerFilter?.value
-            ),
-
-        region:
-            normalizeFilterValue(
-                dom.regionFilter?.value
-            ),
-
-        category:
-            normalizeFilterValue(
-                dom.categoryFilter?.value
-            ),
-
-        subcategory:
-            normalizeFilterValue(
-                dom.subcategoryFilter?.value
-            )
-
-    };
-
-}
-
-
-/*
- * Create a clean all-filter object.
- */
-
-function createAllFilters() {
-
-    return {
-
-        year:
-            APP_CONFIG.allValue,
-
-        fromYear:
-            APP_CONFIG.allValue,
-
-        toYear:
-            APP_CONFIG.allValue,
-
-        maker:
-            APP_CONFIG.allValue,
-
-        region:
-            APP_CONFIG.allValue,
-
-        category:
-            APP_CONFIG.allValue,
-
-        subcategory:
-            APP_CONFIG.allValue
-
-    };
-
-}
-
-
-/*
- * Keep "all" semantics consistent.
- */
-
-function normalizeFilterValue(value) {
-
-    const normalized =
-        String(
-            value ?? APP_CONFIG.allValue
-        ).trim();
-
-
-    if (
-        normalized === '' ||
-        normalized.toLowerCase() === 'all'
-    ) {
-
-        return APP_CONFIG.allValue;
-
-    }
-
-
-    return normalized;
-
-}
-
-
-/*
- * Update centralized state.
- */
-
-function updateFilterState(filters) {
-
-    Object.assign(
-        filterState,
-        filters
+    console.error(
+        '[Dashboard Error]',
+        error
     );
 
-}
 
+    const errorBox =
+        getElement('tableError');
 
-/* ============================================================
-   9. YEAR VALIDATION
-   ============================================================ */
+    if (!errorBox) {
 
-
-/*
- * Validate selected year/range.
- */
-
-function validateFilters(filters) {
-
-    const fromYear =
-        filters.fromYear !== APP_CONFIG.allValue
-            ? Number(filters.fromYear)
-            : null;
-
-
-    const toYear =
-        filters.toYear !== APP_CONFIG.allValue
-            ? Number(filters.toYear)
-            : null;
-
-
-    const selectedYear =
-        filters.year !== APP_CONFIG.allValue
-            ? Number(filters.year)
-            : null;
-
-
-    if (
-        selectedYear !== null &&
-        !Number.isFinite(selectedYear)
-    ) {
-
-        return {
-            valid: false,
-            message: 'Please select a valid year.'
-        };
-
-    }
-
-
-    if (
-        fromYear !== null &&
-        !Number.isFinite(fromYear)
-    ) {
-
-        return {
-            valid: false,
-            message: 'Please select a valid From Year.'
-        };
-
-    }
-
-
-    if (
-        toYear !== null &&
-        !Number.isFinite(toYear)
-    ) {
-
-        return {
-            valid: false,
-            message: 'Please select a valid To Year.'
-        };
-
-    }
-
-
-    if (
-        fromYear !== null &&
-        toYear !== null &&
-        fromYear > toYear
-    ) {
-
-        return {
-            valid: false,
-            message:
-                'From Year cannot be greater than To Year.'
-        };
-
-    }
-
-
-    return {
-        valid: true,
-        message: ''
-    };
-
-}
-
-
-/*
- * Keep single year and range logically consistent.
- *
- * Range takes precedence.
- */
-
-function normalizeYearUIState() {
-
-    if (
-        !dom.yearFilter ||
-        !dom.fromYearFilter ||
-        !dom.toYearFilter
-    ) {
+        alert(
+            getErrorMessage(error)
+        );
 
         return;
 
     }
 
 
-    const from =
-        normalizeFilterValue(
-            dom.fromYearFilter.value
-        );
+    errorBox.hidden =
+        false;
 
 
-    const to =
-        normalizeFilterValue(
-            dom.toYearFilter.value
-        );
+    const paragraph =
+        errorBox.querySelector('p');
 
 
-    if (
-        from !== APP_CONFIG.allValue ||
-        to !== APP_CONFIG.allValue
-    ) {
+    const message =
+        getErrorMessage(error);
 
-        dom.yearFilter.value =
-            APP_CONFIG.allValue;
+
+    if (paragraph) {
+
+        paragraph.textContent =
+            `Unable to load data. ${message}`;
+
+    } else {
+
+        errorBox.textContent =
+            `Unable to load data. ${message}`;
 
     }
 
@@ -859,1911 +725,565 @@ function normalizeYearUIState() {
 
 
 /* ============================================================
-   10. DATA ACCESS - GENERIC FILTER PAYLOAD
+   15. FILTER SELECT HELPERS
    ============================================================ */
 
+function populateSelect(
+    element,
+    values,
+    selectedValue = 'all'
+) {
 
-/*
- * Build only selected RPC parameters.
- *
- * "all" is never sent as a restriction.
- */
-
-function buildRpcFilterPayload(filters) {
-
-    const payload = {};
-
-
-    if (
-        filters.year !==
-        APP_CONFIG.allValue
-    ) {
-
-        payload[
-            RPC_PARAMS.year
-        ] = Number(filters.year);
-
+    if (!element) {
+        return;
     }
 
 
-    if (
-        filters.fromYear !==
-        APP_CONFIG.allValue
-    ) {
-
-        payload[
-            RPC_PARAMS.fromYear
-        ] = Number(filters.fromYear);
-
-    }
-
-
-    if (
-        filters.toYear !==
-        APP_CONFIG.allValue
-    ) {
-
-        payload[
-            RPC_PARAMS.toYear
-        ] = Number(filters.toYear);
-
-    }
-
-
-    if (
-        filters.maker !==
-        APP_CONFIG.allValue
-    ) {
-
-        payload[
-            RPC_PARAMS.maker
-        ] = filters.maker;
-
-    }
-
-
-    if (
-        filters.region !==
-        APP_CONFIG.allValue
-    ) {
-
-        payload[
-            RPC_PARAMS.region
-        ] = filters.region;
-
-    }
-
-
-    if (
-        filters.category !==
-        APP_CONFIG.allValue
-    ) {
-
-        payload[
-            RPC_PARAMS.category
-        ] = filters.category;
-
-    }
-
-
-    if (
-        filters.subcategory !==
-        APP_CONFIG.allValue
-    ) {
-
-        payload[
-            RPC_PARAMS.subcategory
-        ] = filters.subcategory;
-
-    }
-
-
-    return payload;
-
-}
-
-
-/* ============================================================
-   11. DASHBOARD DATA ACCESS
-   ============================================================ */
-
-
-/*
- * Fetch maker summary data.
- */
-
-async function fetchDashboardData(filters) {
-
-    if (!supabaseClient) {
-
-        throw new Error(
-            'Supabase client has not been initialized.'
-        );
-
-    }
-
-
-    if (
-        DATA_SOURCE.mode === 'rpc'
-    ) {
-
-        const payload =
-            buildRpcFilterPayload(
-                filters
-            );
-
-
-        const {
-            data,
-            error
-        } =
-            await supabaseClient.rpc(
-                DATA_SOURCE.summaryRpc,
-                payload
-            );
-
-
-        if (error) {
-
-            throw error;
-
-        }
-
-
-        return Array.isArray(data)
-            ? data
-            : [];
-
-    }
-
-
-    if (
-        DATA_SOURCE.mode === 'view'
-    ) {
-
-        let query =
-            supabaseClient
-                .from(
-                    DATA_SOURCE.viewName
+    const cleanedValues =
+        Array.from(
+            new Set(
+                (
+                    Array.isArray(values)
+                        ? values
+                        : []
                 )
-                .select(
-                    [
-                        DATA_SOURCE.viewColumns.year,
-                        DATA_SOURCE.viewColumns.region,
-                        DATA_SOURCE.viewColumns.maker,
-                        DATA_SOURCE.viewColumns.category,
-                        DATA_SOURCE.viewColumns.subcategory,
-                        DATA_SOURCE.viewColumns.registrations
-                    ].join(',')
-                );
-
-
-        if (
-            filters.year !==
-            APP_CONFIG.allValue
-        ) {
-
-            query =
-                query.eq(
-                    DATA_SOURCE.viewColumns.year,
-                    Number(filters.year)
-                );
-
-        }
-
-
-        if (
-            filters.fromYear !==
-            APP_CONFIG.allValue
-        ) {
-
-            query =
-                query.gte(
-                    DATA_SOURCE.viewColumns.year,
-                    Number(filters.fromYear)
-                );
-
-        }
-
-
-        if (
-            filters.toYear !==
-            APP_CONFIG.allValue
-        ) {
-
-            query =
-                query.lte(
-                    DATA_SOURCE.viewColumns.year,
-                    Number(filters.toYear)
-                );
-
-        }
-
-
-        if (
-            filters.maker !==
-            APP_CONFIG.allValue
-        ) {
-
-            query =
-                query.eq(
-                    DATA_SOURCE.viewColumns.maker,
-                    filters.maker
-                );
-
-        }
-
-
-        if (
-            filters.region !==
-            APP_CONFIG.allValue
-        ) {
-
-            query =
-                query.eq(
-                    DATA_SOURCE.viewColumns.region,
-                    filters.region
-                );
-
-        }
-
-
-        if (
-            filters.category !==
-            APP_CONFIG.allValue
-        ) {
-
-            query =
-                query.eq(
-                    DATA_SOURCE.viewColumns.category,
-                    filters.category
-                );
-
-        }
-
-
-        if (
-            filters.subcategory !==
-            APP_CONFIG.allValue
-        ) {
-
-            query =
-                query.eq(
-                    DATA_SOURCE.viewColumns.subcategory,
-                    filters.subcategory
-                );
-
-        }
-
-
-        const {
-            data,
-            error
-        } =
-            await query;
-
-
-        if (error) {
-
-            throw error;
-
-        }
-
-
-        return Array.isArray(data)
-            ? aggregateViewRows(
-                data
+                    .filter(
+                        value =>
+                            value !== null &&
+                            value !== undefined &&
+                            String(value).trim() !== ''
+                    )
+                    .map(
+                        value =>
+                            String(value).trim()
+                    )
             )
-            : [];
-
-    }
+        );
 
 
-    throw new Error(
-        `Unsupported DATA_SOURCE.mode: ${DATA_SOURCE.mode}`
+    cleanedValues.sort(
+        (
+            a,
+            b
+        ) =>
+            a.localeCompare(
+                b,
+                undefined,
+                {
+                    numeric: true,
+                    sensitivity: 'base'
+                }
+            )
     );
 
-}
+
+    element.replaceChildren();
 
 
-/*
- * Fetch KPI data.
- */
-
-async function fetchKPIData(filters) {
-
-    if (!supabaseClient) {
-
-        throw new Error(
-            'Supabase client has not been initialized.'
+    const allOption =
+        document.createElement(
+            'option'
         );
 
-    }
+    allOption.value =
+        'all';
+
+    allOption.textContent =
+        'All';
+
+    element.appendChild(
+        allOption
+    );
 
 
-    if (
-        DATA_SOURCE.mode !== 'rpc'
+    for (
+        const value of cleanedValues
     ) {
 
-        return null;
+        const option =
+            document.createElement(
+                'option'
+            );
+
+        option.value =
+            value;
+
+        option.textContent =
+            value;
+
+        element.appendChild(
+            option
+        );
 
     }
 
 
-    const payload =
-        buildRpcFilterPayload(
-            filters
+    const normalizedSelected =
+        normalizeFilter(
+            selectedValue
         );
 
 
-    try {
-
-        const {
-            data,
-            error
-        } =
-            await supabaseClient.rpc(
-                DATA_SOURCE.kpiRpc,
-                payload
-            );
-
-
-        if (error) {
-
-            /*
-             * KPI RPC is optional from the frontend
-             * perspective.
-             *
-             * Do not fabricate 2W/3W values.
-             */
-
-            console.warn(
-                'KPI RPC unavailable:',
-                error
-            );
-
-            return null;
-
-        }
-
-
-        return normalizeKpiResponse(
-            data
+    const exists =
+        Array.from(
+            element.options
+        ).some(
+            option =>
+                option.value ===
+                normalizedSelected
         );
 
-    } catch (error) {
 
-        console.warn(
-            'KPI request failed:',
-            error
-        );
-
-        return null;
-
-    }
+    element.value =
+        exists
+            ? normalizedSelected
+            : 'all';
 
 }
 
 
 /* ============================================================
-   12. FILTER OPTIONS
+   16. LOAD FILTER OPTIONS
    ============================================================ */
-
-
-/*
- * Fetch available years.
- */
-
-async function loadAvailableYears() {
-
-    try {
-
-        let years = [];
-
-
-        if (
-            DATA_SOURCE.mode === 'rpc'
-        ) {
-
-            /*
-             * Expected filter-option RPC response can contain
-             * a years field.
-             */
-
-            const response =
-                await fetchFilterOptionsRpc(
-                    createAllFilters(),
-                    'year'
-                );
-
-
-            years =
-                extractOptionArray(
-                    response,
-                    [
-                        'years',
-                        'year',
-                        'available_years',
-                        'availableYears'
-                    ]
-                );
-
-        } else {
-
-            const {
-                data,
-                error
-            } =
-                await supabaseClient
-                    .from(
-                        DATA_SOURCE.viewName
-                    )
-                    .select(
-                        DATA_SOURCE.viewColumns.year
-                    );
-
-
-            if (error) {
-
-                throw error;
-
-            }
-
-
-            years =
-                Array.isArray(data)
-                    ? data.map(
-                        row =>
-                            row[
-                                DATA_SOURCE
-                                    .viewColumns
-                                    .year
-                            ]
-                    )
-                    : [];
-
-        }
-
-
-        applicationState.availableYears =
-            normalizeYearValues(
-                years
-            );
-
-
-        populateSelect(
-            dom.yearFilter,
-            applicationState.availableYears,
-            'All'
-        );
-
-
-        populateSelect(
-            dom.fromYearFilter,
-            applicationState.availableYears,
-            'All'
-        );
-
-
-        populateSelect(
-            dom.toYearFilter,
-            applicationState.availableYears,
-            'All'
-        );
-
-
-        updateDataYearRange();
-
-
-    } catch (error) {
-
-        console.error(
-            'Failed to load available years:',
-            error
-        );
-
-        throw error;
-
-    }
-
-}
-
-
-/*
- * Load all cascading filter options.
- */
 
 async function loadFilterOptions(
-    filters
+    filters = readFilters()
 ) {
 
-    try {
-
-        applicationState.updatingFilterOptions =
-            true;
-
-
-        const options =
-            await fetchFilterOptions(
-                filters
-            );
-
-
-        applicationState.filterOptions =
-            options;
-
-
-        const selected =
-            getSelectedFilters();
-
-
-        populateSelect(
-            dom.makerFilter,
-            options.makers,
-            'All',
-            selected.maker
-        );
-
-
-        populateSelect(
-            dom.regionFilter,
-            options.regions,
-            'All',
-            selected.region
-        );
-
-
-        populateSelect(
-            dom.categoryFilter,
-            options.categories,
-            'All',
-            selected.category
-        );
-
-
-        populateSelect(
-            dom.subcategoryFilter,
-            options.subcategories,
-            'All',
-            selected.subcategory
-        );
-
-
-    } finally {
-
-        applicationState.updatingFilterOptions =
-            false;
-
-    }
-
-}
-
-
-/*
- * Public-style filter option functions.
- */
-
-async function loadAvailableMakers(filters = getSelectedFilters()) {
-
-    const options =
-        await fetchFilterOptions(
-            filters,
-            'maker'
-        );
-
-    applicationState.filterOptions.makers =
-        options.makers;
-
-    populateSelect(
-        dom.makerFilter,
-        options.makers,
-        'All',
-        filters.maker
-    );
-
-}
-
-
-async function loadAvailableRegions(filters = getSelectedFilters()) {
-
-    const options =
-        await fetchFilterOptions(
-            filters,
-            'region'
-        );
-
-    applicationState.filterOptions.regions =
-        options.regions;
-
-    populateSelect(
-        dom.regionFilter,
-        options.regions,
-        'All',
-        filters.region
-    );
-
-}
-
-
-async function loadAvailableCategories(filters = getSelectedFilters()) {
-
-    const options =
-        await fetchFilterOptions(
-            filters,
-            'category'
-        );
-
-    applicationState.filterOptions.categories =
-        options.categories;
-
-    populateSelect(
-        dom.categoryFilter,
-        options.categories,
-        'All',
-        filters.category
-    );
-
-}
-
-
-async function loadAvailableSubcategories(filters = getSelectedFilters()) {
-
-    const options =
-        await fetchFilterOptions(
-            filters,
-            'subcategory'
-        );
-
-    applicationState.filterOptions.subcategories =
-        options.subcategories;
-
-    populateSelect(
-        dom.subcategoryFilter,
-        options.subcategories,
-        'All',
-        filters.subcategory
-    );
-
-}
-
-
-/*
- * Central filter-options access.
- */
-
-async function fetchFilterOptions(
-    filters,
-    ignoreDimension = 'all'
-) {
-
-    if (
-        DATA_SOURCE.mode !== 'rpc'
-    ) {
-
-        return fetchFilterOptionsFromView(
-            filters
-        );
-
-    }
-
-
-    const response =
-        await fetchFilterOptionsRpc(
-            filters,
-            ignoreDimension
-        );
-
-
-    return normalizeFilterOptionsResponse(
-        response
-    );
-
-}
-
-
-/*
- * RPC filter-options request.
- */
-
-async function fetchFilterOptionsRpc(
-    filters,
-    ignoreDimension = 'all'
-) {
-
-    if (!supabaseClient) {
-
-        throw new Error(
-            'Supabase client has not been initialized.'
-        );
-
-    }
-
-
-    const payload =
-        buildRpcFilterPayload(
+    const parameters =
+        buildRpcParameters(
             filters
         );
 
 
     /*
-     * The PostgreSQL RPC can use this parameter to avoid
-     * filtering the dimension whose values it is returning.
-     *
-     * If your SQL function uses a different contract,
-     * change RPC_PARAMS.ignoreDimension.
+     * Tell the RPC that we want the full set of
+     * filter options.
      */
 
-    payload[
-        RPC_PARAMS.ignoreDimension
-    ] =
-        ignoreDimension;
+    parameters.p_ignore_dimension =
+        'all';
 
 
-    const {
-        data,
-        error
-    } =
-        await supabaseClient.rpc(
-            DATA_SOURCE.filterOptionsRpc,
-            payload
+    const data =
+        await callRpc(
+            RPC.filters,
+            parameters
         );
 
 
-    if (error) {
+    console.log(
+        '[Filters] Received:',
+        data
+    );
 
-        throw error;
+
+    const options =
+        data || {};
+
+
+    /*
+     * The SQL RPC returns:
+     *
+     * {
+     *   years: [],
+     *   makers: [],
+     *   regions: [],
+     *   categories: [],
+     *   subcategories: []
+     * }
+     */
+
+
+    const current =
+        readFilters();
+
+
+    populateSelect(
+        getElement('makerFilter'),
+        options.makers || [],
+        current.maker
+    );
+
+
+    populateSelect(
+        getElement('regionFilter'),
+        options.regions || [],
+        current.region
+    );
+
+
+    populateSelect(
+        getElement('categoryFilter'),
+        options.categories || [],
+        current.category
+    );
+
+
+    populateSelect(
+        getElement('subcategoryFilter'),
+        options.subcategories || [],
+        current.subcategory
+    );
+
+
+    /*
+     * Years are supplied by the RPC.
+     */
+
+    if (
+        Array.isArray(options.years) &&
+        options.years.length > 0
+    ) {
+
+        populateSelect(
+            getElement('yearFilter'),
+            options.years,
+            current.year
+        );
+
+        populateSelect(
+            getElement('fromYearFilter'),
+            options.years,
+            current.fromYear
+        );
+
+        populateSelect(
+            getElement('toYearFilter'),
+            options.years,
+            current.toYear
+        );
+
+
+        updateYearRange(
+            options.years
+        );
+
+    } else {
+
+        /*
+         * The supplied data is 2026 data.
+         * Keep the UI usable even if the RPC returns
+         * no year array.
+         */
+
+        populateSelect(
+            getElement('yearFilter'),
+            [2026],
+            current.year
+        );
+
+        populateSelect(
+            getElement('fromYearFilter'),
+            [2026],
+            current.fromYear
+        );
+
+        populateSelect(
+            getElement('toYearFilter'),
+            [2026],
+            current.toYear
+        );
+
+        updateYearRange(
+            [2026]
+        );
 
     }
-
-
-    return data;
 
 }
 
 
-/*
- * VIEW-mode filter metadata.
- */
+/* ============================================================
+   17. YEAR RANGE DISPLAY
+   ============================================================ */
 
-async function fetchFilterOptionsFromView(
-    filters
+function updateYearRange(
+    years
 ) {
 
-    const columns =
-        DATA_SOURCE.viewColumns;
-
-
-    let query =
-        supabaseClient
-            .from(
-                DATA_SOURCE.viewName
+    const validYears =
+        (
+            Array.isArray(years)
+                ? years
+                : []
+        )
+            .map(
+                value =>
+                    Number(value)
             )
-            .select(
-                [
-                    columns.year,
-                    columns.region,
-                    columns.maker,
-                    columns.category,
-                    columns.subcategory
-                ].join(',')
+            .filter(
+                value =>
+                    Number.isFinite(value)
             );
 
+
+    const element =
+        getElement('data-year-range');
+
+
+    if (!element) {
+        return;
+    }
+
+
+    if (validYears.length === 0) {
+
+        element.textContent =
+            '—';
+
+        return;
+
+    }
+
+
+    const minimum =
+        Math.min(
+            ...validYears
+        );
+
+    const maximum =
+        Math.max(
+            ...validYears
+        );
+
+
+    element.textContent =
+        minimum === maximum
+            ? String(minimum)
+            : `${minimum} – ${maximum}`;
+
+}
+
+
+/* ============================================================
+   18. SUMMARY DATA
+   ============================================================ */
+
+async function loadSummary(
+    filters,
+    requestId
+) {
+
+    const parameters =
+        buildRpcParameters(
+            filters
+        );
+
+
+    const data =
+        await callRpc(
+            RPC.summary,
+            parameters
+        );
+
+
+    /*
+     * Ignore an old request if the user changed filters
+     * while an earlier request was still running.
+     */
 
     if (
-        filters.year !==
-        APP_CONFIG.allValue
+        requestId !==
+        state.requestId
     ) {
 
-        query =
-            query.eq(
-                columns.year,
-                Number(filters.year)
-            );
+        return;
 
     }
 
 
-    if (
-        filters.fromYear !==
-        APP_CONFIG.allValue
-    ) {
-
-        query =
-            query.gte(
-                columns.year,
-                Number(filters.fromYear)
-            );
-
-    }
-
-
-    if (
-        filters.toYear !==
-        APP_CONFIG.allValue
-    ) {
-
-        query =
-            query.lte(
-                columns.year,
-                Number(filters.toYear)
-            );
-
-    }
-
-
-    if (
-        filters.maker !==
-        APP_CONFIG.allValue
-    ) {
-
-        query =
-            query.eq(
-                columns.maker,
-                filters.maker
-            );
-
-    }
-
-
-    if (
-        filters.region !==
-        APP_CONFIG.allValue
-    ) {
-
-        query =
-            query.eq(
-                columns.region,
-                filters.region
-            );
-
-    }
-
-
-    if (
-        filters.category !==
-        APP_CONFIG.allValue
-    ) {
-
-        query =
-            query.eq(
-                columns.category,
-                filters.category
-            );
-
-    }
-
-
-    if (
-        filters.subcategory !==
-        APP_CONFIG.allValue
-    ) {
-
-        query =
-            query.eq(
-                columns.subcategory,
-                filters.subcategory
-            );
-
-    }
-
-
-    const {
-        data,
-        error
-    } =
-        await query;
-
-
-    if (error) {
-
-        throw error;
-
-    }
-
-
-    const rows =
+    const rawRows =
         Array.isArray(data)
             ? data
             : [];
 
 
-    return {
+    state.rows =
+        rawRows
+            .map(
+                row => {
 
-        years:
-            uniqueSortedValues(
-                rows.map(
-                    row =>
-                        row[
-                            columns.year
-                        ]
-                )
-            ),
+                    const maker =
+                        row.maker ??
+                        row.maker_name ??
+                        row.manufacturer ??
+                        '';
 
-        makers:
-            uniqueSortedValues(
-                rows.map(
-                    row =>
-                        row[
-                            columns.maker
-                        ]
-                )
-            ),
+                    const registrations =
+                        row.registrations ??
+                        row.total_registrations ??
+                        row.total ??
+                        0;
 
-        regions:
-            uniqueSortedValues(
-                rows.map(
-                    row =>
-                        row[
-                            columns.region
-                        ]
-                )
-            ),
 
-        categories:
-            uniqueSortedValues(
-                rows.map(
-                    row =>
-                        row[
-                            columns.category
-                        ]
-                )
-            ),
+                    return {
 
-        subcategories:
-            uniqueSortedValues(
-                rows.map(
-                    row =>
-                        row[
-                            columns.subcategory
-                        ]
-                )
+                        maker:
+                            String(
+                                maker
+                            ).trim(),
+
+                        registrations:
+                            toNumber(
+                                registrations
+                            )
+
+                    };
+
+                }
             )
+            .filter(
+                row =>
+                    row.maker !== ''
+            );
 
-    };
+
+    state.currentPage =
+        1;
+
+
+    console.log(
+        `[Summary] Loaded ${state.rows.length} makers.`
+    );
+
+
+    renderTable();
 
 }
 
 
 /* ============================================================
-   13. APPLY FILTERS
+   19. KPI DATA
    ============================================================ */
 
-
-/*
- * Main filter application function.
- */
-
-async function applyFilters(
-    options = {}
+async function loadKpis(
+    filters,
+    requestId
 ) {
 
-    const requestId =
-        ++applicationState.requestId;
-
-
-    const filters =
-        getSelectedFilters();
-
-
-    normalizeYearUIState();
-
-
-    const normalizedFilters =
-        getSelectedFilters();
-
-
-    const validation =
-        validateFilters(
-            normalizedFilters
+    const parameters =
+        buildRpcParameters(
+            filters
         );
 
 
-    if (!validation.valid) {
-
-        displayError(
-            validation.message
+    const data =
+        await callRpc(
+            RPC.kpis,
+            parameters
         );
+
+
+    if (
+        requestId !==
+        state.requestId
+    ) {
 
         return;
 
     }
 
 
-    updateFilterState(
-        normalizedFilters
-    );
+    if (!data) {
 
-
-    applicationState.currentPage =
-        1;
-
-
-    clearError();
-
-    updateActiveFilters();
-
-
-    showTableLoading();
-
-
-    try {
-
-        /*
-         * Refresh cascading options first.
-         */
-
-        if (
-            !options.skipOptionRefresh
-        ) {
-
-            await loadFilterOptions(
-                normalizedFilters
-            );
-
-        }
-
-
-        /*
-         * Run summary and KPI requests in parallel.
-         */
-
-        const [
-            dashboardRows,
-            kpiData
-        ] =
-            await Promise.all([
-                fetchDashboardData(
-                    normalizedFilters
-                ),
-
-                fetchKPIData(
-                    normalizedFilters
-                )
-            ]);
-
-
-        /*
-         * Ignore stale response.
-         */
-
-        if (
-            requestId !==
-            applicationState.requestId
-        ) {
-
-            return;
-
-        }
-
-
-        const normalizedRows =
-            normalizeMakerRows(
-                dashboardRows
-            );
-
-
-        applicationState.makerRows =
-            normalizedRows;
-
-
-        applicationState.kpis =
-            buildKpis(
-                normalizedRows,
-                kpiData
-            );
-
-
-        updateKPIs();
-
-        updateMakerTable();
-
-        updateActiveFilters();
-
-        updateDataYearRange();
-
-
-    } catch (error) {
-
-        if (
-            requestId !==
-            applicationState.requestId
-        ) {
-
-            return;
-
-        }
-
-
-        console.error(
-            'Dashboard data request failed:',
-            error
-        );
-
-
-        applicationState.makerRows =
-            [];
-
-
-        applicationState.kpis =
-            buildKpis(
-                [],
-                null
-            );
-
-
-        updateKPIs();
-
-        updateMakerTable();
-
-        displayError(
-            'Unable to load data. Please try again.'
-        );
-
-
-    } finally {
-
-        if (
-            requestId ===
-            applicationState.requestId
-        ) {
-
-            hideTableLoading();
-
-        }
+        return;
 
     }
 
-}
 
-
-/* ============================================================
-   14. RESET FILTERS
-   ============================================================ */
-
-async function resetFilters() {
-
-    const requestId =
-        ++applicationState.requestId;
-
-
-    setSelectValue(
-        dom.yearFilter,
-        APP_CONFIG.allValue
+    console.log(
+        '[KPIs] Received:',
+        data
     );
 
-    setSelectValue(
-        dom.fromYearFilter,
-        APP_CONFIG.allValue
-    );
-
-    setSelectValue(
-        dom.toYearFilter,
-        APP_CONFIG.allValue
-    );
-
-    setSelectValue(
-        dom.makerFilter,
-        APP_CONFIG.allValue
-    );
-
-    setSelectValue(
-        dom.regionFilter,
-        APP_CONFIG.allValue
-    );
-
-    setSelectValue(
-        dom.categoryFilter,
-        APP_CONFIG.allValue
-    );
-
-    setSelectValue(
-        dom.subcategoryFilter,
-        APP_CONFIG.allValue
-    );
-
-
-    if (dom.makerSearch) {
-
-        dom.makerSearch.value =
-            '';
-
-    }
-
-
-    applicationState.searchTerm =
-        '';
-
-    applicationState.currentPage =
-        1;
-
-
-    updateFilterState(
-        createAllFilters()
-    );
-
-
-    clearError();
-
-    updateActiveFilters();
-
-    showLoading();
-
-
-    try {
-
-        await loadFilterOptions(
-            createAllFilters()
-        );
-
-
-        if (
-            requestId !==
-            applicationState.requestId
-        ) {
-
-            return;
-
-        }
-
-
-        const [
-            dashboardRows,
-            kpiData
-        ] =
-            await Promise.all([
-                fetchDashboardData(
-                    createAllFilters()
-                ),
-
-                fetchKPIData(
-                    createAllFilters()
-                )
-            ]);
-
-
-        if (
-            requestId !==
-            applicationState.requestId
-        ) {
-
-            return;
-
-        }
-
-
-        const normalizedRows =
-            normalizeMakerRows(
-                dashboardRows
-            );
-
-
-        applicationState.makerRows =
-            normalizedRows;
-
-
-        applicationState.kpis =
-            buildKpis(
-                normalizedRows,
-                kpiData
-            );
-
-
-        updateKPIs();
-
-        updateMakerTable();
-
-        updateActiveFilters();
-
-
-    } catch (error) {
-
-        if (
-            requestId !==
-            applicationState.requestId
-        ) {
-
-            return;
-
-        }
-
-
-        console.error(
-            'Reset failed:',
-            error
-        );
-
-
-        displayError(
-            'Unable to load data. Please try again.'
-        );
-
-
-    } finally {
-
-        if (
-            requestId ===
-            applicationState.requestId
-        ) {
-
-            hideLoading();
-
-        }
-
-    }
-
-}
-
-
-/* ============================================================
-   15. DATA NORMALIZATION
-   ============================================================ */
-
-
-/*
- * Normalize all maker rows.
- *
- * Multiple common database field names are supported.
- */
-
-function normalizeMakerRows(rows) {
-
-    if (!Array.isArray(rows)) {
-
-        return [];
-
-    }
-
-
-    const makerMap =
-        new Map();
-
-
-    for (
-        const row of rows
-    ) {
-
-        const normalized =
-            normalizeMakerRow(row);
-
-
-        if (!normalized) {
-
-            continue;
-
-        }
-
-
-        const key =
-            normalized.maker.toLowerCase();
-
-
-        if (
-            makerMap.has(key)
-        ) {
-
-            const existing =
-                makerMap.get(key);
-
-
-            existing.registrations +=
-                normalized.registrations;
-
-        } else {
-
-            makerMap.set(
-                key,
-                {
-                    maker:
-                        normalized.maker,
-
-                    registrations:
-                        normalized.registrations
-                }
-            );
-
-        }
-
-    }
-
-
-    const total =
-        Array.from(
-            makerMap.values()
-        ).reduce(
-            (
-                sum,
-                row
-            ) =>
-                sum +
-                safeNumber(
-                    row.registrations
-                ),
-            0
-        );
-
-
-    return Array.from(
-        makerMap.values()
-    ).map(
-        row => ({
-
-            maker:
-                row.maker,
-
-            registrations:
-                safeNumber(
-                    row.registrations
-                ),
-
-            marketShare:
-                calculateMarketShare(
-                    row.registrations,
-                    total
-                )
-
-        })
-    );
-
-}
-
-
-/*
- * Normalize one maker row.
- */
-
-function normalizeMakerRow(row) {
-
-    if (
-        !row ||
-        typeof row !== 'object'
-    ) {
-
-        return null;
-
-    }
-
-
-    const maker =
-        firstExistingValue(
-            row,
-            [
-                'maker',
-                'MAKER',
-                'maker_name',
-                'makerName',
-                'manufacturer',
-                'manufacturer_name'
-            ]
-        );
-
-
-    const registrations =
-        firstExistingValue(
-            row,
-            [
-                'registrations',
-                'registration',
-                'total_registrations',
-                'totalRegistrations',
-                'total',
-                'TOTAL',
-                'count',
-                'vehicle_count'
-            ]
-        );
-
-
-    if (
-        maker === null ||
-        maker === undefined ||
-        String(maker).trim() === ''
-    ) {
-
-        return null;
-
-    }
-
-
-    return {
-
-        maker:
-            String(maker).trim(),
-
-        registrations:
-            safeNumber(
-                registrations
-            )
-
-    };
-
-}
-
-
-/*
- * VIEW mode aggregation.
- */
-
-function aggregateViewRows(
-    rows
-) {
-
-    const map =
-        new Map();
-
-
-    const columns =
-        DATA_SOURCE.viewColumns;
-
-
-    for (
-        const row of rows
-    ) {
-
-        const maker =
-            normalizeString(
-                row?.[
-                    columns.maker
-                ]
-            );
-
-
-        if (!maker) {
-
-            continue;
-
-        }
-
-
-        const registrations =
-            safeNumber(
-                row?.[
-                    columns.registrations
-                ]
-            );
-
-
-        const key =
-            maker.toLowerCase();
-
-
-        map.set(
-            key,
-            {
-                maker:
-                    maker,
-
-                registrations:
-                    (
-                        map.get(key)?.registrations ||
-                        0
-                    ) +
-                    registrations
-            }
-        );
-
-    }
-
-
-    return Array.from(
-        map.values()
-    );
-
-}
-
-
-/* ============================================================
-   16. KPI CALCULATIONS
-   ============================================================ */
-
-
-/*
- * Build KPI state.
- *
- * Total registrations and total makers can be calculated
- * from maker summary.
- *
- * 2W and 3W must come from the KPI analytical layer.
- * We intentionally do not fabricate them.
- */
-
-function buildKpis(
-    makerRows,
-    kpiData
-) {
 
     const totalRegistrations =
-        makerRows.reduce(
-            (
-                sum,
-                row
-            ) =>
-                sum +
-                safeNumber(
-                    row.registrations
-                ),
-            0
-        );
+        data.totalRegistrations ??
+        data.total_registrations ??
+        data.total ??
+        0;
 
 
     const totalMakers =
-        makerRows.length;
+        data.totalMakers ??
+        data.total_makers ??
+        data.makerCount ??
+        0;
 
 
     const twoW =
-        extractKpiValue(
-            kpiData,
-            [
-                'twoWRegistrations',
-                'two_w_registrations',
-                'registrations2W',
-                'registrations_2w',
-                'two_w'
-            ]
-        );
+        data.twoWRegistrations ??
+        data.two_w_registrations ??
+        null;
 
 
     const threeW =
-        extractKpiValue(
-            kpiData,
-            [
-                'threeWRegistrations',
-                'three_w_registrations',
-                'registrations3W',
-                'registrations_3w',
-                'three_w'
-            ]
-        );
+        data.threeWRegistrations ??
+        data.three_w_registrations ??
+        null;
 
 
-    return {
-
-        totalRegistrations,
-
-        totalMakers,
-
-        twoWRegistrations:
-            twoW,
-
-        threeWRegistrations:
-            threeW,
-
-        twoWPercentage:
-            calculateNullablePercentage(
-                twoW,
-                totalRegistrations
-            ),
-
-        threeWPercentage:
-            calculateNullablePercentage(
-                threeW,
-                totalRegistrations
-            )
-
-    };
-
-}
+    const twoWPercentage =
+        data.twoWPercentage ??
+        data.two_w_percentage ??
+        null;
 
 
-/*
- * Market share.
- */
-
-function calculateMarketShare(
-    makerRegistrations,
-    totalRegistrations
-) {
-
-    const makerTotal =
-        safeNumber(
-            makerRegistrations
-        );
+    const threeWPercentage =
+        data.threeWPercentage ??
+        data.three_w_percentage ??
+        null;
 
 
-    const total =
-        safeNumber(
+    setText(
+        'totalRegistrations',
+        formatNumber(
             totalRegistrations
-        );
-
-
-    if (total <= 0) {
-
-        return 0;
-
-    }
-
-
-    return (
-        makerTotal /
-        total *
-        100
-    );
-
-}
-
-
-/*
- * Percentage where source value can be null.
- */
-
-function calculateNullablePercentage(
-    value,
-    total
-) {
-
-    if (
-        value === null ||
-        value === undefined
-    ) {
-
-        return null;
-
-    }
-
-
-    const numericValue =
-        safeNumber(value);
-
-
-    const numericTotal =
-        safeNumber(total);
-
-
-    if (
-        numericTotal <= 0
-    ) {
-
-        return 0;
-
-    }
-
-
-    return (
-        numericValue /
-        numericTotal *
-        100
-    );
-
-}
-
-
-/*
- * Normalize KPI response.
- */
-
-function normalizeKpiResponse(data) {
-
-    if (!data) {
-
-        return null;
-
-    }
-
-
-    if (Array.isArray(data)) {
-
-        return data.length
-            ? normalizeKpiResponse(
-                data[0]
-            )
-            : null;
-
-    }
-
-
-    if (
-        typeof data !== 'object'
-    ) {
-
-        return null;
-
-    }
-
-
-    return data;
-
-}
-
-
-/*
- * Extract KPI value.
- */
-
-function extractKpiValue(
-    data,
-    keys
-) {
-
-    if (!data) {
-
-        return null;
-
-    }
-
-
-    const value =
-        firstExistingValue(
-            data,
-            keys
-        );
-
-
-    if (
-        value === null ||
-        value === undefined
-    ) {
-
-        return null;
-
-    }
-
-
-    return safeNumber(value);
-
-}
-
-
-/* ============================================================
-   17. KPI RENDERING
-   ============================================================ */
-
-function updateKPIs() {
-
-    const kpis =
-        applicationState.kpis;
-
-
-    setText(
-        dom.totalRegistrations,
-        formatIndianNumber(
-            kpis.totalRegistrations
         )
     );
 
 
     setText(
-        dom.totalMakers,
-        formatIndianNumber(
-            kpis.totalMakers
+        'totalMakers',
+        formatNumber(
+            totalMakers
         )
     );
 
 
     setText(
-        dom.twoWRegistrations,
-        kpis.twoWRegistrations === null
+        'twoWRegistrations',
+        twoW === null
             ? '—'
-            : formatIndianNumber(
-                kpis.twoWRegistrations
-            )
+            : formatNumber(twoW)
     );
 
 
     setText(
-        dom.threeWRegistrations,
-        kpis.threeWRegistrations === null
+        'threeWRegistrations',
+        threeW === null
             ? '—'
-            : formatIndianNumber(
-                kpis.threeWRegistrations
-            )
+            : formatNumber(threeW)
     );
 
 
     setText(
-        dom.twoWPercentage,
-        kpis.twoWPercentage === null
+        'twoWPercentage',
+        twoWPercentage === null
             ? '—'
             : formatPercentage(
-                kpis.twoWPercentage
+                twoWPercentage
             )
     );
 
 
     setText(
-        dom.threeWPercentage,
-        kpis.threeWPercentage === null
+        'threeWPercentage',
+        threeWPercentage === null
             ? '—'
             : formatPercentage(
-                kpis.threeWPercentage
+                threeWPercentage
             )
     );
 
@@ -2771,224 +1291,39 @@ function updateKPIs() {
 
 
 /* ============================================================
-   18. MAKER TABLE
+   20. TABLE FILTERING
    ============================================================ */
 
-function updateMakerTable() {
+function getVisibleRows() {
 
-    const tbody =
-        dom.makerSummaryTableBody;
-
-
-    if (!tbody) {
-
-        return;
-
-    }
-
-
-    const filteredRows =
-        filterTableData(
-            applicationState.makerRows
-        );
-
-
-    const sortedRows =
-        sortTableData(
-            filteredRows
-        );
-
-
-    const pagination =
-        getPaginationState(
-            sortedRows.length
-        );
-
-
-    tbody.replaceChildren();
-
-
-    const pageRows =
-        sortedRows.slice(
-            pagination.startIndex,
-            pagination.endIndex
-        );
-
-
-    if (
-        pageRows.length === 0
-    ) {
-
-        showEmptyState();
-
-    } else {
-
-        hideEmptyState();
-
-
-        const fragment =
-            document.createDocumentFragment();
-
-
-        for (
-            const row of pageRows
-        ) {
-
-            const tr =
-                document.createElement(
-                    'tr'
-                );
-
-
-            const makerCell =
-                document.createElement(
-                    'td'
-                );
-
-
-            makerCell.textContent =
-                row.maker;
-
-
-            const registrationsCell =
-                document.createElement(
-                    'td'
-                );
-
-
-            registrationsCell.textContent =
-                formatIndianNumber(
-                    row.registrations
-                );
-
-
-            const shareCell =
-                document.createElement(
-                    'td'
-                );
-
-
-            shareCell.textContent =
-                formatPercentage(
-                    row.marketShare
-                );
-
-
-            tr.append(
-                makerCell,
-                registrationsCell,
-                shareCell
-            );
-
-
-            fragment.appendChild(tr);
-
-        }
-
-
-        tbody.appendChild(
-            fragment
-        );
-
-    }
-
-
-    /*
-     * Footer is based on the currently filtered maker result,
-     * not just the visible page.
-     */
-
-    const filteredTotal =
-        filteredRows.reduce(
-            (
-                sum,
-                row
-            ) =>
-                sum +
-                safeNumber(
-                    row.registrations
-                ),
-            0
-        );
-
-
-    setText(
-        dom.makerSummaryTotal,
-        formatIndianNumber(
-            filteredTotal
-        )
-    );
-
-
-    setText(
-        dom.makerSummaryMarketShare,
-        filteredTotal > 0
-            ? '100.00%'
-            : '0.00%'
-    );
-
-
-    updatePagination(
-        pagination
-    );
-
-}
-
-
-/* ============================================================
-   19. TABLE SEARCH
-   ============================================================ */
-
-function filterTableData(rows) {
-
-    const searchTerm =
+    const search =
         String(
-            applicationState.searchTerm ||
-            ''
+            state.searchTerm || ''
         )
             .trim()
             .toLowerCase();
 
 
-    if (!searchTerm) {
+    let rows =
+        [...state.rows];
 
-        return [...rows];
+
+    if (search) {
+
+        rows =
+            rows.filter(
+                row =>
+                    row.maker
+                        .toLowerCase()
+                        .includes(
+                            search
+                        )
+            );
 
     }
 
 
-    return rows.filter(
-        row =>
-            String(
-                row.maker
-            )
-                .toLowerCase()
-                .includes(
-                    searchTerm
-                )
-    );
-
-}
-
-
-/* ============================================================
-   20. TABLE SORTING
-   ============================================================ */
-
-function sortTableData(rows) {
-
-    const sorted =
-        [...rows];
-
-
-    const {
-        sortKey,
-        sortDirection
-    } =
-        applicationState;
-
-
-    sorted.sort(
+    rows.sort(
         (
             a,
             b
@@ -2998,35 +1333,33 @@ function sortTableData(rows) {
 
 
             if (
-                sortKey ===
+                state.sortKey ===
                 'maker'
             ) {
 
                 result =
-                    String(a.maker)
-                        .localeCompare(
-                            String(b.maker),
-                            undefined,
-                            {
-                                sensitivity:
-                                    'base'
-                            }
-                        );
+                    a.maker.localeCompare(
+                        b.maker,
+                        undefined,
+                        {
+                            sensitivity:
+                                'base'
+                        }
+                    );
 
             } else {
 
                 const aValue =
-                    safeNumber(
+                    toNumber(
                         a[
-                            sortKey
+                            state.sortKey
                         ]
                     );
 
-
                 const bValue =
-                    safeNumber(
+                    toNumber(
                         b[
-                            sortKey
+                            state.sortKey
                         ]
                     );
 
@@ -3038,104 +1371,71 @@ function sortTableData(rows) {
             }
 
 
-            return sortDirection === 'asc'
-                ? result
-                : -result;
+            return state.sortDirection ===
+                'asc'
+                    ? result
+                    : -result;
 
         }
     );
 
 
-    return sorted;
-
-}
-
-
-/*
- * Handle table sort.
- */
-
-function handleSort(
-    key
-) {
-
-    const validKeys = [
-        'maker',
-        'registrations',
-        'marketShare'
-    ];
-
-
-    if (
-        !validKeys.includes(key)
-    ) {
-
-        return;
-
-    }
-
-
-    if (
-        applicationState.sortKey ===
-        key
-    ) {
-
-        applicationState.sortDirection =
-            applicationState.sortDirection ===
-                'asc'
-                ? 'desc'
-                : 'asc';
-
-    } else {
-
-        applicationState.sortKey =
-            key;
-
-        applicationState.sortDirection =
-            key === 'maker'
-                ? 'asc'
-                : 'desc';
-
-    }
-
-
-    applicationState.currentPage =
-        1;
-
-
-    updateMakerTable();
+    return rows;
 
 }
 
 
 /* ============================================================
-   21. PAGINATION
+   21. RENDER TABLE
    ============================================================ */
 
-function getPaginationState(
-    totalRows
-) {
+function renderTable() {
 
-    const pageSize =
-        applicationState.pageSize;
+    const body =
+        getElement(
+            'makerSummaryTableBody'
+        );
+
+
+    if (!body) {
+        return;
+    }
+
+
+    const rows =
+        getVisibleRows();
+
+
+    const total =
+        rows.reduce(
+            (
+                sum,
+                row
+            ) =>
+                sum +
+                toNumber(
+                    row.registrations
+                ),
+            0
+        );
 
 
     const totalPages =
         Math.max(
             1,
             Math.ceil(
-                totalRows /
-                pageSize
+                rows.length /
+                state.pageSize
             )
         );
 
 
     if (
-        applicationState.currentPage >
+        state.currentPage >
         totalPages
     ) {
 
-        applicationState.currentPage =
+        state.currentPage =
             totalPages;
 
     }
@@ -3143,143 +1443,224 @@ function getPaginationState(
 
     const startIndex =
         (
-            applicationState.currentPage -
+            state.currentPage -
             1
         ) *
-        pageSize;
+        state.pageSize;
 
 
-    const endIndex =
-        Math.min(
+    const pageRows =
+        rows.slice(
+            startIndex,
             startIndex +
-            pageSize,
-            totalRows
+            state.pageSize
         );
 
 
-    return {
-
-        currentPage:
-            applicationState.currentPage,
-
-        pageSize,
-
-        totalPages,
-
-        totalRows,
-
-        startIndex,
-
-        endIndex
-
-    };
-
-}
+    body.replaceChildren();
 
 
-function updatePagination(
-    pagination
-) {
+    for (
+        const row of pageRows
+    ) {
 
-    if (!dom.pageIndicator) {
+        const tr =
+            document.createElement(
+                'tr'
+            );
 
-        return;
+
+        const makerCell =
+            document.createElement(
+                'td'
+            );
+
+        makerCell.textContent =
+            row.maker;
+
+
+        const registrationCell =
+            document.createElement(
+                'td'
+            );
+
+        registrationCell.textContent =
+            formatNumber(
+                row.registrations
+            );
+
+
+        const shareCell =
+            document.createElement(
+                'td'
+            );
+
+
+        const share =
+            total > 0
+                ? (
+                    toNumber(
+                        row.registrations
+                    ) /
+                    total
+                ) *
+                100
+                : 0;
+
+
+        shareCell.textContent =
+            `${share.toFixed(2)}%`;
+
+
+        tr.appendChild(
+            makerCell
+        );
+
+        tr.appendChild(
+            registrationCell
+        );
+
+        tr.appendChild(
+            shareCell
+        );
+
+
+        body.appendChild(
+            tr
+        );
 
     }
 
 
+    /*
+     * Empty state.
+     */
+
+    const tableEmpty =
+        getElement('tableEmpty');
+
+    const tableContent =
+        getElement('tableContent');
+
+
+    if (
+        rows.length === 0
+    ) {
+
+        if (tableEmpty) {
+
+            tableEmpty.hidden =
+                false;
+
+        }
+
+        if (tableContent) {
+
+            tableContent.hidden =
+                true;
+
+        }
+
+    } else {
+
+        if (tableEmpty) {
+
+            tableEmpty.hidden =
+                true;
+
+        }
+
+        if (tableContent) {
+
+            tableContent.hidden =
+                false;
+
+        }
+
+    }
+
+
+    /*
+     * Footer.
+     */
+
     setText(
-        dom.pageIndicator,
-        `Page ${pagination.currentPage} of ${pagination.totalPages}`
+        'makerSummaryTotal',
+        formatNumber(total)
     );
 
 
-    if (dom.previousPageButton) {
-
-        dom.previousPageButton.disabled =
-            pagination.currentPage <= 1;
-
-    }
-
-
-    if (dom.nextPageButton) {
-
-        dom.nextPageButton.disabled =
-            pagination.currentPage >=
-            pagination.totalPages;
-
-    }
-
-}
+    setText(
+        'makerSummaryMarketShare',
+        rows.length > 0
+            ? '100.00%'
+            : '0.00%'
+    );
 
 
-function goToPreviousPage() {
+    /*
+     * Pagination.
+     */
 
-    if (
-        applicationState.currentPage <=
-        1
-    ) {
-
-        return;
-
-    }
+    setText(
+        'pageIndicator',
+        `Page ${state.currentPage} of ${totalPages}`
+    );
 
 
-    applicationState.currentPage--;
-
-    updateMakerTable();
-
-}
-
-
-function goToNextPage() {
-
-    const filteredRows =
-        filterTableData(
-            applicationState.makerRows
+    const previous =
+        getElement(
+            'previousPageButton'
         );
 
 
-    const totalPages =
-        Math.max(
-            1,
-            Math.ceil(
-                filteredRows.length /
-                applicationState.pageSize
-            )
+    const next =
+        getElement(
+            'nextPageButton'
         );
 
 
-    if (
-        applicationState.currentPage >=
-        totalPages
-    ) {
+    if (previous) {
 
-        return;
+        previous.disabled =
+            state.currentPage <= 1;
 
     }
 
 
-    applicationState.currentPage++;
+    if (next) {
 
-    updateMakerTable();
+        next.disabled =
+            state.currentPage >=
+            totalPages;
+
+    }
 
 }
 
 
-function handlePageSizeChange(
-    event
+/* ============================================================
+   22. TABLE SORTING
+   ============================================================ */
+
+function handleSort(
+    key
 ) {
 
-    const pageSize =
-        Number(
-            event.target.value
-        );
+    const allowedKeys = [
+
+        'maker',
+
+        'registrations',
+
+        'marketShare'
+
+    ];
 
 
     if (
-        !APP_CONFIG.pageSizes.includes(
-            pageSize
+        !allowedKeys.includes(
+            key
         )
     ) {
 
@@ -3288,33 +1669,71 @@ function handlePageSizeChange(
     }
 
 
-    applicationState.pageSize =
-        pageSize;
+    /*
+     * Market share is calculated from registrations,
+     * so sorting by marketShare is equivalent to sorting
+     * by registrations.
+     */
+
+    const actualKey =
+        key === 'marketShare'
+            ? 'registrations'
+            : key;
 
 
-    applicationState.currentPage =
+    if (
+        state.sortKey ===
+        actualKey
+    ) {
+
+        state.sortDirection =
+            state.sortDirection ===
+                'asc'
+                    ? 'desc'
+                    : 'asc';
+
+    } else {
+
+        state.sortKey =
+            actualKey;
+
+        state.sortDirection =
+            actualKey === 'maker'
+                ? 'asc'
+                : 'desc';
+
+    }
+
+
+    state.currentPage =
         1;
 
 
-    updateMakerTable();
+    renderTable();
 
 }
 
 
 /* ============================================================
-   22. ACTIVE FILTER DISPLAY
+   23. ACTIVE FILTER DISPLAY
    ============================================================ */
 
-function updateActiveFilters() {
+function renderActiveFilters(
+    filters
+) {
 
-    if (!dom.activeFilters) {
+    const container =
+        getElement(
+            'activeFilters'
+        );
 
+
+    if (!container) {
         return;
-
     }
 
 
-    dom.activeFilters.replaceChildren();
+    container.replaceChildren();
 
 
     const label =
@@ -3322,79 +1741,60 @@ function updateActiveFilters() {
             'span'
         );
 
-
     label.className =
         'active-filters__label';
-
 
     label.textContent =
         'Active Filters:';
 
 
-    dom.activeFilters.appendChild(
+    container.appendChild(
         label
     );
 
 
-    const filters =
-        getSelectedFilters();
-
-
     const active = [
 
-        {
-            key: 'year',
-            label: 'Year',
-            value:
-                filters.year
-        },
+        [
+            'Year',
+            filters.year
+        ],
 
-        {
-            key: 'fromYear',
-            label: 'From',
-            value:
-                filters.fromYear
-        },
+        [
+            'From',
+            filters.fromYear
+        ],
 
-        {
-            key: 'toYear',
-            label: 'To',
-            value:
-                filters.toYear
-        },
+        [
+            'To',
+            filters.toYear
+        ],
 
-        {
-            key: 'maker',
-            label: 'Maker',
-            value:
-                filters.maker
-        },
+        [
+            'Maker',
+            filters.maker
+        ],
 
-        {
-            key: 'region',
-            label: 'Region',
-            value:
-                filters.region
-        },
+        [
+            'Region',
+            filters.region
+        ],
 
-        {
-            key: 'category',
-            label: 'Category',
-            value:
-                filters.category
-        },
+        [
+            'Category',
+            filters.category
+        ],
 
-        {
-            key: 'subcategory',
-            label: 'Subcategory',
-            value:
-                filters.subcategory
-        }
+        [
+            'Subcategory',
+            filters.subcategory
+        ]
 
     ].filter(
         item =>
-            item.value !==
-            APP_CONFIG.allValue
+            !isAll(
+                item[1]
+            )
     );
 
 
@@ -3407,327 +1807,169 @@ function updateActiveFilters() {
                 'span'
             );
 
-
         empty.className =
             'active-filter active-filter--empty';
-
 
         empty.textContent =
             'No active filters';
 
-
-        dom.activeFilters.appendChild(
+        container.appendChild(
             empty
         );
 
-
         return;
 
     }
 
 
-    active.forEach(
-        item => {
+    for (
+        const [
+            labelText,
+            value
+        ] of active
+    ) {
 
-            const chip =
-                document.createElement(
-                    'span'
-                );
-
-
-            chip.className =
-                'active-filter';
-
-
-            const strong =
-                document.createElement(
-                    'strong'
-                );
-
-
-            strong.textContent =
-                `${item.label}:`;
-
-
-            const value =
-                document.createTextNode(
-                    ` ${item.value}`
-                );
-
-
-            chip.append(
-                strong,
-                value
+        const chip =
+            document.createElement(
+                'span'
             );
 
+        chip.className =
+            'active-filter';
 
-            dom.activeFilters.appendChild(
-                chip
-            );
+        chip.textContent =
+            `${labelText}: ${value}`;
 
-        }
-    );
+        container.appendChild(
+            chip
+        );
+
+    }
 
 }
 
 
 /* ============================================================
-   23. DATA YEAR RANGE
+   24. FILTER COMPATIBILITY
    ============================================================ */
 
-function updateDataYearRange() {
-
-    if (!dom.dataYearRange) {
-
-        return;
-
-    }
-
-
-    const years =
-        applicationState.availableYears;
-
-
-    if (
-        years.length === 0
-    ) {
-
-        dom.dataYearRange.textContent =
-            '—';
-
-        return;
-
-    }
-
-
-    if (
-        years.length === 1
-    ) {
-
-        dom.dataYearRange.textContent =
-            String(years[0]);
-
-        return;
-
-    }
-
-
-    const min =
-        years[0];
-
-
-    const max =
-        years[
-            years.length - 1
-        ];
-
-
-    dom.dataYearRange.textContent =
-        `${min}–${max}`;
-
-}
-
-
-/* ============================================================
-   24. LOADING / ERROR / EMPTY STATES
-   ============================================================ */
-
-
-/*
- * IMPORTANT:
- *
- * Native hidden attribute is used.
- *
- * No .hidden CSS class is required.
- */
-
-function showLoading() {
-
-    if (dom.globalLoading) {
-
-        dom.globalLoading.hidden =
-            false;
-
-    }
-
-}
-
-
-function hideLoading() {
-
-    if (dom.globalLoading) {
-
-        dom.globalLoading.hidden =
-            true;
-
-    }
-
-}
-
-
-function showTableLoading() {
-
-    if (dom.tableLoading) {
-
-        dom.tableLoading.hidden =
-            false;
-
-    }
-
-
-    if (dom.tableEmpty) {
-
-        dom.tableEmpty.hidden =
-            true;
-
-    }
-
-
-    if (dom.tableError) {
-
-        dom.tableError.hidden =
-            true;
-
-    }
-
-
-    if (dom.tableContent) {
-
-        dom.tableContent.hidden =
-            true;
-
-    }
-
-}
-
-
-function hideTableLoading() {
-
-    if (dom.tableLoading) {
-
-        dom.tableLoading.hidden =
-            true;
-
-    }
-
-
-    if (dom.tableContent) {
-
-        dom.tableContent.hidden =
-            false;
-
-    }
-
-}
-
-
-function showEmptyState() {
-
-    if (dom.tableEmpty) {
-
-        dom.tableEmpty.hidden =
-            false;
-
-    }
-
-
-    if (dom.tableError) {
-
-        dom.tableError.hidden =
-            true;
-
-    }
-
-
-    if (dom.tableContent) {
-
-        dom.tableContent.hidden =
-            false;
-
-    }
-
-}
-
-
-function hideEmptyState() {
-
-    if (dom.tableEmpty) {
-
-        dom.tableEmpty.hidden =
-            true;
-
-    }
-
-}
-
-
-function displayError(
-    message
+function enforceFilterCompatibility(
+    changedFilter
 ) {
 
+    const region =
+        getElement(
+            'regionFilter'
+        );
+
+    const category =
+        getElement(
+            'categoryFilter'
+        );
+
+    const subcategory =
+        getElement(
+            'subcategoryFilter'
+        );
+
+
     /*
-     * Keep the user-facing message safe and generic.
+     * The source data does NOT contain:
+     *
+     * Maker x RTO x Vehicle Class
+     *
+     * Therefore RTO and vehicle class cannot be
+     * combined.
      */
 
-    const safeMessage =
-        message ||
-        'Unable to load data. Please try again.';
 
+    if (
+        changedFilter ===
+            'regionFilter' &&
+        !isAll(
+            region?.value
+        )
+    ) {
 
-    if (dom.tableError) {
+        if (category) {
 
-        const paragraph =
-            dom.tableError.querySelector(
-                'p'
-            );
-
-
-        if (paragraph) {
-
-            paragraph.textContent =
-                safeMessage;
+            category.value =
+                'all';
 
         }
 
+        if (subcategory) {
 
-        dom.tableError.hidden =
-            false;
+            subcategory.value =
+                'all';
 
-    }
-
-
-    if (dom.tableLoading) {
-
-        dom.tableLoading.hidden =
-            true;
+        }
 
     }
 
 
-    if (dom.tableContent) {
+    if (
+        (
+            changedFilter ===
+                'categoryFilter' ||
+            changedFilter ===
+                'subcategoryFilter'
+        ) &&
+        (
+            !isAll(
+                category?.value
+            ) ||
+            !isAll(
+                subcategory?.value
+            )
+        )
+    ) {
 
-        dom.tableContent.hidden =
-            true;
+        if (region) {
+
+            region.value =
+                'all';
+
+        }
 
     }
 
-}
+
+    const rtoSelected =
+        !isAll(
+            region?.value
+        );
 
 
-function clearError() {
+    const classSelected =
+        !isAll(
+            category?.value
+        ) ||
+        !isAll(
+            subcategory?.value
+        );
 
-    if (dom.tableError) {
 
-        dom.tableError.hidden =
-            true;
+    if (region) {
+
+        region.disabled =
+            classSelected;
 
     }
 
 
-    if (dom.tableContent) {
+    if (category) {
 
-        dom.tableContent.hidden =
-            false;
+        category.disabled =
+            rtoSelected;
+
+    }
+
+
+    if (subcategory) {
+
+        subcategory.disabled =
+            rtoSelected;
 
     }
 
@@ -3735,65 +1977,566 @@ function clearError() {
 
 
 /* ============================================================
-   25. EVENT LISTENERS
+   25. VALIDATE FILTERS
    ============================================================ */
 
-function attachEventListeners() {
+function validateFilters(
+    filters
+) {
 
-    const filters = [
+    if (
+        !isAll(
+            filters.fromYear
+        ) &&
+        !isAll(
+            filters.toYear
+        )
+    ) {
 
-        dom.yearFilter,
-        dom.fromYearFilter,
-        dom.toYearFilter,
-        dom.makerFilter,
-        dom.regionFilter,
-        dom.categoryFilter,
-        dom.subcategoryFilter
+        const from =
+            Number(
+                filters.fromYear
+            );
+
+        const to =
+            Number(
+                filters.toYear
+            );
+
+
+        if (
+            Number.isFinite(from) &&
+            Number.isFinite(to) &&
+            from > to
+        ) {
+
+            throw new Error(
+                'From Year cannot be greater than To Year.'
+            );
+
+        }
+
+    }
+
+
+    const rtoSelected =
+        !isAll(
+            filters.region
+        );
+
+
+    const classSelected =
+        !isAll(
+            filters.category
+        ) ||
+        !isAll(
+            filters.subcategory
+        );
+
+
+    if (
+        rtoSelected &&
+        classSelected
+    ) {
+
+        throw new Error(
+            'Region / RTO and Category / Subcategory cannot be used together because the supplied data does not contain their intersection.'
+        );
+
+    }
+
+}
+
+
+/* ============================================================
+   26. REFRESH DASHBOARD
+   ============================================================ */
+
+async function refreshDashboard() {
+
+    const filters =
+        readFilters();
+
+
+    validateFilters(
+        filters
+    );
+
+
+    state.filters =
+        filters;
+
+
+    renderActiveFilters(
+        filters
+    );
+
+
+    enforceFilterCompatibility(
+        ''
+    );
+
+
+    const requestId =
+        ++state.requestId;
+
+
+    clearError();
+
+    showLoading();
+
+
+    try {
+
+        /*
+         * Run summary and KPI requests together.
+         */
+
+        await Promise.all([
+
+            loadSummary(
+                filters,
+                requestId
+            ),
+
+            loadKpis(
+                filters,
+                requestId
+            )
+
+        ]);
+
+
+    } catch (error) {
+
+        /*
+         * Clear stale table data when the request fails.
+         */
+
+        state.rows =
+            [];
+
+
+        renderTable();
+
+
+        showError(
+            error
+        );
+
+
+    } finally {
+
+        if (
+            requestId ===
+            state.requestId
+        ) {
+
+            hideLoading();
+
+        }
+
+    }
+
+}
+
+
+/* ============================================================
+   27. FILTER CHANGE
+   ============================================================ */
+
+async function handleFilterChange(
+    filterId
+) {
+
+    try {
+
+        enforceFilterCompatibility(
+            filterId
+        );
+
+
+        const filters =
+            readFilters();
+
+
+        validateFilters(
+            filters
+        );
+
+
+        state.currentPage =
+            1;
+
+
+        /*
+         * Refresh filter options after a filter changes.
+         * This keeps the filter lists synchronized.
+         */
+
+        await loadFilterOptions(
+            filters
+        );
+
+
+        await refreshDashboard();
+
+
+    } catch (error) {
+
+        hideLoading();
+
+        showError(
+            error
+        );
+
+    }
+
+}
+
+
+/* ============================================================
+   28. CLEAR FILTERS
+   ============================================================ */
+
+async function clearFilters() {
+
+    const filterIds = [
+
+        'yearFilter',
+
+        'fromYearFilter',
+
+        'toYearFilter',
+
+        'makerFilter',
+
+        'regionFilter',
+
+        'categoryFilter',
+
+        'subcategoryFilter'
 
     ];
 
 
-    filters.forEach(
-        element => {
+    for (
+        const id of filterIds
+    ) {
 
-            element?.addEventListener(
-                'change',
-                handleFilterChange
-            );
+        const element =
+            getElement(id);
+
+
+        if (element) {
+
+            element.value =
+                'all';
 
         }
+
+    }
+
+
+    const search =
+        getElement(
+            'makerSearch'
+        );
+
+
+    if (search) {
+
+        search.value =
+            '';
+
+    }
+
+
+    state.searchTerm =
+        '';
+
+    state.currentPage =
+        1;
+
+    state.sortKey =
+        'registrations';
+
+    state.sortDirection =
+        'desc';
+
+
+    enforceFilterCompatibility(
+        ''
     );
 
 
-    dom.clearFiltersButton?.addEventListener(
-        'click',
-        resetFilters
-    );
+    try {
+
+        await loadFilterOptions(
+            readFilters()
+        );
+
+        await refreshDashboard();
+
+    } catch (error) {
+
+        showError(
+            error
+        );
+
+    }
+
+}
 
 
-    dom.makerSearch?.addEventListener(
-        'input',
-        handleMakerSearch
-    );
+/* ============================================================
+   29. SEARCH
+   ============================================================ */
+
+function handleSearch(
+    event
+) {
+
+    state.searchTerm =
+        event.target.value || '';
 
 
-    dom.previousPageButton?.addEventListener(
-        'click',
-        goToPreviousPage
-    );
+    state.currentPage =
+        1;
 
 
-    dom.nextPageButton?.addEventListener(
-        'click',
-        goToNextPage
-    );
+    renderTable();
+
+}
 
 
-    dom.pageSizeSelect?.addEventListener(
-        'change',
-        handlePageSizeChange
-    );
+/* ============================================================
+   30. PAGINATION
+   ============================================================ */
 
+function previousPage() {
+
+    if (
+        state.currentPage <=
+        1
+    ) {
+
+        return;
+
+    }
+
+
+    state.currentPage--;
+
+    renderTable();
+
+}
+
+
+function nextPage() {
+
+    const rows =
+        getVisibleRows();
+
+
+    const totalPages =
+        Math.max(
+            1,
+            Math.ceil(
+                rows.length /
+                state.pageSize
+            )
+        );
+
+
+    if (
+        state.currentPage >=
+        totalPages
+    ) {
+
+        return;
+
+    }
+
+
+    state.currentPage++;
+
+    renderTable();
+
+}
+
+
+function changePageSize(
+    event
+) {
+
+    const value =
+        Number(
+            event.target.value
+        );
+
+
+    if (
+        !CONFIG.allowedPageSizes
+            .includes(
+                value
+            )
+    ) {
+
+        return;
+
+    }
+
+
+    state.pageSize =
+        value;
+
+
+    state.currentPage =
+        1;
+
+
+    renderTable();
+
+}
+
+
+/* ============================================================
+   31. ATTACH EVENTS
+   ============================================================ */
+
+function attachEventListeners() {
+
+    const filterIds = [
+
+        'yearFilter',
+
+        'fromYearFilter',
+
+        'toYearFilter',
+
+        'makerFilter',
+
+        'regionFilter',
+
+        'categoryFilter',
+
+        'subcategoryFilter'
+
+    ];
+
+
+    for (
+        const id of filterIds
+    ) {
+
+        const element =
+            getElement(id);
+
+
+        if (!element) {
+            continue;
+        }
+
+
+        element.addEventListener(
+            'change',
+            () =>
+                handleFilterChange(
+                    id
+                )
+        );
+
+    }
+
+
+    const clearButton =
+        getElement(
+            'clearFiltersButton'
+        );
+
+
+    if (clearButton) {
+
+        clearButton.addEventListener(
+            'click',
+            clearFilters
+        );
+
+    }
+
+
+    const search =
+        getElement(
+            'makerSearch'
+        );
+
+
+    if (search) {
+
+        search.addEventListener(
+            'input',
+            handleSearch
+        );
+
+    }
+
+
+    const previous =
+        getElement(
+            'previousPageButton'
+        );
+
+
+    if (previous) {
+
+        previous.addEventListener(
+            'click',
+            previousPage
+        );
+
+    }
+
+
+    const next =
+        getElement(
+            'nextPageButton'
+        );
+
+
+    if (next) {
+
+        next.addEventListener(
+            'click',
+            nextPage
+        );
+
+    }
+
+
+    const pageSize =
+        getElement(
+            'pageSizeSelect'
+        );
+
+
+    if (pageSize) {
+
+        pageSize.addEventListener(
+            'change',
+            changePageSize
+        );
+
+    }
+
+
+    /*
+     * Existing HTML has:
+     *
+     * data-sort="maker"
+     * data-sort="registrations"
+     * data-sort="marketShare"
+     */
 
     document
         .querySelectorAll(
@@ -3815,987 +2558,107 @@ function attachEventListeners() {
 
 
     /*
-     * Prevent filter form from submitting/reloading page.
+     * Prevent the filters form from submitting/reloading
+     * the page if Enter is pressed.
      */
 
     const form =
-        document.getElementById(
+        getElement(
             'dashboardFilters'
         );
 
 
-    form?.addEventListener(
-        'submit',
-        event => {
+    if (form) {
 
-            event.preventDefault();
+        form.addEventListener(
+            'submit',
+            event => {
 
-        }
-    );
-
-}
-
-
-/*
- * Handle filter changes.
- */
-
-async function handleFilterChange(
-    event
-) {
-
-    if (
-        applicationState.updatingFilterOptions
-    ) {
-
-        return;
-
-    }
-
-
-    /*
-     * If a range value is changed,
-     * the single year selection is cleared.
-     */
-
-    if (
-        event.target ===
-            dom.fromYearFilter ||
-        event.target ===
-            dom.toYearFilter
-    ) {
-
-        normalizeYearUIState();
-
-    }
-
-
-    /*
-     * If single year is selected,
-     * clear the range.
-     */
-
-    if (
-        event.target ===
-        dom.yearFilter
-    ) {
-
-        const selected =
-            normalizeFilterValue(
-                dom.yearFilter.value
-            );
-
-
-        if (
-            selected !==
-            APP_CONFIG.allValue
-        ) {
-
-            setSelectValue(
-                dom.fromYearFilter,
-                APP_CONFIG.allValue
-            );
-
-
-            setSelectValue(
-                dom.toYearFilter,
-                APP_CONFIG.allValue
-            );
-
-        }
-
-    }
-
-
-    await applyFilters();
-
-}
-
-
-/*
- * Maker search is client-side only.
- */
-
-function handleMakerSearch(
-    event
-) {
-
-    const value =
-        String(
-            event.target.value ||
-            ''
-        );
-
-
-    clearTimeout(
-        applicationState.searchTimer
-    );
-
-
-    applicationState.searchTimer =
-        setTimeout(
-            () => {
-
-                applicationState.searchTerm =
-                    value;
-
-
-                applicationState.currentPage =
-                    1;
-
-
-                updateMakerTable();
-
-            },
-            APP_CONFIG.searchDebounceMs
-        );
-
-}
-
-
-/* ============================================================
-   26. PAGE SIZE
-   ============================================================ */
-
-function initializePageSize() {
-
-    if (!dom.pageSizeSelect) {
-
-        return;
-
-    }
-
-
-    const configuredValue =
-        String(
-            APP_CONFIG.defaultPageSize
-        );
-
-
-    const optionExists =
-        Array.from(
-            dom.pageSizeSelect.options
-        ).some(
-            option =>
-                option.value ===
-                configuredValue
-        );
-
-
-    if (
-        !optionExists
-    ) {
-
-        dom.pageSizeSelect.value =
-            String(
-                APP_CONFIG.defaultPageSize
-            );
-
-    } else {
-
-        dom.pageSizeSelect.value =
-            configuredValue;
-
-    }
-
-
-    applicationState.pageSize =
-        Number(
-            dom.pageSizeSelect.value
-        );
-
-}
-
-
-/* ============================================================
-   27. DROPDOWN HELPERS
-   ============================================================ */
-
-function populateSelect(
-    selectElement,
-    values,
-    allLabel = 'All',
-    selectedValue = APP_CONFIG.allValue
-) {
-
-    if (!selectElement) {
-
-        return;
-
-    }
-
-
-    const normalizedValues =
-        uniqueSortedValues(
-            values
-        );
-
-
-    const fragment =
-        document.createDocumentFragment();
-
-
-    const allOption =
-        document.createElement(
-            'option'
-        );
-
-
-    allOption.value =
-        APP_CONFIG.allValue;
-
-
-    allOption.textContent =
-        allLabel;
-
-
-    fragment.appendChild(
-        allOption
-    );
-
-
-    normalizedValues.forEach(
-        value => {
-
-            const option =
-                document.createElement(
-                    'option'
-                );
-
-
-            option.value =
-                String(value);
-
-
-            option.textContent =
-                String(value);
-
-
-            fragment.appendChild(
-                option
-            );
-
-        }
-    );
-
-
-    selectElement.replaceChildren(
-        fragment
-    );
-
-
-    const normalizedSelected =
-        normalizeFilterValue(
-            selectedValue
-        );
-
-
-    if (
-        normalizedSelected ===
-        APP_CONFIG.allValue
-    ) {
-
-        selectElement.value =
-            APP_CONFIG.allValue;
-
-        return;
-
-    }
-
-
-    const exists =
-        normalizedValues.some(
-            value =>
-                String(value) ===
-                normalizedSelected
-        );
-
-
-    selectElement.value =
-        exists
-            ? normalizedSelected
-            : APP_CONFIG.allValue;
-
-}
-
-
-function setSelectValue(
-    selectElement,
-    value
-) {
-
-    if (!selectElement) {
-
-        return;
-
-    }
-
-
-    const normalized =
-        normalizeFilterValue(
-            value
-        );
-
-
-    const exists =
-        Array.from(
-            selectElement.options
-        ).some(
-            option =>
-                option.value ===
-                normalized
-        );
-
-
-    selectElement.value =
-        exists
-            ? normalized
-            : APP_CONFIG.allValue;
-
-}
-
-
-/* ============================================================
-   28. RESPONSE NORMALIZATION
-   ============================================================ */
-
-
-/*
- * Normalize filter-options RPC responses.
- *
- * Supports common response shapes:
- *
- * {
- *   years: [],
- *   makers: [],
- *   regions: [],
- *   categories: [],
- *   subcategories: []
- * }
- *
- * or a single row / array of rows.
- */
-
-function normalizeFilterOptionsResponse(
-    response
-) {
-
-    if (!response) {
-
-        return {
-
-            years: [],
-            makers: [],
-            regions: [],
-            categories: [],
-            subcategories: []
-
-        };
-
-    }
-
-
-    if (
-        Array.isArray(response)
-    ) {
-
-        return normalizeFilterOptionRows(
-            response
-        );
-
-    }
-
-
-    if (
-        typeof response !==
-        'object'
-    ) {
-
-        return {
-
-            years: [],
-            makers: [],
-            regions: [],
-            categories: [],
-            subcategories: []
-
-        };
-
-    }
-
-
-    return {
-
-        years:
-            uniqueSortedValues(
-                extractOptionArray(
-                    response,
-                    [
-                        'years',
-                        'year',
-                        'available_years',
-                        'availableYears'
-                    ]
-                )
-            ),
-
-        makers:
-            uniqueSortedValues(
-                extractOptionArray(
-                    response,
-                    [
-                        'makers',
-                        'maker',
-                        'maker_names',
-                        'makerNames'
-                    ]
-                )
-            ),
-
-        regions:
-            uniqueSortedValues(
-                extractOptionArray(
-                    response,
-                    [
-                        'regions',
-                        'region',
-                        'rtos',
-                        'rto',
-                        'rto_names'
-                    ]
-                )
-            ),
-
-        categories:
-            uniqueSortedValues(
-                extractOptionArray(
-                    response,
-                    [
-                        'categories',
-                        'category'
-                    ]
-                )
-            ),
-
-        subcategories:
-            uniqueSortedValues(
-                extractOptionArray(
-                    response,
-                    [
-                        'subcategories',
-                        'subcategory'
-                    ]
-                )
-            )
-
-    };
-
-}
-
-
-/*
- * Normalize an array of option rows.
- */
-
-function normalizeFilterOptionRows(
-    rows
-) {
-
-    const result = {
-
-        years: [],
-        makers: [],
-        regions: [],
-        categories: [],
-        subcategories: []
-
-    };
-
-
-    rows.forEach(
-        row => {
-
-            if (
-                !row ||
-                typeof row !== 'object'
-            ) {
-
-                return;
+                event.preventDefault();
 
             }
-
-
-            result.years.push(
-                firstExistingValue(
-                    row,
-                    [
-                        'year',
-                        'years'
-                    ]
-                )
-            );
-
-
-            result.makers.push(
-                firstExistingValue(
-                    row,
-                    [
-                        'maker',
-                        'makers',
-                        'maker_name',
-                        'makerName'
-                    ]
-                )
-            );
-
-
-            result.regions.push(
-                firstExistingValue(
-                    row,
-                    [
-                        'region',
-                        'regions',
-                        'rto',
-                        'rto_name'
-                    ]
-                )
-            );
-
-
-            result.categories.push(
-                firstExistingValue(
-                    row,
-                    [
-                        'category',
-                        'categories'
-                    ]
-                )
-            );
-
-
-            result.subcategories.push(
-                firstExistingValue(
-                    row,
-                    [
-                        'subcategory',
-                        'subcategories'
-                    ]
-                )
-            );
-
-        }
-    );
-
-
-    return {
-
-        years:
-            uniqueSortedValues(
-                result.years
-            ),
-
-        makers:
-            uniqueSortedValues(
-                result.makers
-            ),
-
-        regions:
-            uniqueSortedValues(
-                result.regions
-            ),
-
-        categories:
-            uniqueSortedValues(
-                result.categories
-            ),
-
-        subcategories:
-            uniqueSortedValues(
-                result.subcategories
-            )
-
-    };
-
-}
-
-
-/*
- * Extract arrays from object response.
- */
-
-function extractOptionArray(
-    source,
-    keys
-) {
-
-    for (
-        const key of keys
-    ) {
-
-        if (
-            source &&
-            Object.prototype.hasOwnProperty.call(
-                source,
-                key
-            )
-        ) {
-
-            const value =
-                source[key];
-
-
-            if (
-                Array.isArray(value)
-            ) {
-
-                return value;
-
-            }
-
-
-            if (
-                value !== null &&
-                value !== undefined &&
-                value !== ''
-            ) {
-
-                return [value];
-
-            }
-
-        }
+        );
 
     }
-
-
-    return [];
 
 }
 
 
 /* ============================================================
-   29. FORMATTING
+   32. INITIALIZE
    ============================================================ */
 
+async function initializeDashboard() {
 
-/*
- * Indian number formatting.
- */
-
-function formatIndianNumber(
-    value
-) {
-
-    const number =
-        safeNumber(value);
+    console.log(
+        '[Dashboard] Initializing...'
+    );
 
 
-    return new Intl.NumberFormat(
-        'en-IN',
-        {
-            maximumFractionDigits: 0
-        }
-    ).format(number);
-
-}
+    showLoading();
 
 
-/*
- * Percentage formatting.
- */
+    try {
 
-function formatPercentage(
-    value
-) {
-
-    const number =
-        safeNumber(value);
+        await initializeSupabase();
 
 
-    return `${number.toFixed(2)}%`;
-
-}
+        attachEventListeners();
 
 
-/*
- * Safely normalize a number.
- */
+        /*
+         * First load the filter metadata.
+         */
 
-function safeNumber(
-    value
-) {
-
-    if (
-        value === null ||
-        value === undefined ||
-        value === ''
-    ) {
-
-        return 0;
-
-    }
-
-
-    if (
-        typeof value === 'number'
-    ) {
-
-        return Number.isFinite(value)
-            ? value
-            : 0;
-
-    }
-
-
-    const cleaned =
-        String(value)
-            .replace(
-                /,/g,
-                ''
-            )
-            .trim();
-
-
-    if (!cleaned) {
-
-        return 0;
-
-    }
-
-
-    const number =
-        Number(cleaned);
-
-
-    if (
-        !Number.isFinite(number)
-    ) {
-
-        console.warn(
-            'Invalid numeric value:',
-            value
+        await loadFilterOptions(
+            {
+                year: 'all',
+                fromYear: 'all',
+                toYear: 'all',
+                maker: 'all',
+                region: 'all',
+                category: 'all',
+                subcategory: 'all'
+            }
         );
 
 
-        return 0;
+        /*
+         * Then load the actual dashboard.
+         */
+
+        await refreshDashboard();
+
+
+        console.log(
+            '[Dashboard] Ready.'
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            '[Dashboard] Initialization failed:',
+            error
+        );
+
+
+        showError(
+            error
+        );
+
+
+    } finally {
+
+        hideLoading();
 
     }
-
-
-    return number;
-
-}
-
-
-/*
- * Nullable number.
- */
-
-function normalizeNullableNumber(
-    value
-) {
-
-    if (
-        value === null ||
-        value === undefined ||
-        value === ''
-    ) {
-
-        return null;
-
-    }
-
-
-    return safeNumber(value);
-
-}
-
-
-/*
- * String normalization.
- */
-
-function normalizeString(
-    value
-) {
-
-    if (
-        value === null ||
-        value === undefined
-    ) {
-
-        return '';
-
-    }
-
-
-    return String(value).trim();
-
-}
-
-
-/*
- * Unique sorted values.
- */
-
-function uniqueSortedValues(
-    values
-) {
-
-    if (!Array.isArray(values)) {
-
-        return [];
-
-    }
-
-
-    const cleaned =
-        values
-            .filter(
-                value =>
-                    value !== null &&
-                    value !== undefined &&
-                    String(value).trim() !== ''
-            )
-            .map(
-                value =>
-                    String(value).trim()
-            );
-
-
-    return Array.from(
-        new Set(cleaned)
-    ).sort(
-        (
-            a,
-            b
-        ) =>
-            a.localeCompare(
-                b,
-                undefined,
-                {
-                    numeric: true,
-                    sensitivity: 'base'
-                }
-            )
-    );
-
-}
-
-
-/*
- * Normalize years separately.
- */
-
-function normalizeYearValues(
-    values
-) {
-
-    if (!Array.isArray(values)) {
-
-        return [];
-
-    }
-
-
-    const years =
-        values
-            .map(
-                value =>
-                    Number(value)
-            )
-            .filter(
-                value =>
-                    Number.isFinite(value)
-            );
-
-
-    return Array.from(
-        new Set(years)
-    ).sort(
-        (
-            a,
-            b
-        ) =>
-            a - b
-    );
 
 }
 
 
 /* ============================================================
-   30. DOM HELPERS
-   ============================================================ */
-
-function setText(
-    element,
-    value
-) {
-
-    if (!element) {
-
-        return;
-
-    }
-
-
-    element.textContent =
-        String(value);
-
-}
-
-
-function firstExistingValue(
-    object,
-    keys
-) {
-
-    if (
-        !object ||
-        typeof object !== 'object'
-    ) {
-
-        return undefined;
-
-    }
-
-
-    for (
-        const key of keys
-    ) {
-
-        if (
-            Object.prototype.hasOwnProperty.call(
-                object,
-                key
-            )
-        ) {
-
-            const value =
-                object[key];
-
-
-            if (
-                value !== null &&
-                value !== undefined
-            ) {
-
-                return value;
-
-            }
-
-        }
-
-    }
-
-
-    return undefined;
-
-}
-
-
-/* ============================================================
-   31. INITIALIZATION ENTRY POINT
+   33. START APPLICATION
    ============================================================ */
 
 document.addEventListener(
