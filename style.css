@@ -501,13 +501,81 @@ p {
 }
 
 
-.filter-form {
-    display: flex;
-    flex-direction: column;
+/* =========================================================
+   FILTER FORM
+   ========================================================= */
 
-    gap: 12px;
+.filter-form {
+    display: grid;
+
+    grid-template-columns:
+        minmax(0, 1fr)
+        minmax(0, 1fr);
+
+    column-gap: 10px;
+    row-gap: 12px;
 }
 
+
+/* =========================================================
+   FILTER LAYOUT
+   ========================================================= */
+
+/*
+   Year stays full width.
+*/
+.filter-form > .filter-group:nth-child(1) {
+    grid-column: 1 / -1;
+}
+
+
+/*
+   From Year + To Year sit side by side.
+*/
+.filter-form > .filter-group:nth-child(2) {
+    grid-column: 1;
+}
+
+.filter-form > .filter-group:nth-child(3) {
+    grid-column: 2;
+}
+
+
+/*
+   All remaining filters stay full width.
+*/
+.filter-form > .filter-group:nth-child(n + 4) {
+    grid-column: 1 / -1;
+}
+
+
+/*
+   Clear Filters button stays full width.
+*/
+.filter-form > .clear-filters-button {
+    grid-column: 1 / -1;
+}
+
+
+/* =========================================================
+   NARROW SIDEBAR / MOBILE
+   ========================================================= */
+
+@media (max-width: 520px) {
+
+    .filter-form {
+        grid-template-columns: 1fr;
+    }
+
+    .filter-form > .filter-group:nth-child(1),
+    .filter-form > .filter-group:nth-child(2),
+    .filter-form > .filter-group:nth-child(3),
+    .filter-form > .filter-group:nth-child(n + 4),
+    .filter-form > .clear-filters-button {
+        grid-column: 1;
+    }
+
+}
 
 .filter-group {
     display: flex;
