@@ -1472,3 +1472,39 @@ p {
     }
 
 }
+
+/* =========================================================
+   YEAR RANGE FILTERS — SIDE BY SIDE
+   ========================================================= */
+
+.year-range-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+}
+
+.year-range-filters .filter-group {
+    min-width: 0;
+}
+
+
+/* Keep the two dropdowns side by side on desktop/tablet */
+@media (min-width: 600px) {
+
+    .year-range-filters {
+        grid-template-columns: 1fr 1fr;
+    }
+
+}
+
+
+/* Stack them again on very narrow screens */
+@media (max-width: 599px) {
+
+    .year-range-filters {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+}
