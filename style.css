@@ -2,20 +2,19 @@
    VEHICLE REGISTRATION ANALYTICS DASHBOARD
    File: /style.css
 
-   VISUAL STYLE:
-   - Dark navy filter sidebar
-   - Clean white dashboard surface
-   - Poppins typography
-   - Professional blue accent system
-   - Rounded cards
-   - Compact enterprise dashboard spacing
-   - Searchable / polished filter controls
-   ========================================================= */
+   VISUAL UPDATE:
+   - Blue / white / slate colour system
+   - Based on the first dashboard design
+   - Existing HTML class names preserved
+   - Existing layout preserved
+   - Existing responsive behavior preserved
+   - Dropdown menus explicitly positioned DOWNWARD
+========================================================= */
 
 
 /* =========================================================
    1. DESIGN TOKENS
-   ========================================================= */
+========================================================= */
 
 :root {
 
@@ -24,50 +23,51 @@
     --primary-dark: #1d4ed8;
     --primary-soft: #eff6ff;
 
+    /* Accent */
+    --accent: #3b82f6;
+    --accent-light: #dbeafe;
+
     /* Status */
     --success: #16a34a;
-    --success-soft: #f0fdf4;
+    --success-light: #f0fdf4;
 
     --danger: #dc2626;
-    --danger-soft: #fef2f2;
+    --danger-light: #fef2f2;
 
     --warning: #d97706;
-    --warning-soft: #fffbeb;
+    --warning-light: #fffbeb;
+
 
     /* Page */
-    --page: #f5f7fb;
+    --page-bg: #f5f7fb;
     --surface: #ffffff;
-    --surface-soft: #f8fafc;
+    --surface-muted: #f8fafc;
+
 
     /* Text */
-    --text: #111827;
+    --text-primary: #111827;
     --text-secondary: #475569;
     --text-muted: #94a3b8;
     --text-light: #cbd5e1;
 
+
     /* Borders */
     --border: #e2e8f0;
+    --border-light: #eef2f7;
     --border-dark: #cbd5e1;
 
-    /* Table */
-    --row-alt: #fbfcfe;
+
+    /* Tables */
     --row-hover: #f8fafc;
+    --row-alt: #fbfcfe;
 
-    /* Sidebar */
-    --sidebar: #0f172a;
-    --sidebar-soft: #172033;
-    --sidebar-hover: #1d293b;
-    --sidebar-border: #334155;
-
-    --sidebar-text: #f8fafc;
-    --sidebar-secondary: #cbd5e1;
-    --sidebar-muted: #94a3b8;
 
     /* Radius */
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 18px;
     --radius-xl: 20px;
+
 
     /* Shadows */
     --shadow-xs:
@@ -82,20 +82,25 @@
     --shadow-lg:
         0 16px 40px rgba(15, 23, 42, 0.10);
 
+
     /* Layout */
-    --sidebar-width: 300px;
-    --header-height: 76px;
+    --sidebar-width: 260px;
+
+    --header-height: 74px;
+
     --content-max-width: 1600px;
+
 
     /* Animation */
     --transition-fast: 150ms ease;
+
     --transition-base: 220ms ease;
 }
 
 
 /* =========================================================
    2. RESET
-   ========================================================= */
+========================================================= */
 
 *,
 *::before,
@@ -114,8 +119,8 @@ body {
 
     margin: 0;
 
-    background: var(--page);
-    color: var(--text);
+    background: var(--page-bg);
+    color: var(--text-primary);
 
     font-family:
         "Poppins",
@@ -158,7 +163,6 @@ a {
 h1,
 h2,
 h3,
-h4,
 p {
     margin-top: 0;
 }
@@ -188,7 +192,7 @@ p {
 
 /* =========================================================
    3. GLOBAL LOADING OVERLAY
-   ========================================================= */
+========================================================= */
 
 .loading-overlay {
     position: fixed;
@@ -201,7 +205,8 @@ p {
 
     padding: 24px;
 
-    background: rgba(245, 247, 251, 0.82);
+    background:
+        rgba(245, 247, 251, 0.82);
 
     backdrop-filter: blur(5px);
     -webkit-backdrop-filter: blur(5px);
@@ -218,15 +223,16 @@ p {
 
     color: var(--primary-dark);
 
-    background: rgba(255, 255, 255, 0.98);
+    background: rgba(255, 255, 255, 0.97);
 
     border: 1px solid var(--border);
+
     border-radius: var(--radius-lg);
 
     box-shadow: var(--shadow-lg);
 
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
 }
 
 .loading-spinner {
@@ -237,7 +243,7 @@ p {
 
     flex: 0 0 20px;
 
-    border: 2px solid #bfdbfe;
+    border: 2px solid #dbeafe;
     border-top-color: var(--primary);
 
     border-radius: 50%;
@@ -263,10 +269,11 @@ p {
 
 /* =========================================================
    4. HEADER
-   ========================================================= */
+========================================================= */
 
 .dashboard-header {
     position: relative;
+
     z-index: 20;
 
     min-height: var(--header-height);
@@ -275,11 +282,17 @@ p {
     align-items: center;
     justify-content: space-between;
 
-    gap: 25px;
+    gap: 24px;
 
-    padding: 14px 28px;
+    padding: 12px 24px;
 
-    background: var(--surface);
+    background:
+        linear-gradient(
+            110deg,
+            #ffffff 0%,
+            #ffffff 58%,
+            #eff6ff 100%
+        );
 
     border-bottom: 1px solid var(--border);
 
@@ -290,7 +303,7 @@ p {
     display: flex;
     align-items: center;
 
-    gap: 13px;
+    gap: 12px;
 
     min-width: 0;
 }
@@ -306,23 +319,26 @@ p {
 
     color: #ffffff;
 
-    background: var(--primary);
+    background:
+        linear-gradient(
+            135deg,
+            var(--primary),
+            var(--accent)
+        );
 
     border-radius: 12px;
 
     box-shadow:
-        0 5px 14px rgba(37, 99, 235, 0.20);
-
-    font-size: 13px;
-    font-weight: 700;
+        0 5px 14px rgba(37, 99, 235, 0.22);
 }
 
 #dashboard-title {
     margin: 0;
 
-    color: var(--text);
+    color: var(--text-primary);
 
-    font-size: clamp(19px, 2vw, 25px);
+    font-size: clamp(18px, 2vw, 25px);
+
     font-weight: 700;
 
     line-height: 1.2;
@@ -331,7 +347,7 @@ p {
 }
 
 .dashboard-header__subtitle {
-    margin: 4px 0 0;
+    margin: 3px 0 0;
 
     color: var(--text-secondary);
 
@@ -357,17 +373,19 @@ p {
 .data-period__label {
     color: var(--text-muted);
 
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 600;
 
     text-transform: uppercase;
-    letter-spacing: 0.07em;
+
+    letter-spacing: 0.055em;
 }
 
 #data-year-range {
-    color: var(--text);
+    color: var(--text-primary);
 
     font-size: 14px;
+
     font-weight: 700;
 }
 
@@ -379,9 +397,9 @@ p {
 }
 
 .unit-label {
-    color: var(--text-muted);
+    color: var(--text-secondary);
 
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
 
     white-space: nowrap;
@@ -390,7 +408,7 @@ p {
 
 /* =========================================================
    5. MAIN LAYOUT
-   ========================================================= */
+========================================================= */
 
 .dashboard-layout {
     display: grid;
@@ -404,28 +422,31 @@ p {
 }
 
 .filter-sidebar {
-    position: relative;
-
     min-width: 0;
 
-    padding: 24px 18px;
+    padding: 20px 18px;
 
-    background: var(--sidebar);
+    background: #0f172a;
 
-    color: var(--sidebar-text);
+    color: #f8fafc;
 
-    border-right: 1px solid #0b1220;
+    border-right: 1px solid #1e293b;
 
     overflow: visible;
+
+    position: relative;
+
+    z-index: 50;
 }
 
 .dashboard-content {
     min-width: 0;
 
     width: 100%;
+
     max-width: var(--content-max-width);
 
-    padding: 28px 30px 40px;
+    padding: 25px 28px 35px;
 
     margin: 0 auto;
 
@@ -439,7 +460,7 @@ p {
 
 /* =========================================================
    6. SIDEBAR
-   ========================================================= */
+========================================================= */
 
 .filter-sidebar__header {
     display: flex;
@@ -448,19 +469,20 @@ p {
 
     gap: 12px;
 
-    margin-bottom: 22px;
-    padding: 2px 3px 17px;
+    margin-bottom: 18px;
 
-    border-bottom:
-        1px solid rgba(255, 255, 255, 0.08);
+    padding: 2px 3px 13px;
+
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .filter-sidebar__header h2 {
-    margin: 3px 0 0;
+    margin: 1px 0 0;
 
     color: #ffffff;
 
     font-size: 17px;
+
     font-weight: 600;
 
     line-height: 1.2;
@@ -475,10 +497,9 @@ p {
 
     color: #60a5fa;
 
-    background: rgba(37, 99, 235, 0.14);
+    background: rgba(37, 99, 235, 0.15);
 
-    border:
-        1px solid rgba(96, 165, 250, 0.16);
+    border: 1px solid rgba(96, 165, 250, 0.18);
 
     border-radius: 9px;
 }
@@ -489,18 +510,20 @@ p {
     color: #60a5fa;
 
     font-size: 9px;
+
     font-weight: 700;
 
     line-height: 1.2;
 
     text-transform: uppercase;
-    letter-spacing: 0.13em;
+
+    letter-spacing: 0.11em;
 }
 
 
 /* =========================================================
    FILTER FORM
-   ========================================================= */
+========================================================= */
 
 .filter-form {
     display: grid;
@@ -510,26 +533,18 @@ p {
         minmax(0, 1fr);
 
     column-gap: 10px;
-    row-gap: 16px;
+
+    row-gap: 14px;
 }
 
 
 /* =========================================================
    FILTER LAYOUT
-   ========================================================= */
-
-/*
-Year stays full width.
-*/
+========================================================= */
 
 .filter-form > .filter-group:nth-child(1) {
     grid-column: 1 / -1;
 }
-
-
-/*
-From Year + To Year
-*/
 
 .year-range-filters {
     grid-column: 1 / -1;
@@ -541,53 +556,18 @@ From Year + To Year
         minmax(0, 1fr);
 
     column-gap: 10px;
+
+    width: 100%;
 }
 
 .year-range-filters .filter-group {
     min-width: 0;
 }
 
-
-/*
-Maker
-*/
-
-.filter-form > .filter-group:nth-child(3) {
-    grid-column: 1 / -1;
-}
-
-
-/*
-Region / RTO
-*/
-
-.filter-form > .filter-group:nth-child(4) {
-    grid-column: 1 / -1;
-}
-
-
-/*
-Category
-*/
-
-.filter-form > .filter-group:nth-child(5) {
-    grid-column: 1 / -1;
-}
-
-
-/*
-Subcategory
-*/
-
-.filter-form > .filter-group:nth-child(6) {
-    grid-column: 1 / -1;
-}
-
-
-/*
-Clear button
-*/
-
+.filter-form > .filter-group:nth-child(3),
+.filter-form > .filter-group:nth-child(4),
+.filter-form > .filter-group:nth-child(5),
+.filter-form > .filter-group:nth-child(6),
 .filter-form > .clear-filters-button {
     grid-column: 1 / -1;
 }
@@ -595,39 +575,46 @@ Clear button
 
 /* =========================================================
    FILTER GROUP
-   ========================================================= */
+========================================================= */
 
 .filter-group {
+    position: relative;
+
     display: flex;
+
     flex-direction: column;
 
-    gap: 7px;
+    gap: 6px;
+
+    min-width: 0;
 }
 
 .filter-group label {
     color: #cbd5e1;
 
     font-size: 11px;
+
     font-weight: 600;
 }
 
 
 /* =========================================================
-   FILTER INPUTS / SELECTS
-   ========================================================= */
+   SIDEBAR SELECTS
+========================================================= */
 
 .filter-group select,
 #makerSearch,
 #pageSizeSelect {
-    min-height: 43px;
 
-    padding: 9px 34px 9px 12px;
+    min-height: 39px;
+
+    padding: 8px 34px 8px 11px;
 
     color: #e2e8f0;
 
-    background-color: var(--sidebar-soft);
+    background-color: #172033;
 
-    border: 1px solid var(--sidebar-border);
+    border: 1px solid #334155;
 
     border-radius: var(--radius-sm);
 
@@ -655,8 +642,8 @@ Clear button
         );
 
     background-position:
-        calc(100% - 14px) 18px,
-        calc(100% - 9px) 18px;
+        calc(100% - 14px) 16px,
+        calc(100% - 9px) 16px;
 
     background-size:
         5px 5px,
@@ -670,15 +657,13 @@ Clear button
 #pageSizeSelect:hover {
     border-color: #475569;
 
-    background-color: var(--sidebar-hover);
+    background-color: #1d293b;
 }
 
 .filter-group select:focus,
 #makerSearch:focus,
 #pageSizeSelect:focus {
     border-color: #60a5fa;
-
-    background-color: var(--sidebar-hover);
 
     box-shadow:
         0 0 0 3px rgba(96, 165, 250, 0.12);
@@ -695,72 +680,336 @@ Clear button
 }
 
 .filter-group select option {
-    color: #e2e8f0;
+    background: #172033;
 
-    background: var(--sidebar);
+    color: #e2e8f0;
 }
 
 
 /* =========================================================
-   SEARCH INPUT
-   ========================================================= */
+   IMPORTANT:
+   CUSTOM DROPDOWNS MUST OPEN DOWNWARD
+========================================================= */
 
-#makerSearch {
-    padding-left: 34px;
-    padding-right: 10px;
+/*
+   If your HTML/JS contains a custom dropdown component,
+   these rules force its menu below the trigger.
 
-    background: var(--sidebar-soft);
+   "top" is explicitly set.
+   "bottom" is explicitly reset.
+*/
+
+.searchable-select,
+.custom-select,
+.dropdown,
+.select-wrapper {
+    position: relative;
 }
 
-.search-box {
-    position: relative;
 
-    display: flex;
-    align-items: center;
+/* Common custom dropdown menu names */
+
+.searchable-select-menu,
+.custom-select-menu,
+.dropdown-menu,
+.select-menu {
+
+    position: absolute !important;
+
+    top: calc(100% + 6px) !important;
+
+    bottom: auto !important;
+
+    left: 0;
+
+    right: 0;
+
+    z-index: 5000;
+
+    max-height: 280px;
+
+    overflow-y: auto;
+
+    background: #172033;
+
+    border: 1px solid #334155;
+
+    border-radius: 10px;
+
+    box-shadow:
+        0 18px 35px rgba(0, 0, 0, 0.30);
+}
+
+
+/*
+   Prevent any "drop-up" modifier from reversing
+   the dropdown direction.
+*/
+
+.searchable-select-menu.drop-up,
+.custom-select-menu.drop-up,
+.dropdown-menu.drop-up,
+.select-menu.drop-up {
+
+    top: calc(100% + 6px) !important;
+
+    bottom: auto !important;
+}
+
+
+/* =========================================================
+   SEARCHABLE DROPDOWN
+========================================================= */
+
+.searchable-select {
+    position: relative;
 
     width: 100%;
 }
 
-.search-box svg {
-    position: absolute;
+.searchable-select-trigger {
+    width: 100%;
 
-    left: 10px;
+    min-height: 39px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 10px;
+
+    padding: 0 11px;
+
+    border: 1px solid #334155;
+
+    border-radius: var(--radius-sm);
+
+    background: #172033;
+
+    color: #e2e8f0;
+
+    text-align: left;
+
+    transition:
+        border-color 0.2s ease,
+        background 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.searchable-select-trigger:hover {
+    border-color: #475569;
+
+    background: #1d293b;
+}
+
+.searchable-select.open .searchable-select-trigger {
+    border-color: #60a5fa;
+
+    box-shadow:
+        0 0 0 3px rgba(96, 165, 250, 0.12);
+}
+
+.searchable-select-value {
+    overflow: hidden;
+
+    white-space: nowrap;
+
+    text-overflow: ellipsis;
+
+    font-size: 11px;
+}
+
+.select-chevron {
+    flex: 0 0 auto;
 
     color: #94a3b8;
 
-    pointer-events: none;
+    font-size: 16px;
+
+    line-height: 1;
+
+    transition:
+        transform 0.2s ease;
+}
+
+.searchable-select.open .select-chevron {
+    transform: rotate(180deg);
+}
+
+
+/*
+   Force this specific menu DOWN.
+*/
+
+.searchable-select-menu {
+
+    position: absolute !important;
+
+    top: calc(100% + 6px) !important;
+
+    bottom: auto !important;
+
+    left: 0 !important;
+
+    right: 0 !important;
+
+    z-index: 5000 !important;
+
+    display: none;
+
+    padding: 8px;
+
+    border: 1px solid #334155;
+
+    border-radius: 10px;
+
+    background: #172033;
+
+    box-shadow:
+        0 18px 35px rgba(0, 0, 0, 0.30);
+}
+
+.searchable-select.open .searchable-select-menu {
+    display: block;
+}
+
+.searchable-select-search {
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    min-height: 37px;
+
+    padding: 0 9px;
+
+    border: 1px solid #334155;
+
+    border-radius: 7px;
+
+    background: #0f172a;
+}
+
+.search-icon {
+    color: #94a3b8;
+
+    font-size: 16px;
+}
+
+.searchable-select-input {
+    width: 100%;
+
+    border: 0;
+
+    outline: 0;
+
+    background: transparent;
+
+    color: #ffffff;
+
+    font-size: 11px;
+}
+
+.searchable-select-input::placeholder {
+    color: #64748b;
+}
+
+.searchable-select-options {
+    max-height: 245px;
+
+    margin-top: 7px;
+
+    overflow-y: auto;
+}
+
+.searchable-select-option {
+    width: 100%;
+
+    min-height: 35px;
+
+    display: flex;
+
+    align-items: center;
+
+    padding: 7px 9px;
+
+    border: 0;
+
+    border-radius: 6px;
+
+    background: transparent;
+
+    color: #cbd5e1;
+
+    font-size: 11px;
+
+    text-align: left;
+
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
+}
+
+.searchable-select-option:hover,
+.searchable-select-option.highlighted {
+    background: rgba(37, 99, 235, 0.18);
+
+    color: #ffffff;
+}
+
+.searchable-select-option.selected {
+    background: rgba(37, 99, 235, 0.25);
+
+    color: #93c5fd;
+
+    font-weight: 600;
+}
+
+.searchable-select-no-results {
+    padding: 14px 9px;
+
+    color: #64748b;
+
+    font-size: 11px;
+
+    text-align: center;
 }
 
 
 /* =========================================================
    CLEAR FILTERS
-   ========================================================= */
+========================================================= */
 
 .clear-filters-button {
     display: inline-flex;
+
     align-items: center;
+
     justify-content: center;
 
-    gap: 8px;
+    gap: 7px;
 
     width: 100%;
 
-    min-height: 42px;
+    min-height: 39px;
 
     margin-top: 5px;
 
-    padding: 9px 12px;
+    padding: 8px 11px;
 
     color: #cbd5e1;
 
     background: transparent;
 
-    border:
-        1px solid var(--sidebar-border);
+    border: 1px solid #334155;
 
     border-radius: var(--radius-sm);
 
     font-size: 11px;
+
     font-weight: 600;
 
     transition:
@@ -773,7 +1022,7 @@ Clear button
 .clear-filters-button:hover {
     color: #ffffff;
 
-    background: var(--sidebar-soft);
+    background: #172033;
 
     border-color: #475569;
 }
@@ -784,45 +1033,51 @@ Clear button
 
 .clear-filters-button:focus-visible {
     outline: 2px solid #60a5fa;
+
     outline-offset: 2px;
 }
 
 
 /* =========================================================
    7. ACTIVE FILTERS
-   ========================================================= */
+========================================================= */
 
 .active-filters {
     display: flex;
+
     flex-wrap: wrap;
+
     align-items: center;
 
     gap: 7px;
 
     min-height: 28px;
 
-    margin-bottom: 18px;
+    margin-bottom: 16px;
 }
 
 .active-filters__label {
     color: var(--text-muted);
 
     font-size: 9px;
+
     font-weight: 700;
 
-    margin-right: 3px;
+    margin-right: 2px;
+
+    letter-spacing: 0.08em;
 
     text-transform: uppercase;
-    letter-spacing: 0.10em;
 }
 
 .active-filter {
     display: inline-flex;
+
     align-items: center;
 
-    min-height: 27px;
+    min-height: 26px;
 
-    padding: 4px 10px;
+    padding: 4px 9px;
 
     color: var(--primary-dark);
 
@@ -833,6 +1088,7 @@ Clear button
     border-radius: 999px;
 
     font-size: 10px;
+
     font-weight: 600;
 }
 
@@ -853,24 +1109,27 @@ Clear button
 
 /* =========================================================
    8. SECTION HEADINGS
-   ========================================================= */
+========================================================= */
 
 .section-heading {
     display: flex;
-    align-items: flex-start;
+
+    align-items: center;
+
     justify-content: space-between;
 
     gap: 15px;
 
-    margin-bottom: 13px;
+    margin-bottom: 12px;
 }
 
 .section-heading h2 {
-    margin: 3px 0 0;
+    margin: 2px 0 0;
 
-    color: var(--text);
+    color: var(--text-primary);
 
     font-size: 18px;
+
     font-weight: 700;
 
     line-height: 1.3;
@@ -879,13 +1138,13 @@ Clear button
 }
 
 .section-heading--table {
-    padding: 0 0 13px;
+    padding: 16px 18px 0;
 }
 
 
 /* =========================================================
    9. KPI GRID
-   ========================================================= */
+========================================================= */
 
 .kpi-grid {
     display: grid;
@@ -894,29 +1153,28 @@ Clear button
         repeat(4, minmax(0, 1fr));
 
     gap: 15px;
-
-    margin-bottom: 22px;
 }
 
 .kpi-card {
     position: relative;
 
     display: flex;
+
     align-items: center;
 
-    gap: 15px;
+    gap: 14px;
 
     min-width: 0;
-    min-height: 125px;
 
-    padding: 19px;
+    min-height: 115px;
+
+    padding: 18px;
 
     overflow: hidden;
 
     background: var(--surface);
 
-    border:
-        1px solid var(--border);
+    border: 1px solid var(--border);
 
     border-radius: var(--radius-lg);
 
@@ -931,7 +1189,7 @@ Clear button
 .kpi-card:hover {
     transform: translateY(-2px);
 
-    border-color: #d2dbe7;
+    border-color: #d1dce9;
 
     box-shadow: var(--shadow-md);
 }
@@ -940,9 +1198,11 @@ Clear button
     position: absolute;
 
     right: -25px;
+
     bottom: -30px;
 
     width: 95px;
+
     height: 95px;
 
     border-radius: 50%;
@@ -951,19 +1211,22 @@ Clear button
 
     content: "";
 
-    opacity: 0.8;
+    opacity: 0.9;
 }
 
 .kpi-card__icon {
     position: relative;
+
     z-index: 1;
 
     display: grid;
+
     place-items: center;
 
     flex: 0 0 45px;
 
     width: 45px;
+
     height: 45px;
 
     color: var(--primary);
@@ -971,18 +1234,17 @@ Clear button
     background: var(--primary-soft);
 
     border-radius: 12px;
-
-    font-size: 12px;
-    font-weight: 700;
 }
 
 .kpi-card__content {
     position: relative;
+
     z-index: 1;
 
     min-width: 0;
 
     display: flex;
+
     flex-direction: column;
 }
 
@@ -990,6 +1252,7 @@ Clear button
     color: var(--text-muted);
 
     font-size: 10px;
+
     font-weight: 600;
 
     line-height: 1.25;
@@ -1000,9 +1263,10 @@ Clear button
 
     margin-top: 3px;
 
-    color: var(--text);
+    color: var(--text-primary);
 
-    font-size: clamp(20px, 2vw, 25px);
+    font-size: clamp(19px, 2vw, 25px);
+
     font-weight: 700;
 
     line-height: 1.15;
@@ -1010,30 +1274,31 @@ Clear button
     white-space: nowrap;
 
     overflow: hidden;
+
     text-overflow: ellipsis;
 }
 
 .kpi-card__meta {
     margin-top: 4px;
 
-    color: var(--success);
+    color: var(--text-muted);
 
     font-size: 9px;
-    font-weight: 600;
+
+    font-weight: 500;
 }
 
 
 /* =========================================================
    10. TABLE CARD
-   ========================================================= */
+========================================================= */
 
 .table-card {
     overflow: hidden;
 
     background: var(--surface);
 
-    border:
-        1px solid var(--border);
+    border: 1px solid var(--border);
 
     border-radius: var(--radius-lg);
 
@@ -1042,32 +1307,31 @@ Clear button
 
 .table-toolbar {
     display: flex;
+
     align-items: center;
+
     justify-content: space-between;
 
     gap: 12px;
 
-    padding: 13px 18px;
+    padding: 12px 18px;
 
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border-light);
 
-    background: var(--surface-soft);
+    border-bottom: 1px solid var(--border-light);
+
+    background: var(--surface-muted);
 }
 
 .table-toolbar__left {
     width: min(330px, 100%);
 }
 
-
-/* =========================================================
-   TABLE SEARCH BOX
-   ========================================================= */
-
 .search-box {
     position: relative;
 
     display: flex;
+
     align-items: center;
 
     width: 100%;
@@ -1076,67 +1340,48 @@ Clear button
 .search-box svg {
     position: absolute;
 
-    left: 11px;
+    left: 10px;
 
     color: var(--text-muted);
 
     pointer-events: none;
 }
 
+#makerSearch {
+    padding-left: 34px;
 
-/*
-The table search should be light,
-unlike the sidebar filter search.
-*/
+    padding-right: 10px;
 
-.table-toolbar #makerSearch {
-    min-height: 38px;
-
-    padding-left: 35px;
-
-    color: var(--text);
+    color: var(--text-primary);
 
     background: var(--surface);
 
     border-color: var(--border);
 }
 
-.table-toolbar #makerSearch:hover {
-    background: var(--surface);
-
-    border-color: var(--border-dark);
-}
-
-.table-toolbar #makerSearch:focus {
-    background: var(--surface);
-
-    border-color: #93c5fd;
-
-    box-shadow:
-        0 0 0 3px rgba(37, 99, 235, 0.08);
-}
-
 
 /* =========================================================
    11. TABLE STATES
-   ========================================================= */
+========================================================= */
 
 .table-state {
     display: flex;
+
     align-items: center;
+
     justify-content: center;
 
     gap: 9px;
 
-    min-height: 210px;
+    min-height: 180px;
 
-    padding: 30px;
+    padding: 25px;
 
     text-align: center;
 
     color: var(--text-muted);
 
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .table-state p {
@@ -1145,16 +1390,18 @@ unlike the sidebar filter search.
 
 .table-state__icon {
     display: grid;
+
     place-items: center;
 
-    width: 48px;
-    height: 48px;
+    width: 44px;
 
-    margin-bottom: 4px;
+    height: 44px;
+
+    margin-bottom: 2px;
 
     color: var(--text-muted);
 
-    background: var(--surface-soft);
+    background: var(--surface-muted);
 
     border-radius: 50%;
 }
@@ -1172,9 +1419,10 @@ unlike the sidebar filter search.
 .table-state--error .table-state__icon {
     color: var(--danger);
 
-    background: var(--danger-soft);
+    background: var(--danger-light);
 
     font-size: 20px;
+
     font-weight: 700;
 }
 
@@ -1185,12 +1433,13 @@ unlike the sidebar filter search.
 
 /* =========================================================
    12. DATA TABLE
-   ========================================================= */
+========================================================= */
 
 .table-wrapper {
     width: 100%;
 
     overflow-x: auto;
+
     overflow-y: hidden;
 }
 
@@ -1202,16 +1451,13 @@ unlike the sidebar filter search.
     border-collapse: collapse;
 
     table-layout: fixed;
-
-    font-size: 11px;
 }
 
 .data-table th,
 .data-table td {
     padding: 13px 18px;
 
-    border-bottom:
-        1px solid var(--border);
+    border-bottom: 1px solid var(--border);
 
     text-align: left;
 
@@ -1240,12 +1486,14 @@ unlike the sidebar filter search.
 .data-table thead th {
     color: var(--text-secondary);
 
-    background: var(--surface-soft);
+    background: var(--surface-muted);
 
     font-size: 9px;
+
     font-weight: 700;
 
     text-transform: uppercase;
+
     letter-spacing: 0.06em;
 }
 
@@ -1255,37 +1503,26 @@ unlike the sidebar filter search.
     font-size: 11px;
 }
 
-.data-table tbody tr {
-    transition:
-        background-color var(--transition-fast);
-}
-
 .data-table tbody tr:nth-child(even) {
-    background: var(--row-alt);
+    background: #fbfcfe;
 }
 
 .data-table tbody tr:hover {
     background: var(--row-hover);
 }
 
-.data-table tbody td:first-child {
-    color: var(--text);
-
-    font-weight: 600;
-}
-
 .data-table tfoot th,
 .data-table tfoot td {
-    color: var(--text);
+    color: var(--text-primary);
 
-    background: var(--surface-soft);
+    background: var(--surface-muted);
 
-    border-top:
-        1px solid var(--border);
+    border-top: 1px solid var(--border);
 
     border-bottom: 0;
 
     font-size: 11px;
+
     font-weight: 700;
 }
 
@@ -1294,20 +1531,16 @@ unlike the sidebar filter search.
 }
 
 .table-placeholder-row td {
-    padding: 45px 18px;
+    padding: 40px 16px;
 
     color: var(--text-light);
 
     text-align: center !important;
 }
 
-
-/* =========================================================
-   TABLE SORTING
-   ========================================================= */
-
 .table-sort-button {
     display: inline-flex;
+
     align-items: center;
 
     gap: 5px;
@@ -1321,6 +1554,7 @@ unlike the sidebar filter search.
     border: 0;
 
     font: inherit;
+
     font-weight: inherit;
 
     text-align: inherit;
@@ -1331,7 +1565,7 @@ unlike the sidebar filter search.
 }
 
 .table-sort-button:focus-visible {
-    outline: 2px solid var(--primary);
+    outline: 2px solid var(--accent);
 
     outline-offset: 3px;
 
@@ -1348,32 +1582,34 @@ unlike the sidebar filter search.
 }
 
 .table-sort-button:hover .sort-icon {
-    color: var(--primary);
+    color: var(--accent);
 }
 
 
 /* =========================================================
    13. PAGINATION
-   ========================================================= */
+========================================================= */
 
 .pagination {
     display: flex;
+
     align-items: center;
+
     justify-content: space-between;
 
     gap: 15px;
 
-    padding: 15px 18px;
+    padding: 14px 18px;
 
-    border-top:
-        1px solid var(--border);
+    border-top: 1px solid var(--border);
 
-    background: var(--surface-soft);
+    background: var(--surface-muted);
 }
 
 .pagination__left,
 .pagination__right {
     display: flex;
+
     align-items: center;
 
     gap: 8px;
@@ -1383,17 +1619,18 @@ unlike the sidebar filter search.
     color: var(--text-muted);
 
     font-size: 10px;
+
     font-weight: 500;
 }
 
 #pageSizeSelect {
     width: 76px;
 
-    min-height: 34px;
+    min-height: 32px;
 
-    padding: 6px 26px 6px 9px;
+    padding: 6px 26px 6px 8px;
 
-    color: var(--text);
+    color: var(--text-primary);
 
     background: var(--surface);
 
@@ -1402,36 +1639,21 @@ unlike the sidebar filter search.
     font-size: 10px;
 }
 
-#pageSizeSelect:hover {
-    background: var(--surface);
-
-    border-color: var(--border-dark);
-}
-
-#pageSizeSelect:focus {
-    background: var(--surface);
-
-    border-color: #93c5fd;
-
-    box-shadow:
-        0 0 0 3px rgba(37, 99, 235, 0.08);
-}
-
 .pagination-button {
-    min-height: 34px;
+    min-height: 33px;
 
-    padding: 6px 12px;
+    padding: 6px 11px;
 
     color: var(--text-secondary);
 
     background: var(--surface);
 
-    border:
-        1px solid var(--border);
+    border: 1px solid var(--border);
 
     border-radius: var(--radius-sm);
 
     font-size: 10px;
+
     font-weight: 600;
 
     transition:
@@ -1453,9 +1675,7 @@ unlike the sidebar filter search.
 
     background: var(--surface-muted);
 
-    border-color: var(--border);
-
-    opacity: 0.7;
+    border-color: var(--border-light);
 }
 
 .page-indicator {
@@ -1471,17 +1691,24 @@ unlike the sidebar filter search.
 
 /* =========================================================
    14. RESPONSIVE
-   ========================================================= */
+========================================================= */
 
-@media (max-width: 1200px) {
+@media (max-width: 1100px) {
 
     :root {
-        --sidebar-width: 280px;
+        --sidebar-width: 230px;
+    }
+
+    .dashboard-header {
+        padding-left: 18px;
+
+        padding-right: 18px;
     }
 
     .dashboard-content {
-        padding-left: 25px;
-        padding-right: 25px;
+        padding-left: 20px;
+
+        padding-right: 20px;
     }
 
     .kpi-grid {
@@ -1490,36 +1717,6 @@ unlike the sidebar filter search.
     }
 }
 
-
-/* =========================================================
-   TABLET
-   ========================================================= */
-
-@media (max-width: 900px) {
-
-    :root {
-        --sidebar-width: 270px;
-    }
-
-    .dashboard-header {
-        padding-left: 22px;
-        padding-right: 22px;
-    }
-
-    .dashboard-content {
-        padding: 24px 20px 32px;
-    }
-
-    .filter-sidebar {
-        padding-left: 16px;
-        padding-right: 16px;
-    }
-}
-
-
-/* =========================================================
-   MOBILE LAYOUT
-   ========================================================= */
 
 @media (max-width: 800px) {
 
@@ -1530,8 +1727,9 @@ unlike the sidebar filter search.
 
         gap: 10px;
 
-        padding-top: 16px;
-        padding-bottom: 16px;
+        padding-top: 14px;
+
+        padding-bottom: 14px;
     }
 
     .dashboard-header__meta {
@@ -1544,21 +1742,12 @@ unlike the sidebar filter search.
         display: block;
     }
 
-    /*
-    Sidebar becomes a normal top filter panel.
-    */
-
     .filter-sidebar {
-        padding: 18px 16px 20px;
+        padding: 16px 14px 18px;
 
         border-right: 0;
 
-        border-bottom:
-            1px solid #020617;
-    }
-
-    .filter-sidebar__header {
-        margin-bottom: 15px;
+        border-bottom: 1px solid #1e293b;
     }
 
     .filter-form {
@@ -1567,60 +1756,27 @@ unlike the sidebar filter search.
         grid-template-columns:
             repeat(2, minmax(0, 1fr));
 
-        gap: 12px;
+        gap: 10px;
     }
 
-    /*
-    Year
-    */
-
-    .filter-form > .filter-group:nth-child(1) {
-        grid-column: 1 / -1;
+    .filter-sidebar__header {
+        margin-bottom: 13px;
     }
 
-    /*
-    Year range
-    */
-
-    .year-range-filters {
-        grid-column: 1 / -1;
-    }
-
-    /*
-    Maker / Region / Category / Subcategory
-    */
-
-    .filter-form > .filter-group:nth-child(3),
-    .filter-form > .filter-group:nth-child(4),
-    .filter-form > .filter-group:nth-child(5),
-    .filter-form > .filter-group:nth-child(6) {
-        grid-column: auto;
-    }
-
-    /*
-    Clear
-    */
-
-    .filter-form > .clear-filters-button {
-        grid-column: 1 / -1;
-
+    .clear-filters-button {
         align-self: end;
     }
 
     .dashboard-content {
-        padding: 20px 16px 30px;
+        padding: 18px 14px 25px;
     }
 }
 
 
-/* =========================================================
-   SMALL TABLET / MOBILE
-   ========================================================= */
-
-@media (max-width: 600px) {
+@media (max-width: 560px) {
 
     #dashboard-title {
-        font-size: 21px;
+        font-size: 18px;
     }
 
     .dashboard-header__subtitle {
@@ -1637,24 +1793,6 @@ unlike the sidebar filter search.
 
     .filter-form {
         grid-template-columns: 1fr;
-    }
-
-    .filter-form > .filter-group:nth-child(1),
-    .filter-form > .filter-group:nth-child(3),
-    .filter-form > .filter-group:nth-child(4),
-    .filter-form > .filter-group:nth-child(5),
-    .filter-form > .filter-group:nth-child(6),
-    .filter-form > .clear-filters-button {
-        grid-column: 1;
-    }
-
-    .year-range-filters {
-        grid-column: 1;
-
-        grid-template-columns:
-            1fr 1fr;
-
-        gap: 9px;
     }
 
     .kpi-grid {
@@ -1701,69 +1839,91 @@ unlike the sidebar filter search.
 
 
 /* =========================================================
-   VERY SMALL SCREENS
-   ========================================================= */
+   15. YEAR RANGE
+========================================================= */
 
-@media (max-width: 480px) {
+.year-range-filters {
+    display: grid;
 
-    .dashboard-header {
-        padding-left: 16px;
-        padding-right: 16px;
+    grid-template-columns: 1fr 1fr;
+
+    gap: 10px;
+
+    width: 100%;
+}
+
+.year-range-filters .filter-group {
+    min-width: 0;
+}
+
+
+/*
+   Keep From Year and To Year side by side.
+*/
+
+@media (min-width: 600px) {
+
+    .year-range-filters {
+        grid-template-columns: 1fr 1fr;
     }
+}
 
-    .dashboard-content {
-        padding-left: 14px;
-        padding-right: 14px;
-    }
 
-    .brand-mark {
-        width: 40px;
-        height: 40px;
+/*
+   On very narrow screens, stack them.
+*/
 
-        flex-basis: 40px;
-    }
-
-    .dashboard-header__meta {
-        flex-wrap: wrap;
-    }
-
-    .data-period__divider {
-        display: none;
-    }
+@media (max-width: 599px) {
 
     .year-range-filters {
         grid-template-columns: 1fr;
-    }
 
-    .kpi-card {
-        min-height: 115px;
-
-        padding: 17px;
-    }
-
-    .table-card {
-        border-radius: var(--radius-md);
-    }
-
-    .data-table {
-        min-width: 580px;
-    }
-
-    .pagination {
-        padding: 13px 15px;
+        gap: 10px;
     }
 }
 
 
 /* =========================================================
-   15. REDUCED MOTION
-   ========================================================= */
+   16. SCROLLBARS
+========================================================= */
+
+.filter-sidebar::-webkit-scrollbar,
+.searchable-select-options::-webkit-scrollbar,
+.searchable-select-menu::-webkit-scrollbar {
+    width: 6px;
+}
+
+.filter-sidebar::-webkit-scrollbar-track,
+.searchable-select-options::-webkit-scrollbar-track,
+.searchable-select-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.filter-sidebar::-webkit-scrollbar-thumb,
+.searchable-select-options::-webkit-scrollbar-thumb,
+.searchable-select-menu::-webkit-scrollbar-thumb {
+    background: #475569;
+
+    border-radius: 999px;
+}
+
+.filter-sidebar::-webkit-scrollbar-thumb:hover,
+.searchable-select-options::-webkit-scrollbar-thumb:hover,
+.searchable-select-menu::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+
+/* =========================================================
+   17. REDUCED MOTION
+========================================================= */
 
 @media (prefers-reduced-motion: reduce) {
 
     *,
     *::before,
     *::after {
+
         scroll-behavior: auto !important;
 
         animation-duration: 0.01ms !important;
