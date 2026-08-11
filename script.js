@@ -1,2671 +1,1775 @@
-/* ============================================================
+/* =========================================================
    VEHICLE REGISTRATION ANALYTICS DASHBOARD
-   File: script.js
+   File: /style.css
 
-   COMPLETE FRONTEND FIX
-
-   This version:
-   - Connects to Supabase
-   - Uses the three PostgreSQL RPC functions
-   - Loads real data
-   - Loads filters
-   - Loads KPIs
-   - Supports RTO / category filtering
-   - Supports maker search
-   - Supports sorting
-   - Supports pagination
-   - Shows real Supabase errors
-   - Does not use fake data
-   ============================================================ */
+   VISUAL STYLE:
+   - Dark navy filter sidebar
+   - Clean white dashboard surface
+   - Poppins typography
+   - Professional blue accent system
+   - Rounded cards
+   - Compact enterprise dashboard spacing
+   - Searchable / polished filter controls
+   ========================================================= */
 
 
-/* ============================================================
-   1. SUPABASE CONFIGURATION
-   ============================================================ */
+/* =========================================================
+   1. DESIGN TOKENS
+   ========================================================= */
 
-const SUPABASE_URL =
-    'https://yifnagndjbeqszexzaem.supabase.co';
+:root {
 
-const SUPABASE_ANON_KEY =
-    'sb_publishable_HOBG1-ykEePfvvoJdm4X9w_3DU0itBG';
+    /* Primary */
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --primary-soft: #eff6ff;
 
+    /* Status */
+    --success: #16a34a;
+    --success-soft: #f0fdf4;
 
-/* ============================================================
-   2. RPC FUNCTION NAMES
-   ============================================================ */
+    --danger: #dc2626;
+    --danger-soft: #fef2f2;
 
-const RPC = {
+    --warning: #d97706;
+    --warning-soft: #fffbeb;
 
-    summary:
-        'get_vehicle_registration_summary',
+    /* Page */
+    --page: #f5f7fb;
+    --surface: #ffffff;
+    --surface-soft: #f8fafc;
 
-    filters:
-        'get_vehicle_registration_filter_options',
+    /* Text */
+    --text: #111827;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --text-light: #cbd5e1;
 
-    kpis:
-        'get_vehicle_registration_kpis'
+    /* Borders */
+    --border: #e2e8f0;
+    --border-dark: #cbd5e1;
 
-};
+    /* Table */
+    --row-alt: #fbfcfe;
+    --row-hover: #f8fafc;
 
+    /* Sidebar */
+    --sidebar: #0f172a;
+    --sidebar-soft: #172033;
+    --sidebar-hover: #1d293b;
+    --sidebar-border: #334155;
 
-/* ============================================================
-   3. APPLICATION CONFIG
-   ============================================================ */
+    --sidebar-text: #f8fafc;
+    --sidebar-secondary: #cbd5e1;
+    --sidebar-muted: #94a3b8;
 
-const CONFIG = {
+    /* Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+    --radius-xl: 20px;
 
-    allValue: 'all',
+    /* Shadows */
+    --shadow-xs:
+        0 1px 2px rgba(15, 23, 42, 0.04);
 
-    pageSize: 25,
+    --shadow-sm:
+        0 2px 8px rgba(15, 23, 42, 0.05);
 
-    allowedPageSizes: [
-        25,
-        50,
-        100
-    ]
+    --shadow-md:
+        0 8px 24px rgba(15, 23, 42, 0.07);
 
-};
+    --shadow-lg:
+        0 16px 40px rgba(15, 23, 42, 0.10);
 
+    /* Layout */
+    --sidebar-width: 300px;
+    --header-height: 76px;
+    --content-max-width: 1600px;
 
-/* ============================================================
-   4. SUPABASE CLIENT
-   ============================================================ */
-
-let supabaseClient = null;
-
-
-/* ============================================================
-   5. APPLICATION STATE
-   ============================================================ */
-
-const state = {
-
-    rows: [],
-
-    searchTerm: '',
-
-    sortKey: 'registrations',
-
-    sortDirection: 'desc',
-
-    currentPage: 1,
-
-    pageSize: CONFIG.pageSize,
-
-    requestId: 0,
-
-    filters: {
-
-        year: 'all',
-
-        fromYear: 'all',
-
-        toYear: 'all',
-
-        maker: 'all',
-
-        region: 'all',
-
-        category: 'all',
-
-        subcategory: 'all'
-
-    }
-
-};
-
-
-/* ============================================================
-   6. DOM HELPERS
-   ============================================================ */
-
-function getElement(id) {
-
-    return document.getElementById(id);
-
+    /* Animation */
+    --transition-fast: 150ms ease;
+    --transition-base: 220ms ease;
 }
 
 
-function setText(id, value) {
+/* =========================================================
+   2. RESET
+   ========================================================= */
 
-    const element =
-        getElement(id);
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
 
-    if (!element) {
-        return;
-    }
+html {
+    min-height: 100%;
+    scroll-behavior: smooth;
+}
 
-    element.textContent =
-        value === null ||
-        value === undefined
-            ? ''
-            : String(value);
+body {
+    min-width: 320px;
+    min-height: 100vh;
 
+    margin: 0;
+
+    background: var(--page);
+    color: var(--text);
+
+    font-family:
+        "Poppins",
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+    font-size: 13px;
+    line-height: 1.5;
+
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+select,
+input {
+    width: 100%;
+}
+
+a {
+    color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+    margin-top: 0;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+.visually-hidden {
+    position: absolute !important;
+
+    width: 1px !important;
+    height: 1px !important;
+
+    padding: 0 !important;
+    margin: -1px !important;
+
+    overflow: hidden !important;
+
+    clip: rect(0, 0, 0, 0) !important;
+
+    white-space: nowrap !important;
+
+    border: 0 !important;
 }
 
 
-/* ============================================================
-   7. NUMBER HELPERS
-   ============================================================ */
+/* =========================================================
+   3. GLOBAL LOADING OVERLAY
+   ========================================================= */
 
-function toNumber(value) {
+.loading-overlay {
+    position: fixed;
+    inset: 0;
 
-    if (
-        value === null ||
-        value === undefined ||
-        value === ''
-    ) {
-        return 0;
+    z-index: 9999;
+
+    display: grid;
+    place-items: center;
+
+    padding: 24px;
+
+    background: rgba(245, 247, 251, 0.82);
+
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+.loading-overlay__content {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+
+    min-width: 210px;
+
+    padding: 16px 19px;
+
+    color: var(--primary-dark);
+
+    background: rgba(255, 255, 255, 0.98);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+
+    box-shadow: var(--shadow-lg);
+
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.loading-spinner {
+    display: inline-block;
+
+    width: 20px;
+    height: 20px;
+
+    flex: 0 0 20px;
+
+    border: 2px solid #bfdbfe;
+    border-top-color: var(--primary);
+
+    border-radius: 50%;
+
+    animation: spin 0.75s linear infinite;
+}
+
+.loading-spinner--small {
+    width: 17px;
+    height: 17px;
+
+    flex-basis: 17px;
+
+    border-width: 2px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
     }
-
-    if (
-        typeof value === 'number'
-    ) {
-
-        return Number.isFinite(value)
-            ? value
-            : 0;
-
-    }
-
-    const cleaned =
-        String(value)
-            .replace(/,/g, '')
-            .trim();
-
-    const number =
-        Number(cleaned);
-
-    return Number.isFinite(number)
-        ? number
-        : 0;
-
 }
 
 
-function formatNumber(value) {
+/* =========================================================
+   4. HEADER
+   ========================================================= */
 
-    return new Intl.NumberFormat(
-        'en-IN',
-        {
-            maximumFractionDigits: 0
-        }
-    ).format(
-        toNumber(value)
-    );
+.dashboard-header {
+    position: relative;
+    z-index: 20;
 
+    min-height: var(--header-height);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 25px;
+
+    padding: 14px 28px;
+
+    background: var(--surface);
+
+    border-bottom: 1px solid var(--border);
+
+    box-shadow: var(--shadow-xs);
+}
+
+.dashboard-header__brand {
+    display: flex;
+    align-items: center;
+
+    gap: 13px;
+
+    min-width: 0;
+}
+
+.brand-mark {
+    display: grid;
+    place-items: center;
+
+    width: 42px;
+    height: 42px;
+
+    flex: 0 0 42px;
+
+    color: #ffffff;
+
+    background: var(--primary);
+
+    border-radius: 12px;
+
+    box-shadow:
+        0 5px 14px rgba(37, 99, 235, 0.20);
+
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#dashboard-title {
+    margin: 0;
+
+    color: var(--text);
+
+    font-size: clamp(19px, 2vw, 25px);
+    font-weight: 700;
+
+    line-height: 1.2;
+
+    letter-spacing: -0.025em;
+}
+
+.dashboard-header__subtitle {
+    margin: 4px 0 0;
+
+    color: var(--text-secondary);
+
+    font-size: 11px;
+}
+
+.dashboard-header__meta {
+    display: flex;
+    align-items: center;
+
+    gap: 18px;
+
+    flex-shrink: 0;
+}
+
+.data-period {
+    display: flex;
+    flex-direction: column;
+
+    gap: 1px;
+}
+
+.data-period__label {
+    color: var(--text-muted);
+
+    font-size: 9px;
+    font-weight: 600;
+
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+
+#data-year-range {
+    color: var(--text);
+
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.data-period__divider {
+    width: 1px;
+    height: 31px;
+
+    background: var(--border);
+}
+
+.unit-label {
+    color: var(--text-muted);
+
+    font-size: 10px;
+    font-weight: 500;
+
+    white-space: nowrap;
 }
 
 
-function formatPercentage(value) {
+/* =========================================================
+   5. MAIN LAYOUT
+   ========================================================= */
 
-    if (
-        value === null ||
-        value === undefined ||
-        value === ''
-    ) {
-        return '—';
-    }
+.dashboard-layout {
+    display: grid;
 
-    const number =
-        toNumber(value);
+    grid-template-columns:
+        var(--sidebar-width)
+        minmax(0, 1fr);
 
-    return `${number.toFixed(2)}%`;
+    min-height:
+        calc(100vh - var(--header-height));
+}
 
+.filter-sidebar {
+    position: relative;
+
+    min-width: 0;
+
+    padding: 24px 18px;
+
+    background: var(--sidebar);
+
+    color: var(--sidebar-text);
+
+    border-right: 1px solid #0b1220;
+
+    overflow: visible;
+}
+
+.dashboard-content {
+    min-width: 0;
+
+    width: 100%;
+    max-width: var(--content-max-width);
+
+    padding: 28px 30px 40px;
+
+    margin: 0 auto;
+
+    overflow-x: hidden;
+}
+
+.content-section {
+    margin-bottom: 22px;
 }
 
 
-/* ============================================================
-   8. FILTER HELPERS
-   ============================================================ */
+/* =========================================================
+   6. SIDEBAR
+   ========================================================= */
 
-function normalizeFilter(value) {
+.filter-sidebar__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 
-    if (
-        value === null ||
-        value === undefined
-    ) {
-        return CONFIG.allValue;
-    }
+    gap: 12px;
 
-    const normalized =
-        String(value).trim();
+    margin-bottom: 22px;
+    padding: 2px 3px 17px;
 
-    if (
-        normalized === '' ||
-        normalized.toLowerCase() === 'all'
-    ) {
-        return CONFIG.allValue;
-    }
+    border-bottom:
+        1px solid rgba(255, 255, 255, 0.08);
+}
 
-    return normalized;
+.filter-sidebar__header h2 {
+    margin: 3px 0 0;
 
+    color: #ffffff;
+
+    font-size: 17px;
+    font-weight: 600;
+
+    line-height: 1.2;
+}
+
+.filter-sidebar__icon {
+    display: grid;
+    place-items: center;
+
+    width: 34px;
+    height: 34px;
+
+    color: #60a5fa;
+
+    background: rgba(37, 99, 235, 0.14);
+
+    border:
+        1px solid rgba(96, 165, 250, 0.16);
+
+    border-radius: 9px;
+}
+
+.section-eyebrow {
+    display: block;
+
+    color: #60a5fa;
+
+    font-size: 9px;
+    font-weight: 700;
+
+    line-height: 1.2;
+
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
 }
 
 
-function isAll(value) {
+/* =========================================================
+   FILTER FORM
+   ========================================================= */
 
-    return normalizeFilter(value) ===
-        CONFIG.allValue;
+.filter-form {
+    display: grid;
 
+    grid-template-columns:
+        minmax(0, 1fr)
+        minmax(0, 1fr);
+
+    column-gap: 10px;
+    row-gap: 16px;
 }
 
 
-/* ============================================================
-   9. READ FILTERS FROM HTML
-   ============================================================ */
+/* =========================================================
+   FILTER LAYOUT
+   ========================================================= */
 
-function readFilters() {
+/*
+Year stays full width.
+*/
 
-    return {
-
-        year:
-            normalizeFilter(
-                getElement('yearFilter')?.value
-            ),
-
-        fromYear:
-            normalizeFilter(
-                getElement('fromYearFilter')?.value
-            ),
-
-        toYear:
-            normalizeFilter(
-                getElement('toYearFilter')?.value
-            ),
-
-        maker:
-            normalizeFilter(
-                getElement('makerFilter')?.value
-            ),
-
-        region:
-            normalizeFilter(
-                getElement('regionFilter')?.value
-            ),
-
-        category:
-            normalizeFilter(
-                getElement('categoryFilter')?.value
-            ),
-
-        subcategory:
-            normalizeFilter(
-                getElement('subcategoryFilter')?.value
-            )
-
-    };
-
+.filter-form > .filter-group:nth-child(1) {
+    grid-column: 1 / -1;
 }
 
 
-/* ============================================================
-   10. BUILD RPC PARAMETERS
-   ============================================================ */
+/*
+From Year + To Year
+*/
 
-function buildRpcParameters(filters) {
+.year-range-filters {
+    grid-column: 1 / -1;
 
-    const params = {};
+    display: grid;
 
-    if (!isAll(filters.year)) {
+    grid-template-columns:
+        minmax(0, 1fr)
+        minmax(0, 1fr);
 
-        params.p_year =
-            Number(filters.year);
+    column-gap: 10px;
+}
 
-    }
-
-    if (!isAll(filters.fromYear)) {
-
-        params.p_from_year =
-            Number(filters.fromYear);
-
-    }
-
-    if (!isAll(filters.toYear)) {
-
-        params.p_to_year =
-            Number(filters.toYear);
-
-    }
-
-    if (!isAll(filters.maker)) {
-
-        params.p_maker =
-            filters.maker;
-
-    }
-
-    if (!isAll(filters.region)) {
-
-        params.p_rto =
-            filters.region;
-
-    }
-
-    if (!isAll(filters.category)) {
-
-        params.p_category =
-            filters.category;
-
-    }
-
-    if (!isAll(filters.subcategory)) {
-
-        params.p_subcategory =
-            filters.subcategory;
-
-    }
-
-    return params;
-
+.year-range-filters .filter-group {
+    min-width: 0;
 }
 
 
-/* ============================================================
-   11. SUPABASE RPC CALL
-   ============================================================ */
+/*
+Maker
+*/
 
-async function callRpc(
-    functionName,
-    parameters = {}
-) {
+.filter-form > .filter-group:nth-child(3) {
+    grid-column: 1 / -1;
+}
 
-    if (!supabaseClient) {
 
-        throw new Error(
-            'Supabase client has not been initialized.'
+/*
+Region / RTO
+*/
+
+.filter-form > .filter-group:nth-child(4) {
+    grid-column: 1 / -1;
+}
+
+
+/*
+Category
+*/
+
+.filter-form > .filter-group:nth-child(5) {
+    grid-column: 1 / -1;
+}
+
+
+/*
+Subcategory
+*/
+
+.filter-form > .filter-group:nth-child(6) {
+    grid-column: 1 / -1;
+}
+
+
+/*
+Clear button
+*/
+
+.filter-form > .clear-filters-button {
+    grid-column: 1 / -1;
+}
+
+
+/* =========================================================
+   FILTER GROUP
+   ========================================================= */
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+
+    gap: 7px;
+}
+
+.filter-group label {
+    color: #cbd5e1;
+
+    font-size: 11px;
+    font-weight: 600;
+}
+
+
+/* =========================================================
+   FILTER INPUTS / SELECTS
+   ========================================================= */
+
+.filter-group select,
+#makerSearch,
+#pageSizeSelect {
+    min-height: 43px;
+
+    padding: 9px 34px 9px 12px;
+
+    color: #e2e8f0;
+
+    background-color: var(--sidebar-soft);
+
+    border: 1px solid var(--sidebar-border);
+
+    border-radius: var(--radius-sm);
+
+    outline: none;
+
+    transition:
+        border-color var(--transition-fast),
+        box-shadow var(--transition-fast),
+        background-color var(--transition-fast);
+}
+
+.filter-group select {
+    appearance: none;
+
+    background-image:
+        linear-gradient(
+            45deg,
+            transparent 50%,
+            #94a3b8 50%
+        ),
+        linear-gradient(
+            135deg,
+            #94a3b8 50%,
+            transparent 50%
         );
 
-    }
+    background-position:
+        calc(100% - 14px) 18px,
+        calc(100% - 9px) 18px;
 
-    console.log(
-        `[Supabase] Calling ${functionName}`,
-        parameters
-    );
+    background-size:
+        5px 5px,
+        5px 5px;
 
-    const result =
-        await supabaseClient.rpc(
-            functionName,
-            parameters
-        );
+    background-repeat: no-repeat;
+}
 
-    if (result.error) {
+.filter-group select:hover,
+#makerSearch:hover,
+#pageSizeSelect:hover {
+    border-color: #475569;
 
-        console.error(
-            `[Supabase] ${functionName} failed`,
-            result.error
-        );
+    background-color: var(--sidebar-hover);
+}
 
-        throw result.error;
+.filter-group select:focus,
+#makerSearch:focus,
+#pageSizeSelect:focus {
+    border-color: #60a5fa;
 
-    }
+    background-color: var(--sidebar-hover);
 
-    console.log(
-        `[Supabase] ${functionName} response`,
-        result.data
-    );
+    box-shadow:
+        0 0 0 3px rgba(96, 165, 250, 0.12);
+}
 
-    return result.data;
+.filter-group select:disabled,
+#makerSearch:disabled,
+#pageSizeSelect:disabled {
+    color: #64748b;
 
+    background: #111827;
+
+    cursor: not-allowed;
+}
+
+.filter-group select option {
+    color: #e2e8f0;
+
+    background: var(--sidebar);
 }
 
 
-/* ============================================================
-   12. INITIALIZE SUPABASE
-   ============================================================ */
+/* =========================================================
+   SEARCH INPUT
+   ========================================================= */
 
-async function initializeSupabase() {
+#makerSearch {
+    padding-left: 34px;
+    padding-right: 10px;
+
+    background: var(--sidebar-soft);
+}
+
+.search-box {
+    position: relative;
+
+    display: flex;
+    align-items: center;
+
+    width: 100%;
+}
+
+.search-box svg {
+    position: absolute;
+
+    left: 10px;
+
+    color: #94a3b8;
+
+    pointer-events: none;
+}
+
+
+/* =========================================================
+   CLEAR FILTERS
+   ========================================================= */
+
+.clear-filters-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 8px;
+
+    width: 100%;
+
+    min-height: 42px;
+
+    margin-top: 5px;
+
+    padding: 9px 12px;
+
+    color: #cbd5e1;
+
+    background: transparent;
+
+    border:
+        1px solid var(--sidebar-border);
+
+    border-radius: var(--radius-sm);
+
+    font-size: 11px;
+    font-weight: 600;
+
+    transition:
+        background-color var(--transition-fast),
+        border-color var(--transition-fast),
+        color var(--transition-fast),
+        transform var(--transition-fast);
+}
+
+.clear-filters-button:hover {
+    color: #ffffff;
+
+    background: var(--sidebar-soft);
+
+    border-color: #475569;
+}
+
+.clear-filters-button:active {
+    transform: translateY(1px);
+}
+
+.clear-filters-button:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+
+/* =========================================================
+   7. ACTIVE FILTERS
+   ========================================================= */
+
+.active-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+
+    gap: 7px;
+
+    min-height: 28px;
+
+    margin-bottom: 18px;
+}
+
+.active-filters__label {
+    color: var(--text-muted);
+
+    font-size: 9px;
+    font-weight: 700;
+
+    margin-right: 3px;
+
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+}
+
+.active-filter {
+    display: inline-flex;
+    align-items: center;
+
+    min-height: 27px;
+
+    padding: 4px 10px;
+
+    color: var(--primary-dark);
+
+    background: var(--primary-soft);
+
+    border: 1px solid #bfdbfe;
+
+    border-radius: 999px;
+
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.active-filter strong {
+    margin-right: 4px;
+
+    font-weight: 700;
+}
+
+.active-filter--empty {
+    color: var(--text-muted);
+
+    background: var(--surface);
+
+    border-color: var(--border);
+}
+
+
+/* =========================================================
+   8. SECTION HEADINGS
+   ========================================================= */
+
+.section-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+
+    gap: 15px;
+
+    margin-bottom: 13px;
+}
+
+.section-heading h2 {
+    margin: 3px 0 0;
+
+    color: var(--text);
+
+    font-size: 18px;
+    font-weight: 700;
+
+    line-height: 1.3;
+
+    letter-spacing: -0.018em;
+}
+
+.section-heading--table {
+    padding: 0 0 13px;
+}
+
+
+/* =========================================================
+   9. KPI GRID
+   ========================================================= */
+
+.kpi-grid {
+    display: grid;
+
+    grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+
+    gap: 15px;
+
+    margin-bottom: 22px;
+}
+
+.kpi-card {
+    position: relative;
+
+    display: flex;
+    align-items: center;
+
+    gap: 15px;
+
+    min-width: 0;
+    min-height: 125px;
+
+    padding: 19px;
+
+    overflow: hidden;
+
+    background: var(--surface);
+
+    border:
+        1px solid var(--border);
+
+    border-radius: var(--radius-lg);
+
+    box-shadow: var(--shadow-sm);
+
+    transition:
+        transform var(--transition-base),
+        box-shadow var(--transition-base),
+        border-color var(--transition-base);
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+
+    border-color: #d2dbe7;
+
+    box-shadow: var(--shadow-md);
+}
+
+.kpi-card::after {
+    position: absolute;
+
+    right: -25px;
+    bottom: -30px;
+
+    width: 95px;
+    height: 95px;
+
+    border-radius: 50%;
+
+    background: var(--primary-soft);
+
+    content: "";
+
+    opacity: 0.8;
+}
+
+.kpi-card__icon {
+    position: relative;
+    z-index: 1;
+
+    display: grid;
+    place-items: center;
+
+    flex: 0 0 45px;
+
+    width: 45px;
+    height: 45px;
+
+    color: var(--primary);
+
+    background: var(--primary-soft);
+
+    border-radius: 12px;
+
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.kpi-card__content {
+    position: relative;
+    z-index: 1;
+
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.kpi-card__label {
+    color: var(--text-muted);
+
+    font-size: 10px;
+    font-weight: 600;
+
+    line-height: 1.25;
+}
+
+.kpi-card__value {
+    display: block;
+
+    margin-top: 3px;
+
+    color: var(--text);
+
+    font-size: clamp(20px, 2vw, 25px);
+    font-weight: 700;
+
+    line-height: 1.15;
+
+    white-space: nowrap;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kpi-card__meta {
+    margin-top: 4px;
+
+    color: var(--success);
+
+    font-size: 9px;
+    font-weight: 600;
+}
+
+
+/* =========================================================
+   10. TABLE CARD
+   ========================================================= */
+
+.table-card {
+    overflow: hidden;
+
+    background: var(--surface);
+
+    border:
+        1px solid var(--border);
+
+    border-radius: var(--radius-lg);
+
+    box-shadow: var(--shadow-sm);
+}
+
+.table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 12px;
+
+    padding: 13px 18px;
+
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+
+    background: var(--surface-soft);
+}
+
+.table-toolbar__left {
+    width: min(330px, 100%);
+}
+
+
+/* =========================================================
+   TABLE SEARCH BOX
+   ========================================================= */
+
+.search-box {
+    position: relative;
+
+    display: flex;
+    align-items: center;
+
+    width: 100%;
+}
+
+.search-box svg {
+    position: absolute;
+
+    left: 11px;
+
+    color: var(--text-muted);
+
+    pointer-events: none;
+}
+
+
+/*
+The table search should be light,
+unlike the sidebar filter search.
+*/
+
+.table-toolbar #makerSearch {
+    min-height: 38px;
+
+    padding-left: 35px;
+
+    color: var(--text);
+
+    background: var(--surface);
+
+    border-color: var(--border);
+}
+
+.table-toolbar #makerSearch:hover {
+    background: var(--surface);
+
+    border-color: var(--border-dark);
+}
+
+.table-toolbar #makerSearch:focus {
+    background: var(--surface);
+
+    border-color: #93c5fd;
+
+    box-shadow:
+        0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+
+/* =========================================================
+   11. TABLE STATES
+   ========================================================= */
+
+.table-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 9px;
+
+    min-height: 210px;
+
+    padding: 30px;
+
+    text-align: center;
+
+    color: var(--text-muted);
+
+    font-size: 11px;
+}
+
+.table-state p {
+    margin: 0;
+}
+
+.table-state__icon {
+    display: grid;
+    place-items: center;
+
+    width: 48px;
+    height: 48px;
+
+    margin-bottom: 4px;
+
+    color: var(--text-muted);
+
+    background: var(--surface-soft);
+
+    border-radius: 50%;
+}
+
+.table-state--empty {
+    flex-direction: column;
+}
+
+.table-state--error {
+    flex-direction: column;
+
+    color: var(--danger);
+}
+
+.table-state--error .table-state__icon {
+    color: var(--danger);
+
+    background: var(--danger-soft);
+
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.table-state--loading {
+    color: var(--text-muted);
+}
+
+
+/* =========================================================
+   12. DATA TABLE
+   ========================================================= */
+
+.table-wrapper {
+    width: 100%;
+
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.data-table {
+    width: 100%;
+
+    min-width: 620px;
+
+    border-collapse: collapse;
+
+    table-layout: fixed;
+
+    font-size: 11px;
+}
+
+.data-table th,
+.data-table td {
+    padding: 13px 18px;
+
+    border-bottom:
+        1px solid var(--border);
+
+    text-align: left;
+
+    vertical-align: middle;
+}
+
+.data-table th:nth-child(1),
+.data-table td:nth-child(1) {
+    width: 45%;
+}
+
+.data-table th:nth-child(2),
+.data-table td:nth-child(2) {
+    width: 30%;
+
+    text-align: right;
+}
+
+.data-table th:nth-child(3),
+.data-table td:nth-child(3) {
+    width: 25%;
+
+    text-align: right;
+}
+
+.data-table thead th {
+    color: var(--text-secondary);
+
+    background: var(--surface-soft);
+
+    font-size: 9px;
+    font-weight: 700;
+
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.data-table tbody td {
+    color: var(--text-secondary);
+
+    font-size: 11px;
+}
+
+.data-table tbody tr {
+    transition:
+        background-color var(--transition-fast);
+}
+
+.data-table tbody tr:nth-child(even) {
+    background: var(--row-alt);
+}
+
+.data-table tbody tr:hover {
+    background: var(--row-hover);
+}
+
+.data-table tbody td:first-child {
+    color: var(--text);
+
+    font-weight: 600;
+}
+
+.data-table tfoot th,
+.data-table tfoot td {
+    color: var(--text);
+
+    background: var(--surface-soft);
+
+    border-top:
+        1px solid var(--border);
+
+    border-bottom: 0;
+
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.data-table tfoot td {
+    text-align: right;
+}
+
+.table-placeholder-row td {
+    padding: 45px 18px;
+
+    color: var(--text-light);
+
+    text-align: center !important;
+}
+
+
+/* =========================================================
+   TABLE SORTING
+   ========================================================= */
+
+.table-sort-button {
+    display: inline-flex;
+    align-items: center;
+
+    gap: 5px;
+
+    padding: 0;
+
+    color: inherit;
+
+    background: transparent;
+
+    border: 0;
+
+    font: inherit;
+    font-weight: inherit;
+
+    text-align: inherit;
+}
+
+.table-sort-button:hover {
+    color: var(--primary);
+}
+
+.table-sort-button:focus-visible {
+    outline: 2px solid var(--primary);
+
+    outline-offset: 3px;
+
+    border-radius: 3px;
+}
+
+.sort-icon {
+    color: var(--text-muted);
+
+    font-size: 12px;
+
+    transition:
+        color var(--transition-fast);
+}
+
+.table-sort-button:hover .sort-icon {
+    color: var(--primary);
+}
+
+
+/* =========================================================
+   13. PAGINATION
+   ========================================================= */
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 15px;
+
+    padding: 15px 18px;
+
+    border-top:
+        1px solid var(--border);
+
+    background: var(--surface-soft);
+}
+
+.pagination__left,
+.pagination__right {
+    display: flex;
+    align-items: center;
+
+    gap: 8px;
+}
+
+.pagination label {
+    color: var(--text-muted);
+
+    font-size: 10px;
+    font-weight: 500;
+}
+
+#pageSizeSelect {
+    width: 76px;
+
+    min-height: 34px;
+
+    padding: 6px 26px 6px 9px;
+
+    color: var(--text);
+
+    background: var(--surface);
+
+    border-color: var(--border);
+
+    font-size: 10px;
+}
+
+#pageSizeSelect:hover {
+    background: var(--surface);
+
+    border-color: var(--border-dark);
+}
+
+#pageSizeSelect:focus {
+    background: var(--surface);
+
+    border-color: #93c5fd;
+
+    box-shadow:
+        0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.pagination-button {
+    min-height: 34px;
+
+    padding: 6px 12px;
+
+    color: var(--text-secondary);
+
+    background: var(--surface);
+
+    border:
+        1px solid var(--border);
+
+    border-radius: var(--radius-sm);
+
+    font-size: 10px;
+    font-weight: 600;
+
+    transition:
+        background-color var(--transition-fast),
+        border-color var(--transition-fast),
+        color var(--transition-fast);
+}
+
+.pagination-button:hover:not(:disabled) {
+    color: var(--primary);
+
+    background: var(--primary-soft);
+
+    border-color: #bfdbfe;
+}
+
+.pagination-button:disabled {
+    color: var(--text-light);
+
+    background: var(--surface-muted);
+
+    border-color: var(--border);
+
+    opacity: 0.7;
+}
+
+.page-indicator {
+    min-width: 90px;
+
+    color: var(--text-muted);
+
+    font-size: 10px;
+
+    text-align: center;
+}
+
+
+/* =========================================================
+   14. RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 1200px) {
+
+    :root {
+        --sidebar-width: 280px;
+    }
+
+    .dashboard-content {
+        padding-left: 25px;
+        padding-right: 25px;
+    }
+
+    .kpi-grid {
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+    }
+}
+
+
+/* =========================================================
+   TABLET
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+    :root {
+        --sidebar-width: 270px;
+    }
+
+    .dashboard-header {
+        padding-left: 22px;
+        padding-right: 22px;
+    }
+
+    .dashboard-content {
+        padding: 24px 20px 32px;
+    }
+
+    .filter-sidebar {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+}
+
+
+/* =========================================================
+   MOBILE LAYOUT
+   ========================================================= */
+
+@media (max-width: 800px) {
+
+    .dashboard-header {
+        align-items: flex-start;
+
+        flex-direction: column;
+
+        gap: 10px;
+
+        padding-top: 16px;
+        padding-bottom: 16px;
+    }
+
+    .dashboard-header__meta {
+        width: 100%;
+
+        justify-content: flex-start;
+    }
+
+    .dashboard-layout {
+        display: block;
+    }
 
     /*
-     * index.html already loads:
-     *
-     * https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2
-     *
-     * Because that script uses defer, wait until the global
-     * Supabase object is available.
-     */
+    Sidebar becomes a normal top filter panel.
+    */
 
-    let attempts = 0;
+    .filter-sidebar {
+        padding: 18px 16px 20px;
 
-    while (
-        (
-            !window.supabase ||
-            typeof window.supabase.createClient !==
-                'function'
-        ) &&
-        attempts < 100
-    ) {
+        border-right: 0;
 
-        await new Promise(
-            resolve =>
-                setTimeout(
-                    resolve,
-                    50
-                )
-        );
-
-        attempts++;
-
+        border-bottom:
+            1px solid #020617;
     }
 
-
-    if (
-        !window.supabase ||
-        typeof window.supabase.createClient !==
-            'function'
-    ) {
-
-        throw new Error(
-            'Supabase browser library could not be loaded. Check the Supabase CDN script in index.html.'
-        );
-
+    .filter-sidebar__header {
+        margin-bottom: 15px;
     }
 
+    .filter-form {
+        display: grid;
 
-    if (!SUPABASE_URL) {
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
 
-        throw new Error(
-            'Supabase URL is missing.'
-        );
-
+        gap: 12px;
     }
-
-
-    if (!SUPABASE_ANON_KEY) {
-
-        throw new Error(
-            'Supabase publishable/anon key is missing.'
-        );
-
-    }
-
-
-    supabaseClient =
-        window.supabase.createClient(
-            SUPABASE_URL,
-            SUPABASE_ANON_KEY
-        );
-
-
-    console.log(
-        '[Supabase] Client initialized.'
-    );
-
-}
-
-
-/* ============================================================
-   13. LOADING UI
-   ============================================================ */
-
-function showLoading() {
-
-    const globalLoading =
-        getElement('globalLoading');
-
-    const tableLoading =
-        getElement('tableLoading');
-
-    const tableContent =
-        getElement('tableContent');
-
-    const tableEmpty =
-        getElement('tableEmpty');
-
-    const tableError =
-        getElement('tableError');
-
-
-    if (globalLoading) {
-
-        globalLoading.hidden =
-            false;
-
-    }
-
-
-    if (tableLoading) {
-
-        tableLoading.hidden =
-            false;
-
-    }
-
-
-    if (tableContent) {
-
-        tableContent.hidden =
-            true;
-
-    }
-
-
-    if (tableEmpty) {
-
-        tableEmpty.hidden =
-            true;
-
-    }
-
-
-    if (tableError) {
-
-        tableError.hidden =
-            true;
-
-    }
-
-}
-
-
-function hideLoading() {
-
-    const globalLoading =
-        getElement('globalLoading');
-
-    const tableLoading =
-        getElement('tableLoading');
-
-
-    if (globalLoading) {
-
-        globalLoading.hidden =
-            true;
-
-    }
-
-
-    if (tableLoading) {
-
-        tableLoading.hidden =
-            true;
-
-    }
-
-}
-
-
-/* ============================================================
-   14. ERROR DISPLAY
-   ============================================================ */
-
-function clearError() {
-
-    const errorBox =
-        getElement('tableError');
-
-    if (!errorBox) {
-        return;
-    }
-
-    errorBox.hidden =
-        true;
-
-}
-
-
-function getErrorMessage(error) {
-
-    if (!error) {
-
-        return 'Unknown error.';
-
-    }
-
-    if (
-        typeof error === 'string'
-    ) {
-
-        return error;
-
-    }
-
-    const parts = [];
-
-    if (error.message) {
-
-        parts.push(
-            `Message: ${error.message}`
-        );
-
-    }
-
-    if (error.details) {
-
-        parts.push(
-            `Details: ${error.details}`
-        );
-
-    }
-
-    if (error.hint) {
-
-        parts.push(
-            `Hint: ${error.hint}`
-        );
-
-    }
-
-    if (error.code) {
-
-        parts.push(
-            `Code: ${error.code}`
-        );
-
-    }
-
-    if (parts.length) {
-
-        return parts.join(' | ');
-
-    }
-
-    try {
-
-        return JSON.stringify(
-            error
-        );
-
-    } catch {
-
-        return String(error);
-
-    }
-
-}
-
-
-function showError(error) {
-
-    console.error(
-        '[Dashboard Error]',
-        error
-    );
-
-
-    const errorBox =
-        getElement('tableError');
-
-    if (!errorBox) {
-
-        alert(
-            getErrorMessage(error)
-        );
-
-        return;
-
-    }
-
-
-    errorBox.hidden =
-        false;
-
-
-    const paragraph =
-        errorBox.querySelector('p');
-
-
-    const message =
-        getErrorMessage(error);
-
-
-    if (paragraph) {
-
-        paragraph.textContent =
-            `Unable to load data. ${message}`;
-
-    } else {
-
-        errorBox.textContent =
-            `Unable to load data. ${message}`;
-
-    }
-
-}
-
-
-/* ============================================================
-   15. FILTER SELECT HELPERS
-   ============================================================ */
-
-function populateSelect(
-    element,
-    values,
-    selectedValue = 'all'
-) {
-
-    if (!element) {
-        return;
-    }
-
-
-    const cleanedValues =
-        Array.from(
-            new Set(
-                (
-                    Array.isArray(values)
-                        ? values
-                        : []
-                )
-                    .filter(
-                        value =>
-                            value !== null &&
-                            value !== undefined &&
-                            String(value).trim() !== ''
-                    )
-                    .map(
-                        value =>
-                            String(value).trim()
-                    )
-            )
-        );
-
-
-    cleanedValues.sort(
-        (
-            a,
-            b
-        ) =>
-            a.localeCompare(
-                b,
-                undefined,
-                {
-                    numeric: true,
-                    sensitivity: 'base'
-                }
-            )
-    );
-
-
-    element.replaceChildren();
-
-
-    const allOption =
-        document.createElement(
-            'option'
-        );
-
-    allOption.value =
-        'all';
-
-    allOption.textContent =
-        'All';
-
-    element.appendChild(
-        allOption
-    );
-
-
-    for (
-        const value of cleanedValues
-    ) {
-
-        const option =
-            document.createElement(
-                'option'
-            );
-
-        option.value =
-            value;
-
-        option.textContent =
-            value;
-
-        element.appendChild(
-            option
-        );
-
-    }
-
-
-    const normalizedSelected =
-        normalizeFilter(
-            selectedValue
-        );
-
-
-    const exists =
-        Array.from(
-            element.options
-        ).some(
-            option =>
-                option.value ===
-                normalizedSelected
-        );
-
-
-    element.value =
-        exists
-            ? normalizedSelected
-            : 'all';
-
-}
-
-
-/* ============================================================
-   16. LOAD FILTER OPTIONS
-   ============================================================ */
-
-async function loadFilterOptions(
-    filters = readFilters()
-) {
-
-    const parameters =
-        buildRpcParameters(
-            filters
-        );
-
 
     /*
-     * Tell the RPC that we want the full set of
-     * filter options.
-     */
+    Year
+    */
 
-    parameters.p_ignore_dimension =
-        'all';
-
-
-    const data =
-        await callRpc(
-            RPC.filters,
-            parameters
-        );
-
-
-    console.log(
-        '[Filters] Received:',
-        data
-    );
-
-
-    const options =
-        data || {};
-
+    .filter-form > .filter-group:nth-child(1) {
+        grid-column: 1 / -1;
+    }
 
     /*
-     * The SQL RPC returns:
-     *
-     * {
-     *   years: [],
-     *   makers: [],
-     *   regions: [],
-     *   categories: [],
-     *   subcategories: []
-     * }
-     */
+    Year range
+    */
 
-
-    const current =
-        readFilters();
-
-
-    populateSelect(
-        getElement('makerFilter'),
-        options.makers || [],
-        current.maker
-    );
-
-
-    populateSelect(
-        getElement('regionFilter'),
-        options.regions || [],
-        current.region
-    );
-
-
-    populateSelect(
-        getElement('categoryFilter'),
-        options.categories || [],
-        current.category
-    );
-
-
-    populateSelect(
-        getElement('subcategoryFilter'),
-        options.subcategories || [],
-        current.subcategory
-    );
-
+    .year-range-filters {
+        grid-column: 1 / -1;
+    }
 
     /*
-     * Years are supplied by the RPC.
-     */
+    Maker / Region / Category / Subcategory
+    */
 
-    if (
-        Array.isArray(options.years) &&
-        options.years.length > 0
-    ) {
-
-        populateSelect(
-            getElement('yearFilter'),
-            options.years,
-            current.year
-        );
-
-        populateSelect(
-            getElement('fromYearFilter'),
-            options.years,
-            current.fromYear
-        );
-
-        populateSelect(
-            getElement('toYearFilter'),
-            options.years,
-            current.toYear
-        );
-
-
-        updateYearRange(
-            options.years
-        );
-
-    } else {
-
-        /*
-         * The supplied data is 2026 data.
-         * Keep the UI usable even if the RPC returns
-         * no year array.
-         */
-
-        populateSelect(
-            getElement('yearFilter'),
-            [2026],
-            current.year
-        );
-
-        populateSelect(
-            getElement('fromYearFilter'),
-            [2026],
-            current.fromYear
-        );
-
-        populateSelect(
-            getElement('toYearFilter'),
-            [2026],
-            current.toYear
-        );
-
-        updateYearRange(
-            [2026]
-        );
-
+    .filter-form > .filter-group:nth-child(3),
+    .filter-form > .filter-group:nth-child(4),
+    .filter-form > .filter-group:nth-child(5),
+    .filter-form > .filter-group:nth-child(6) {
+        grid-column: auto;
     }
-
-}
-
-
-/* ============================================================
-   17. YEAR RANGE DISPLAY
-   ============================================================ */
-
-function updateYearRange(
-    years
-) {
-
-    const validYears =
-        (
-            Array.isArray(years)
-                ? years
-                : []
-        )
-            .map(
-                value =>
-                    Number(value)
-            )
-            .filter(
-                value =>
-                    Number.isFinite(value)
-            );
-
-
-    const element =
-        getElement('data-year-range');
-
-
-    if (!element) {
-        return;
-    }
-
-
-    if (validYears.length === 0) {
-
-        element.textContent =
-            '—';
-
-        return;
-
-    }
-
-
-    const minimum =
-        Math.min(
-            ...validYears
-        );
-
-    const maximum =
-        Math.max(
-            ...validYears
-        );
-
-
-    element.textContent =
-        minimum === maximum
-            ? String(minimum)
-            : `${minimum} – ${maximum}`;
-
-}
-
-
-/* ============================================================
-   18. SUMMARY DATA
-   ============================================================ */
-
-async function loadSummary(
-    filters,
-    requestId
-) {
-
-    const parameters =
-        buildRpcParameters(
-            filters
-        );
-
-
-    const data =
-        await callRpc(
-            RPC.summary,
-            parameters
-        );
-
 
     /*
-     * Ignore an old request if the user changed filters
-     * while an earlier request was still running.
-     */
+    Clear
+    */
 
-    if (
-        requestId !==
-        state.requestId
-    ) {
+    .filter-form > .clear-filters-button {
+        grid-column: 1 / -1;
 
-        return;
-
+        align-self: end;
     }
 
-
-    const rawRows =
-        Array.isArray(data)
-            ? data
-            : [];
-
-
-    state.rows =
-        rawRows
-            .map(
-                row => {
-
-                    const maker =
-                        row.maker ??
-                        row.maker_name ??
-                        row.manufacturer ??
-                        '';
-
-                    const registrations =
-                        row.registrations ??
-                        row.total_registrations ??
-                        row.total ??
-                        0;
-
-
-                    return {
-
-                        maker:
-                            String(
-                                maker
-                            ).trim(),
-
-                        registrations:
-                            toNumber(
-                                registrations
-                            )
-
-                    };
-
-                }
-            )
-            .filter(
-                row =>
-                    row.maker !== ''
-            );
-
-
-    state.currentPage =
-        1;
-
-
-    console.log(
-        `[Summary] Loaded ${state.rows.length} makers.`
-    );
-
-
-    renderTable();
-
+    .dashboard-content {
+        padding: 20px 16px 30px;
+    }
 }
 
 
-/* ============================================================
-   19. KPI DATA
-   ============================================================ */
+/* =========================================================
+   SMALL TABLET / MOBILE
+   ========================================================= */
 
-async function loadKpis(
-    filters,
-    requestId
-) {
+@media (max-width: 600px) {
 
-    const parameters =
-        buildRpcParameters(
-            filters
-        );
-
-
-    const data =
-        await callRpc(
-            RPC.kpis,
-            parameters
-        );
-
-
-    if (
-        requestId !==
-        state.requestId
-    ) {
-
-        return;
-
+    #dashboard-title {
+        font-size: 21px;
     }
 
-
-    if (!data) {
-
-        return;
-
+    .dashboard-header__subtitle {
+        font-size: 10px;
     }
 
+    .dashboard-header__meta {
+        gap: 11px;
+    }
 
-    console.log(
-        '[KPIs] Received:',
-        data
-    );
+    .unit-label {
+        white-space: normal;
+    }
 
+    .filter-form {
+        grid-template-columns: 1fr;
+    }
 
-    const totalRegistrations =
-        data.totalRegistrations ??
-        data.total_registrations ??
-        data.total ??
-        0;
+    .filter-form > .filter-group:nth-child(1),
+    .filter-form > .filter-group:nth-child(3),
+    .filter-form > .filter-group:nth-child(4),
+    .filter-form > .filter-group:nth-child(5),
+    .filter-form > .filter-group:nth-child(6),
+    .filter-form > .clear-filters-button {
+        grid-column: 1;
+    }
 
+    .year-range-filters {
+        grid-column: 1;
 
-    const totalMakers =
-        data.totalMakers ??
-        data.total_makers ??
-        data.makerCount ??
-        0;
+        grid-template-columns:
+            1fr 1fr;
 
+        gap: 9px;
+    }
 
-    const twoW =
-        data.twoWRegistrations ??
-        data.two_w_registrations ??
-        null;
+    .kpi-grid {
+        grid-template-columns: 1fr;
+    }
 
+    .section-heading h2 {
+        font-size: 16px;
+    }
 
-    const threeW =
-        data.threeWRegistrations ??
-        data.three_w_registrations ??
-        null;
+    .table-toolbar {
+        align-items: stretch;
 
+        flex-direction: column;
+    }
 
-    const twoWPercentage =
-        data.twoWPercentage ??
-        data.two_w_percentage ??
-        null;
+    .table-toolbar__left {
+        width: 100%;
+    }
 
+    .pagination {
+        align-items: stretch;
 
-    const threeWPercentage =
-        data.threeWPercentage ??
-        data.three_w_percentage ??
-        null;
+        flex-direction: column;
+    }
 
+    .pagination__left,
+    .pagination__right {
+        justify-content: center;
+    }
 
-    setText(
-        'totalRegistrations',
-        formatNumber(
-            totalRegistrations
-        )
-    );
+    .pagination__left {
+        width: 100%;
+    }
 
+    #pageSizeSelect {
+        width: 100px;
+    }
 
-    setText(
-        'totalMakers',
-        formatNumber(
-            totalMakers
-        )
-    );
-
-
-    setText(
-        'twoWRegistrations',
-        twoW === null
-            ? '—'
-            : formatNumber(twoW)
-    );
-
-
-    setText(
-        'threeWRegistrations',
-        threeW === null
-            ? '—'
-            : formatNumber(threeW)
-    );
-
-
-    setText(
-        'twoWPercentage',
-        twoWPercentage === null
-            ? '—'
-            : formatPercentage(
-                twoWPercentage
-            )
-    );
-
-
-    setText(
-        'threeWPercentage',
-        threeWPercentage === null
-            ? '—'
-            : formatPercentage(
-                threeWPercentage
-            )
-    );
-
+    .active-filters {
+        align-items: flex-start;
+    }
 }
 
 
-/* ============================================================
-   20. TABLE FILTERING
-   ============================================================ */
+/* =========================================================
+   VERY SMALL SCREENS
+   ========================================================= */
 
-function getVisibleRows() {
+@media (max-width: 480px) {
 
-    const search =
-        String(
-            state.searchTerm || ''
-        )
-            .trim()
-            .toLowerCase();
-
-
-    let rows =
-        [...state.rows];
-
-
-    if (search) {
-
-        rows =
-            rows.filter(
-                row =>
-                    row.maker
-                        .toLowerCase()
-                        .includes(
-                            search
-                        )
-            );
-
+    .dashboard-header {
+        padding-left: 16px;
+        padding-right: 16px;
     }
 
+    .dashboard-content {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
 
-    rows.sort(
-        (
-            a,
-            b
-        ) => {
+    .brand-mark {
+        width: 40px;
+        height: 40px;
 
-            let result = 0;
+        flex-basis: 40px;
+    }
 
+    .dashboard-header__meta {
+        flex-wrap: wrap;
+    }
 
-            if (
-                state.sortKey ===
-                'maker'
-            ) {
+    .data-period__divider {
+        display: none;
+    }
 
-                result =
-                    a.maker.localeCompare(
-                        b.maker,
-                        undefined,
-                        {
-                            sensitivity:
-                                'base'
-                        }
-                    );
+    .year-range-filters {
+        grid-template-columns: 1fr;
+    }
 
-            } else {
+    .kpi-card {
+        min-height: 115px;
 
-                const aValue =
-                    toNumber(
-                        a[
-                            state.sortKey
-                        ]
-                    );
+        padding: 17px;
+    }
 
-                const bValue =
-                    toNumber(
-                        b[
-                            state.sortKey
-                        ]
-                    );
+    .table-card {
+        border-radius: var(--radius-md);
+    }
 
+    .data-table {
+        min-width: 580px;
+    }
 
-                result =
-                    aValue -
-                    bValue;
-
-            }
-
-
-            return state.sortDirection ===
-                'asc'
-                    ? result
-                    : -result;
-
-        }
-    );
-
-
-    return rows;
-
+    .pagination {
+        padding: 13px 15px;
+    }
 }
 
 
-/* ============================================================
-   21. RENDER TABLE
-   ============================================================ */
+/* =========================================================
+   15. REDUCED MOTION
+   ========================================================= */
 
-function renderTable() {
+@media (prefers-reduced-motion: reduce) {
 
-    const body =
-        getElement(
-            'makerSummaryTableBody'
-        );
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
 
+        animation-duration: 0.01ms !important;
 
-    if (!body) {
-        return;
+        animation-iteration-count: 1 !important;
+
+        transition-duration: 0.01ms !important;
     }
-
-
-    const rows =
-        getVisibleRows();
-
-
-    const total =
-        rows.reduce(
-            (
-                sum,
-                row
-            ) =>
-                sum +
-                toNumber(
-                    row.registrations
-                ),
-            0
-        );
-
-
-    const totalPages =
-        Math.max(
-            1,
-            Math.ceil(
-                rows.length /
-                state.pageSize
-            )
-        );
-
-
-    if (
-        state.currentPage >
-        totalPages
-    ) {
-
-        state.currentPage =
-            totalPages;
-
-    }
-
-
-    const startIndex =
-        (
-            state.currentPage -
-            1
-        ) *
-        state.pageSize;
-
-
-    const pageRows =
-        rows.slice(
-            startIndex,
-            startIndex +
-            state.pageSize
-        );
-
-
-    body.replaceChildren();
-
-
-    for (
-        const row of pageRows
-    ) {
-
-        const tr =
-            document.createElement(
-                'tr'
-            );
-
-
-        const makerCell =
-            document.createElement(
-                'td'
-            );
-
-        makerCell.textContent =
-            row.maker;
-
-
-        const registrationCell =
-            document.createElement(
-                'td'
-            );
-
-        registrationCell.textContent =
-            formatNumber(
-                row.registrations
-            );
-
-
-        const shareCell =
-            document.createElement(
-                'td'
-            );
-
-
-        const share =
-            total > 0
-                ? (
-                    toNumber(
-                        row.registrations
-                    ) /
-                    total
-                ) *
-                100
-                : 0;
-
-
-        shareCell.textContent =
-            `${share.toFixed(2)}%`;
-
-
-        tr.appendChild(
-            makerCell
-        );
-
-        tr.appendChild(
-            registrationCell
-        );
-
-        tr.appendChild(
-            shareCell
-        );
-
-
-        body.appendChild(
-            tr
-        );
-
-    }
-
-
-    /*
-     * Empty state.
-     */
-
-    const tableEmpty =
-        getElement('tableEmpty');
-
-    const tableContent =
-        getElement('tableContent');
-
-
-    if (
-        rows.length === 0
-    ) {
-
-        if (tableEmpty) {
-
-            tableEmpty.hidden =
-                false;
-
-        }
-
-        if (tableContent) {
-
-            tableContent.hidden =
-                true;
-
-        }
-
-    } else {
-
-        if (tableEmpty) {
-
-            tableEmpty.hidden =
-                true;
-
-        }
-
-        if (tableContent) {
-
-            tableContent.hidden =
-                false;
-
-        }
-
-    }
-
-
-    /*
-     * Footer.
-     */
-
-    setText(
-        'makerSummaryTotal',
-        formatNumber(total)
-    );
-
-
-    setText(
-        'makerSummaryMarketShare',
-        rows.length > 0
-            ? '100.00%'
-            : '0.00%'
-    );
-
-
-    /*
-     * Pagination.
-     */
-
-    setText(
-        'pageIndicator',
-        `Page ${state.currentPage} of ${totalPages}`
-    );
-
-
-    const previous =
-        getElement(
-            'previousPageButton'
-        );
-
-
-    const next =
-        getElement(
-            'nextPageButton'
-        );
-
-
-    if (previous) {
-
-        previous.disabled =
-            state.currentPage <= 1;
-
-    }
-
-
-    if (next) {
-
-        next.disabled =
-            state.currentPage >=
-            totalPages;
-
-    }
-
 }
-
-
-/* ============================================================
-   22. TABLE SORTING
-   ============================================================ */
-
-function handleSort(
-    key
-) {
-
-    const allowedKeys = [
-
-        'maker',
-
-        'registrations',
-
-        'marketShare'
-
-    ];
-
-
-    if (
-        !allowedKeys.includes(
-            key
-        )
-    ) {
-
-        return;
-
-    }
-
-
-    /*
-     * Market share is calculated from registrations,
-     * so sorting by marketShare is equivalent to sorting
-     * by registrations.
-     */
-
-    const actualKey =
-        key === 'marketShare'
-            ? 'registrations'
-            : key;
-
-
-    if (
-        state.sortKey ===
-        actualKey
-    ) {
-
-        state.sortDirection =
-            state.sortDirection ===
-                'asc'
-                    ? 'desc'
-                    : 'asc';
-
-    } else {
-
-        state.sortKey =
-            actualKey;
-
-        state.sortDirection =
-            actualKey === 'maker'
-                ? 'asc'
-                : 'desc';
-
-    }
-
-
-    state.currentPage =
-        1;
-
-
-    renderTable();
-
-}
-
-
-/* ============================================================
-   23. ACTIVE FILTER DISPLAY
-   ============================================================ */
-
-function renderActiveFilters(
-    filters
-) {
-
-    const container =
-        getElement(
-            'activeFilters'
-        );
-
-
-    if (!container) {
-        return;
-    }
-
-
-    container.replaceChildren();
-
-
-    const label =
-        document.createElement(
-            'span'
-        );
-
-    label.className =
-        'active-filters__label';
-
-    label.textContent =
-        'Active Filters:';
-
-
-    container.appendChild(
-        label
-    );
-
-
-    const active = [
-
-        [
-            'Year',
-            filters.year
-        ],
-
-        [
-            'From',
-            filters.fromYear
-        ],
-
-        [
-            'To',
-            filters.toYear
-        ],
-
-        [
-            'Maker',
-            filters.maker
-        ],
-
-        [
-            'Region',
-            filters.region
-        ],
-
-        [
-            'Category',
-            filters.category
-        ],
-
-        [
-            'Subcategory',
-            filters.subcategory
-        ]
-
-    ].filter(
-        item =>
-            !isAll(
-                item[1]
-            )
-    );
-
-
-    if (
-        active.length === 0
-    ) {
-
-        const empty =
-            document.createElement(
-                'span'
-            );
-
-        empty.className =
-            'active-filter active-filter--empty';
-
-        empty.textContent =
-            'No active filters';
-
-        container.appendChild(
-            empty
-        );
-
-        return;
-
-    }
-
-
-    for (
-        const [
-            labelText,
-            value
-        ] of active
-    ) {
-
-        const chip =
-            document.createElement(
-                'span'
-            );
-
-        chip.className =
-            'active-filter';
-
-        chip.textContent =
-            `${labelText}: ${value}`;
-
-        container.appendChild(
-            chip
-        );
-
-    }
-
-}
-
-
-/* ============================================================
-   24. FILTER COMPATIBILITY
-   ============================================================ */
-
-function enforceFilterCompatibility(
-    changedFilter
-) {
-
-    const region =
-        getElement(
-            'regionFilter'
-        );
-
-    const category =
-        getElement(
-            'categoryFilter'
-        );
-
-    const subcategory =
-        getElement(
-            'subcategoryFilter'
-        );
-
-
-    /*
-     * The source data does NOT contain:
-     *
-     * Maker x RTO x Vehicle Class
-     *
-     * Therefore RTO and vehicle class cannot be
-     * combined.
-     */
-
-
-    if (
-        changedFilter ===
-            'regionFilter' &&
-        !isAll(
-            region?.value
-        )
-    ) {
-
-        if (category) {
-
-            category.value =
-                'all';
-
-        }
-
-        if (subcategory) {
-
-            subcategory.value =
-                'all';
-
-        }
-
-    }
-
-
-    if (
-        (
-            changedFilter ===
-                'categoryFilter' ||
-            changedFilter ===
-                'subcategoryFilter'
-        ) &&
-        (
-            !isAll(
-                category?.value
-            ) ||
-            !isAll(
-                subcategory?.value
-            )
-        )
-    ) {
-
-        if (region) {
-
-            region.value =
-                'all';
-
-        }
-
-    }
-
-
-    const rtoSelected =
-        !isAll(
-            region?.value
-        );
-
-
-    const classSelected =
-        !isAll(
-            category?.value
-        ) ||
-        !isAll(
-            subcategory?.value
-        );
-
-
-    if (region) {
-
-        region.disabled =
-            classSelected;
-
-    }
-
-
-    if (category) {
-
-        category.disabled =
-            rtoSelected;
-
-    }
-
-
-    if (subcategory) {
-
-        subcategory.disabled =
-            rtoSelected;
-
-    }
-
-}
-
-
-/* ============================================================
-   25. VALIDATE FILTERS
-   ============================================================ */
-
-function validateFilters(
-    filters
-) {
-
-    if (
-        !isAll(
-            filters.fromYear
-        ) &&
-        !isAll(
-            filters.toYear
-        )
-    ) {
-
-        const from =
-            Number(
-                filters.fromYear
-            );
-
-        const to =
-            Number(
-                filters.toYear
-            );
-
-
-        if (
-            Number.isFinite(from) &&
-            Number.isFinite(to) &&
-            from > to
-        ) {
-
-            throw new Error(
-                'From Year cannot be greater than To Year.'
-            );
-
-        }
-
-    }
-
-
-    const rtoSelected =
-        !isAll(
-            filters.region
-        );
-
-
-    const classSelected =
-        !isAll(
-            filters.category
-        ) ||
-        !isAll(
-            filters.subcategory
-        );
-
-
-    if (
-        rtoSelected &&
-        classSelected
-    ) {
-
-        throw new Error(
-            'Region / RTO and Category / Subcategory cannot be used together because the supplied data does not contain their intersection.'
-        );
-
-    }
-
-}
-
-
-/* ============================================================
-   26. REFRESH DASHBOARD
-   ============================================================ */
-
-async function refreshDashboard() {
-
-    const filters =
-        readFilters();
-
-
-    validateFilters(
-        filters
-    );
-
-
-    state.filters =
-        filters;
-
-
-    renderActiveFilters(
-        filters
-    );
-
-
-    enforceFilterCompatibility(
-        ''
-    );
-
-
-    const requestId =
-        ++state.requestId;
-
-
-    clearError();
-
-    showLoading();
-
-
-    try {
-
-        /*
-         * Run summary and KPI requests together.
-         */
-
-        await Promise.all([
-
-            loadSummary(
-                filters,
-                requestId
-            ),
-
-            loadKpis(
-                filters,
-                requestId
-            )
-
-        ]);
-
-
-    } catch (error) {
-
-        /*
-         * Clear stale table data when the request fails.
-         */
-
-        state.rows =
-            [];
-
-
-        renderTable();
-
-
-        showError(
-            error
-        );
-
-
-    } finally {
-
-        if (
-            requestId ===
-            state.requestId
-        ) {
-
-            hideLoading();
-
-        }
-
-    }
-
-}
-
-
-/* ============================================================
-   27. FILTER CHANGE
-   ============================================================ */
-
-async function handleFilterChange(
-    filterId
-) {
-
-    try {
-
-        enforceFilterCompatibility(
-            filterId
-        );
-
-
-        const filters =
-            readFilters();
-
-
-        validateFilters(
-            filters
-        );
-
-
-        state.currentPage =
-            1;
-
-
-        /*
-         * Refresh filter options after a filter changes.
-         * This keeps the filter lists synchronized.
-         */
-
-        await loadFilterOptions(
-            filters
-        );
-
-
-        await refreshDashboard();
-
-
-    } catch (error) {
-
-        hideLoading();
-
-        showError(
-            error
-        );
-
-    }
-
-}
-
-
-/* ============================================================
-   28. CLEAR FILTERS
-   ============================================================ */
-
-async function clearFilters() {
-
-    const filterIds = [
-
-        'yearFilter',
-
-        'fromYearFilter',
-
-        'toYearFilter',
-
-        'makerFilter',
-
-        'regionFilter',
-
-        'categoryFilter',
-
-        'subcategoryFilter'
-
-    ];
-
-
-    for (
-        const id of filterIds
-    ) {
-
-        const element =
-            getElement(id);
-
-
-        if (element) {
-
-            element.value =
-                'all';
-
-        }
-
-    }
-
-
-    const search =
-        getElement(
-            'makerSearch'
-        );
-
-
-    if (search) {
-
-        search.value =
-            '';
-
-    }
-
-
-    state.searchTerm =
-        '';
-
-    state.currentPage =
-        1;
-
-    state.sortKey =
-        'registrations';
-
-    state.sortDirection =
-        'desc';
-
-
-    enforceFilterCompatibility(
-        ''
-    );
-
-
-    try {
-
-        await loadFilterOptions(
-            readFilters()
-        );
-
-        await refreshDashboard();
-
-    } catch (error) {
-
-        showError(
-            error
-        );
-
-    }
-
-}
-
-
-/* ============================================================
-   29. SEARCH
-   ============================================================ */
-
-function handleSearch(
-    event
-) {
-
-    state.searchTerm =
-        event.target.value || '';
-
-
-    state.currentPage =
-        1;
-
-
-    renderTable();
-
-}
-
-
-/* ============================================================
-   30. PAGINATION
-   ============================================================ */
-
-function previousPage() {
-
-    if (
-        state.currentPage <=
-        1
-    ) {
-
-        return;
-
-    }
-
-
-    state.currentPage--;
-
-    renderTable();
-
-}
-
-
-function nextPage() {
-
-    const rows =
-        getVisibleRows();
-
-
-    const totalPages =
-        Math.max(
-            1,
-            Math.ceil(
-                rows.length /
-                state.pageSize
-            )
-        );
-
-
-    if (
-        state.currentPage >=
-        totalPages
-    ) {
-
-        return;
-
-    }
-
-
-    state.currentPage++;
-
-    renderTable();
-
-}
-
-
-function changePageSize(
-    event
-) {
-
-    const value =
-        Number(
-            event.target.value
-        );
-
-
-    if (
-        !CONFIG.allowedPageSizes
-            .includes(
-                value
-            )
-    ) {
-
-        return;
-
-    }
-
-
-    state.pageSize =
-        value;
-
-
-    state.currentPage =
-        1;
-
-
-    renderTable();
-
-}
-
-
-/* ============================================================
-   31. ATTACH EVENTS
-   ============================================================ */
-
-function attachEventListeners() {
-
-    const filterIds = [
-
-        'yearFilter',
-
-        'fromYearFilter',
-
-        'toYearFilter',
-
-        'makerFilter',
-
-        'regionFilter',
-
-        'categoryFilter',
-
-        'subcategoryFilter'
-
-    ];
-
-
-    for (
-        const id of filterIds
-    ) {
-
-        const element =
-            getElement(id);
-
-
-        if (!element) {
-            continue;
-        }
-
-
-        element.addEventListener(
-            'change',
-            () =>
-                handleFilterChange(
-                    id
-                )
-        );
-
-    }
-
-
-    const clearButton =
-        getElement(
-            'clearFiltersButton'
-        );
-
-
-    if (clearButton) {
-
-        clearButton.addEventListener(
-            'click',
-            clearFilters
-        );
-
-    }
-
-
-    const search =
-        getElement(
-            'makerSearch'
-        );
-
-
-    if (search) {
-
-        search.addEventListener(
-            'input',
-            handleSearch
-        );
-
-    }
-
-
-    const previous =
-        getElement(
-            'previousPageButton'
-        );
-
-
-    if (previous) {
-
-        previous.addEventListener(
-            'click',
-            previousPage
-        );
-
-    }
-
-
-    const next =
-        getElement(
-            'nextPageButton'
-        );
-
-
-    if (next) {
-
-        next.addEventListener(
-            'click',
-            nextPage
-        );
-
-    }
-
-
-    const pageSize =
-        getElement(
-            'pageSizeSelect'
-        );
-
-
-    if (pageSize) {
-
-        pageSize.addEventListener(
-            'change',
-            changePageSize
-        );
-
-    }
-
-
-    /*
-     * Existing HTML has:
-     *
-     * data-sort="maker"
-     * data-sort="registrations"
-     * data-sort="marketShare"
-     */
-
-    document
-        .querySelectorAll(
-            '[data-sort]'
-        )
-        .forEach(
-            button => {
-
-                button.addEventListener(
-                    'click',
-                    () =>
-                        handleSort(
-                            button.dataset.sort
-                        )
-                );
-
-            }
-        );
-
-
-    /*
-     * Prevent the filters form from submitting/reloading
-     * the page if Enter is pressed.
-     */
-
-    const form =
-        getElement(
-            'dashboardFilters'
-        );
-
-
-    if (form) {
-
-        form.addEventListener(
-            'submit',
-            event => {
-
-                event.preventDefault();
-
-            }
-        );
-
-    }
-
-}
-
-
-/* ============================================================
-   32. INITIALIZE
-   ============================================================ */
-
-async function initializeDashboard() {
-
-    console.log(
-        '[Dashboard] Initializing...'
-    );
-
-
-    showLoading();
-
-
-    try {
-
-        await initializeSupabase();
-
-
-        attachEventListeners();
-
-
-        /*
-         * First load the filter metadata.
-         */
-
-        await loadFilterOptions(
-            {
-                year: 'all',
-                fromYear: 'all',
-                toYear: 'all',
-                maker: 'all',
-                region: 'all',
-                category: 'all',
-                subcategory: 'all'
-            }
-        );
-
-
-        /*
-         * Then load the actual dashboard.
-         */
-
-        await refreshDashboard();
-
-
-        console.log(
-            '[Dashboard] Ready.'
-        );
-
-
-    } catch (error) {
-
-        console.error(
-            '[Dashboard] Initialization failed:',
-            error
-        );
-
-
-        showError(
-            error
-        );
-
-
-    } finally {
-
-        hideLoading();
-
-    }
-
-}
-
-
-/* ============================================================
-   33. START APPLICATION
-   ============================================================ */
-
-document.addEventListener(
-    'DOMContentLoaded',
-    () => {
-
-        initializeDashboard();
-
-    }
-);
