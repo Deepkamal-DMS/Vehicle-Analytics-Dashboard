@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="Vehicle Registration Analytics Dashboard"
+    >
+
+    <meta
+        name="theme-color"
+        content="#0f2747"
+    >
+
+    <title>Vehicle Registration Dashboard</title>
+
+    <!-- Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <!-- Main stylesheet -->
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
+    <!-- Supabase Browser Client -->
+    <script
+        src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+        defer
+    ></script>
+</head>
+
+<body>
+
+    <!-- =========================================================
+         GLOBAL LOADING OVERLAY
+         ========================================================= -->
+
+    <div
+        id="globalLoading"
+        class="loading-overlay"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading dashboard"
+        hidden
+    >
+        <div class="loading-overlay__content">
+            <span
+                class="loading-spinner"
+                aria-hidden="true"
+            ></span>
+
+            <span>Loading dashboard...</span>
+        </div>
+    </div>
+
+
+    <!-- =========================================================
+         APPLICATION HEADER
+         ========================================================= -->
+
+    <header class="dashboard-header">
+
+        <div class="dashboard-header__brand">
+
+            <div class="brand-mark" aria-hidden="true">
+                <svg
+                    viewBox="0 0 24 24"
+                    width="24"
+                    height="24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <path d="M5 17h14"></path>
+                    <path d="M6 17l1.2-5.2a2 2 0 0 1 2-1.55h5.6a2 2 0 0 1 2 1.55L18 17"></path>
+                    <circle cx="8" cy="17.5" r="1.5"></circle>
+                    <circle cx="16" cy="17.5" r="1.5"></circle>
+                    <path d="M9 10.25l1-2h4l1 2"></path>
+                </svg>
+            </div>
+
+            <div>
+                <h1 id="dashboard-title">
+                    VEHICLE REGISTRATION DASHBOARD
+                </h1>
+
+                <p class="dashboard-header__subtitle">
+                    Vehicle registration analytics and insights
+                </p>
+            </div>
+
+        </div>
+
+
+        <div
+            class="dashboard-header__meta"
+            aria-label="Dashboard information"
+        >
+
+            <div class="data-period">
+
+                <span class="data-period__label">
+                    Data Year Range
+                </span>
+
+                <strong id="data-year-range">
+                    —
+                </strong>
+
+            </div>
+
+            <div
+                class="data-period__divider"
+                aria-hidden="true"
+            ></div>
+
+            <div class="unit-label">
+                All Values in Units
+            </div>
+
+        </div>
+
+    </header>
+
+
+    <!-- =========================================================
+         MAIN DASHBOARD
+         ========================================================= -->
+
+    <main class="dashboard-layout">
+
+
+        <!-- =====================================================
+             FILTER SIDEBAR
+             ===================================================== -->
+
+        <aside
+            class="filter-sidebar"
+            aria-labelledby="filters-title"
+        >
+
+            <div class="filter-sidebar__header">
+
+                <div>
+                    <span class="section-eyebrow">
+                        CONTROLS
+                    </span>
+
+                    <h2 id="filters-title">
+                        Filters
+                    </h2>
+                </div>
+
+                <span
+                    class="filter-sidebar__icon"
+                    aria-hidden="true"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="19"
+                        height="19"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path d="M4 6h16"></path>
+                        <path d="M7 12h10"></path>
+                        <path d="M10 18h4"></path>
+                    </svg>
+                </span>
+
+            </div>
+
+
+            <form
+                id="dashboardFilters"
+                class="filter-form"
+                novalidate
+            >
+
+                <!-- Year -->
+                <div class="filter-group">
+
+                    <label for="yearFilter">
+                        Year
+                    </label>
+
+                    <select
+                        id="yearFilter"
+                        name="year"
+                    >
+                        <option value="all">
+                            All
+                        </option>
+                    </select>
+
+                </div>
+
+
+       <div class="year-range-filters">
+
+    <div class="filter-group">
+        <label for="fromYearFilter">From Year</label>
+
+        <select id="fromYearFilter">
+            <option value="all">All</option>
+        </select>
+    </div>
+
+    <div class="filter-group">
+        <label for="toYearFilter">To Year</label>
+
+        <select id="toYearFilter">
+            <option value="all">All</option>
+        </select>
+    </div>
+
+</div>
+
+                <!-- Maker -->
+                <div class="filter-group">
+
+                    <label for="makerFilter">
+                        Maker
+                    </label>
+
+                    <select
+                        id="makerFilter"
+                        name="maker"
+                    >
+                        <option value="all">
+                            All
+                        </option>
+                    </select>
+
+                </div>
+
+
+                <!-- Region -->
+                <div class="filter-group">
+
+                    <label for="regionFilter">
+                        Region / RTO
+                    </label>
+
+                    <select
+                        id="regionFilter"
+                        name="region"
+                    >
+                        <option value="all">
+                            All
+                        </option>
+                    </select>
+
+                </div>
+
+
+                <!-- Category -->
+                <div class="filter-group">
+
+                    <label for="categoryFilter">
+                        Category
+                    </label>
+
+                    <select
+                        id="categoryFilter"
+                        name="category"
+                    >
+                        <option value="all">
+                            All
+                        </option>
+                    </select>
+
+                </div>
+
+
+                <!-- Subcategory -->
+                <div class="filter-group">
+
+                    <label for="subcategoryFilter">
+                        Subcategory
+                    </label>
+
+                    <select
+                        id="subcategoryFilter"
+                        name="subcategory"
+                    >
+                        <option value="all">
+                            All
+                        </option>
+                    </select>
+
+                </div>
+
+
+                <!-- Clear -->
+                <button
+                    type="button"
+                    id="clearFiltersButton"
+                    class="clear-filters-button"
+                >
+
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="17"
+                        height="17"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M3 6h18"></path>
+                        <path d="M8 6V4h8v2"></path>
+                        <path d="M19 6l-1 14H6L5 6"></path>
+                        <path d="M10 11v5"></path>
+                        <path d="M14 11v5"></path>
+                    </svg>
+
+                    Clear Filters
+
+                </button>
+
+            </form>
+
+        </aside>
+
+
+        <!-- =====================================================
+             MAIN CONTENT
+             ===================================================== -->
+
+        <section class="dashboard-content">
+
+
+            <!-- =================================================
+                 ACTIVE FILTERS
+                 ================================================= -->
+
+            <div
+                id="activeFilters"
+                class="active-filters"
+                aria-live="polite"
+                aria-label="Active filters"
+            >
+
+                <span class="active-filters__label">
+                    Active Filters:
+                </span>
+
+                <span class="active-filter active-filter--empty">
+                    No active filters
+                </span>
+
+            </div>
+
+
+            <!-- =================================================
+                 OVERVIEW
+                 ================================================= -->
+
+            <section
+                class="content-section"
+                aria-labelledby="summary-title"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+
+                        <span class="section-eyebrow">
+                            OVERVIEW
+                        </span>
+
+                        <h2 id="summary-title">
+                            Registration Summary
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                <div class="kpi-grid">
+
+
+                    <!-- Total Registrations -->
+
+                    <article class="kpi-card">
+
+                        <div
+                            class="kpi-card__icon"
+                            aria-hidden="true"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="21"
+                                height="21"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="M5 4h14v16H5z"></path>
+                                <path d="M8 8h8"></path>
+                                <path d="M8 12h8"></path>
+                                <path d="M8 16h5"></path>
+                            </svg>
+                        </div>
+
+                        <div class="kpi-card__content">
+
+                            <span class="kpi-card__label">
+                                Total Registrations
+                            </span>
+
+                            <strong
+                                id="totalRegistrations"
+                                class="kpi-card__value"
+                            >
+                                0
+                            </strong>
+
+                            <span class="kpi-card__meta">
+                                All selected registrations
+                            </span>
+
+                        </div>
+
+                    </article>
+
+
+                    <!-- Total Makers -->
+
+                    <article class="kpi-card">
+
+                        <div
+                            class="kpi-card__icon"
+                            aria-hidden="true"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="21"
+                                height="21"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <circle cx="9" cy="8" r="3"></circle>
+                                <path d="M3.5 19a5.5 5.5 0 0 1 11 0"></path>
+                                <path d="M16 5.5a3 3 0 0 1 0 5.8"></path>
+                                <path d="M17 14a5 5 0 0 1 3.5 5"></path>
+                            </svg>
+                        </div>
+
+                        <div class="kpi-card__content">
+
+                            <span class="kpi-card__label">
+                                Total Makers
+                            </span>
+
+                            <strong
+                                id="totalMakers"
+                                class="kpi-card__value"
+                            >
+                                0
+                            </strong>
+
+                            <span class="kpi-card__meta">
+                                Unique vehicle makers
+                            </span>
+
+                        </div>
+
+                    </article>
+
+
+                    <!-- 2W -->
+
+                    <article class="kpi-card">
+
+                        <div
+                            class="kpi-card__icon"
+                            aria-hidden="true"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="21"
+                                height="21"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <circle cx="6.5" cy="17" r="2.5"></circle>
+                                <circle cx="17.5" cy="17" r="2.5"></circle>
+                                <path d="M6.5 17l3.5-7h3l4.5 7"></path>
+                                <path d="M10 10l-2-3h3"></path>
+                                <path d="M13 10l2-3"></path>
+                            </svg>
+                        </div>
+
+                        <div class="kpi-card__content">
+
+                            <span class="kpi-card__label">
+                                2W Registrations
+                            </span>
+
+                            <strong
+                                id="twoWRegistrations"
+                                class="kpi-card__value"
+                            >
+                                —
+                            </strong>
+
+                            <span
+                                id="twoWPercentage"
+                                class="kpi-card__meta"
+                            >
+                                —
+                            </span>
+
+                        </div>
+
+                    </article>
+
+
+                    <!-- 3W -->
+
+                    <article class="kpi-card">
+
+                        <div
+                            class="kpi-card__icon"
+                            aria-hidden="true"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="21"
+                                height="21"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <circle cx="6" cy="17" r="2.5"></circle>
+                                <circle cx="18" cy="17" r="2.5"></circle>
+                                <path d="M6 17l2-7h7l3 7"></path>
+                                <path d="M8 10l-1.5-3h5"></path>
+                                <path d="M15 10l2-3"></path>
+                            </svg>
+                        </div>
+
+                        <div class="kpi-card__content">
+
+                            <span class="kpi-card__label">
+                                3W Registrations
+                            </span>
+
+                            <strong
+                                id="threeWRegistrations"
+                                class="kpi-card__value"
+                            >
+                                —
+                            </strong>
+
+                            <span
+                                id="threeWPercentage"
+                                class="kpi-card__meta"
+                            >
+                                —
+                            </span>
+
+                        </div>
+
+                    </article>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 MAKER SUMMARY
+                 ================================================= -->
+
+            <section
+                class="content-section"
+                aria-labelledby="maker-summary-title"
+            >
+
+                <div class="table-card">
+
+
+                    <!-- Table header -->
+
+                    <div class="section-heading section-heading--table">
+
+                        <div>
+
+                            <span class="section-eyebrow">
+                                DETAILS
+                            </span>
+
+                            <h2 id="maker-summary-title">
+                                Registrations by Maker
+                            </h2>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Table toolbar -->
+
+                    <div class="table-toolbar">
+
+                        <div class="table-toolbar__left">
+
+                            <label
+                                class="search-box"
+                                for="makerSearch"
+                            >
+
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    width="17"
+                                    height="17"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    aria-hidden="true"
+                                >
+                                    <circle
+                                        cx="11"
+                                        cy="11"
+                                        r="7"
+                                    ></circle>
+
+                                    <path
+                                        d="m20 20-4-4"
+                                    ></path>
+                                </svg>
+
+                                <input
+                                    id="makerSearch"
+                                    type="search"
+                                    placeholder="Search maker..."
+                                    autocomplete="off"
+                                    aria-label="Search makers"
+                                >
+
+                            </label>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Table states -->
+
+                    <div
+                        id="tableLoading"
+                        class="table-state table-state--loading"
+                        role="status"
+                        aria-live="polite"
+                        hidden
+                    >
+
+                        <span
+                            class="loading-spinner loading-spinner--small"
+                            aria-hidden="true"
+                        ></span>
+
+                        <span>
+                            Loading data...
+                        </span>
+
+                    </div>
+
+
+                    <div
+                        id="tableEmpty"
+                        class="table-state table-state--empty"
+                        role="status"
+                        aria-live="polite"
+                        hidden
+                    >
+
+                        <div class="table-state__icon">
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="32"
+                                height="32"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.7"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <circle
+                                    cx="12"
+                                    cy="12"
+                                    r="9"
+                                ></circle>
+
+                                <path d="M8 12h8"></path>
+                            </svg>
+                        </div>
+
+                        <p>
+                            No data found for the selected filters.
+                        </p>
+
+                    </div>
+
+
+                    <div
+                        id="tableError"
+                        class="table-state table-state--error"
+                        role="alert"
+                        hidden
+                    >
+
+                        <div class="table-state__icon">
+                            !
+                        </div>
+
+                        <p>
+                            Unable to load data. Please try again.
+                        </p>
+
+                    </div>
+
+
+                    <!-- Actual table -->
+
+                    <div
+                        id="tableContent"
+                        class="table-wrapper"
+                    >
+
+                        <table
+                            id="makerSummaryTable"
+                            class="data-table"
+                        >
+
+                            <caption class="visually-hidden">
+                                Vehicle registrations summarized by maker
+                            </caption>
+
+                            <thead>
+
+                                <tr>
+
+                                    <th
+                                        scope="col"
+                                        data-sort-key="maker"
+                                    >
+                                        <button
+                                            type="button"
+                                            class="table-sort-button"
+                                            data-sort="maker"
+                                            aria-label="Sort by Maker"
+                                        >
+                                            <span>
+                                                Maker
+                                            </span>
+
+                                            <span
+                                                class="sort-icon"
+                                                aria-hidden="true"
+                                            >
+                                                ↕
+                                            </span>
+                                        </button>
+                                    </th>
+
+
+                                    <th
+                                        scope="col"
+                                        data-sort-key="registrations"
+                                    >
+                                        <button
+                                            type="button"
+                                            class="table-sort-button"
+                                            data-sort="registrations"
+                                            aria-label="Sort by Total Registrations"
+                                        >
+                                            <span>
+                                                Total Registrations
+                                            </span>
+
+                                            <span
+                                                class="sort-icon"
+                                                aria-hidden="true"
+                                            >
+                                                ↕
+                                            </span>
+                                        </button>
+                                    </th>
+
+
+                                    <th
+                                        scope="col"
+                                        data-sort-key="marketShare"
+                                    >
+                                        <button
+                                            type="button"
+                                            class="table-sort-button"
+                                            data-sort="marketShare"
+                                            aria-label="Sort by Market Share"
+                                        >
+                                            <span>
+                                                Market Share %
+                                            </span>
+
+                                            <span
+                                                class="sort-icon"
+                                                aria-hidden="true"
+                                            >
+                                                ↕
+                                            </span>
+                                        </button>
+                                    </th>
+
+                                </tr>
+
+                            </thead>
+
+
+                            <tbody id="makerSummaryTableBody">
+
+                                <tr class="table-placeholder-row">
+
+                                    <td colspan="3">
+                                        Loading...
+                                    </td>
+
+                                </tr>
+
+                            </tbody>
+
+
+                            <tfoot>
+
+                                <tr>
+
+                                    <th scope="row">
+                                        Total
+                                    </th>
+
+                                    <td id="makerSummaryTotal">
+                                        0
+                                    </td>
+
+                                    <td id="makerSummaryMarketShare">
+                                        100.00%
+                                    </td>
+
+                                </tr>
+
+                            </tfoot>
+
+                        </table>
+
+                    </div>
+
+
+                    <!-- Pagination -->
+
+                    <nav
+                        class="pagination"
+                        aria-label="Maker summary pagination"
+                    >
+
+                        <div class="pagination__left">
+
+                            <label for="pageSizeSelect">
+                                Rows per page
+                            </label>
+
+                            <select
+                                id="pageSizeSelect"
+                                aria-label="Rows per page"
+                            >
+
+                                <option value="25">
+                                    25
+                                </option>
+
+                                <option value="50">
+                                    50
+                                </option>
+
+                                <option value="100">
+                                    100
+                                </option>
+
+                            </select>
+
+                        </div>
+
+
+                        <div class="pagination__right">
+
+                            <button
+                                type="button"
+                                id="previousPageButton"
+                                class="pagination-button"
+                                aria-label="Previous page"
+                                disabled
+                            >
+                                Previous
+                            </button>
+
+                            <span
+                                id="pageIndicator"
+                                class="page-indicator"
+                            >
+                                Page 1 of 1
+                            </span>
+
+                            <button
+                                type="button"
+                                id="nextPageButton"
+                                class="pagination-button"
+                                aria-label="Next page"
+                                disabled
+                            >
+                                Next
+                            </button>
+
+                        </div>
+
+                    </nav>
+
+                </div>
+
+            </section>
+
+        </section>
+
+    </main>
+
+
+    <!-- =========================================================
+         JAVASCRIPT
+         ========================================================= -->
+
+    <script
+        type="module"
+        src="script.js"
+    ></script>
+
+</body>
+</html>
