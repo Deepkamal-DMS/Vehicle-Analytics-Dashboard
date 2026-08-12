@@ -2688,7 +2688,7 @@ function renderTableHead() {
 }
 
 
-function renderTableFoot(rows, columnTotals) {
+function renderTableFoot(rows, columnTotals, shareTotals) {
 
     if (!dom.makerSummaryTableFoot) {
         return;
@@ -2698,6 +2698,8 @@ function renderTableFoot(rows, columnTotals) {
 
     const totals =
         columnTotals || calculateColumnTotals(rows, state.columns);
+
+    const denominators = shareTotals || totals;
 
     const tr = document.createElement("tr");
 
@@ -2717,11 +2719,15 @@ function renderTableFoot(rows, columnTotals) {
         } else {
 
             /*
-             * The column total is its own denominator, so the
-             * foot reads 100% and names what the shares above
-             * are measured against.
+             * Against the unsearched denominator this reads 100%
+             * on the full list, and on a search it reads how much
+             * of the market the matches account for.
              */
-            fillNumericCell(cell, totals[column.key], totals[column.key]);
+            fillNumericCell(
+                cell,
+                totals[column.key],
+                denominators[column.key]
+            );
         }
 
         tr.appendChild(cell);
@@ -2751,15 +2757,26 @@ function renderTable() {
     const pageRows = getPaginatedRows(rows);
 
     /*
-     * Computed once and shared: the foot prints these and every
-     * body cell divides by them for its share.
+     * Two sets of totals, because they answer different
+     * questions. The foot sums what is on screen, so it follows
+     * the search. Market share must not - searching for one maker
+     * would otherwise show it holding 100% of the market - so its
+     * denominator stays the unsearched set, leaving a maker's
+     * share identical whether or not it was searched for.
+     * Filters still apply to both: they define which market is
+     * being measured.
      */
     const columnTotals = calculateColumnTotals(rows, state.columns);
+
+    const shareTotals =
+        state.searchTerms.length === 0
+            ? columnTotals
+            : calculateColumnTotals(state.rows, state.columns);
 
     dom.makerSummaryTableBody.innerHTML = "";
 
     renderTableHead();
-    renderTableFoot(rows, columnTotals);
+    renderTableFoot(rows, columnTotals, shareTotals);
 
     updateResultCount(rows.length, state.rows.length);
     updatePagination(totalPages);
@@ -2822,7 +2839,7 @@ function renderTable() {
                 fillNumericCell(
                     td,
                     row.total,
-                    columnTotals[column.key]
+                    shareTotals[column.key]
                 );
 
             } else {
@@ -2830,7 +2847,7 @@ function renderTable() {
                 fillNumericCell(
                     td,
                     row.values[column.key],
-                    columnTotals[column.key]
+                    shareTotals[column.key]
                 );
             }
 
