@@ -35,11 +35,6 @@
         href="style.css"
     >
 
-    <!-- Supabase Browser Client -->
-    <script
-        src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
-        defer
-    ></script>
 </head>
 
 <body>
@@ -195,73 +190,64 @@
                 novalidate
             >
 
-                <!-- Breakdown -->
+                <!-- Scope -->
                 <div class="filter-group filter-group--breakdown">
 
                     <label for="breakdownFilter">
-                        Table
+                        Scope
                     </label>
 
                     <select
                         id="breakdownFilter"
-                        name="breakdown"
+                        name="scope"
                     >
-                        <option value="maker_class">
-                            Maker × Vehicle Class
+                        <option value="all_india">
+                            All India
                         </option>
 
-                        <option value="maker_month">
-                            Maker × Month
+                        <option value="gujarat">
+                            Gujarat
                         </option>
 
-                        <option value="state_class">
-                            State × Vehicle Class
+                        <option value="gj01">
+                            GJ01
                         </option>
 
-                        <option value="state_month">
-                            State × Month
+                        <option value="gj13">
+                            GJ13
+                        </option>
+
+                        <option value="gj27">
+                            GJ27
+                        </option>
+
+                        <option value="gj38">
+                            GJ38
                         </option>
                     </select>
 
                 </div>
 
 
-                <!-- Year range -->
-                <div class="year-range-filters">
+                <!-- Year -->
+                <div class="filter-group">
 
-                    <div class="filter-group">
+                    <label for="yearFilter">
+                        Year
+                    </label>
 
-                        <label for="fromYearFilter">
-                            From Year
-                        </label>
+                    <select
+                        id="yearFilter"
+                        name="year"
+                    >
+                        <option value="2026">
+                            2026
+                        </option>
 
-                        <select
-                            id="fromYearFilter"
-                            name="fromYear"
-                        >
-                            <option value="all">
-                                All
-                            </option>
-                        </select>
-
-                    </div>
-
-                    <div class="filter-group">
-
-                        <label for="toYearFilter">
-                            To Year
-                        </label>
-
-                        <select
-                            id="toYearFilter"
-                            name="toYear"
-                        >
-                            <option value="all">
-                                All
-                            </option>
-                        </select>
-
-                    </div>
+                        <option value="2025">
+                            2025
+                        </option>
+                    </select>
 
                 </div>
 

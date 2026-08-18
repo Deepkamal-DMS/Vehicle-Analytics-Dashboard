@@ -494,23 +494,6 @@ function formatPercentage(value) {
 }
 
 
-/*
- * Market share is measured against the whole filtered set, not
- * the visible page - the denominator is the same figure the
- * totals row prints at the foot of the column.
- */
-function formatShare(value, columnTotal) {
-
-    const denominator = toNumber(columnTotal);
-
-    if (denominator <= 0) {
-        return "—";
-    }
-
-    return formatPercentage((toNumber(value) / denominator) * 100);
-}
-
-
 function normalizeString(value) {
 
     if (value === null || value === undefined) {
@@ -2610,32 +2593,6 @@ function cellClassFor(column) {
 }
 
 
-/*
- * A numeric cell carries two figures: the count on the left and
- * its share of the column on the right. They go in a flex span
- * rather than on the cell itself, so the td stays a table-cell
- * and keeps its sticky positioning and column width.
- */
-function fillNumericCell(cell, value, columnTotal) {
-
-    const split = document.createElement("span");
-    split.className = "cell-split";
-
-    const amount = document.createElement("span");
-    amount.className = "cell-amount";
-    amount.textContent = formatIndianNumber(value);
-
-    const share = document.createElement("span");
-    share.className = "cell-share";
-    share.textContent = formatShare(value, columnTotal);
-
-    split.appendChild(amount);
-    split.appendChild(share);
-
-    cell.appendChild(split);
-}
-
-
 function renderTableHead() {
 
     if (!dom.makerSummaryTableHead) {
@@ -2688,7 +2645,7 @@ function renderTableHead() {
 }
 
 
-function renderTableFoot(rows, columnTotals, shareTotals) {
+function renderTableFoot(rows) {
 
     if (!dom.makerSummaryTableFoot) {
         return;
@@ -2696,10 +2653,7 @@ function renderTableFoot(rows, columnTotals, shareTotals) {
 
     dom.makerSummaryTableFoot.innerHTML = "";
 
-    const totals =
-        columnTotals || calculateColumnTotals(rows, state.columns);
-
-    const denominators = shareTotals || totals;
+    const totals = calculateColumnTotals(rows, state.columns);
 
     const tr = document.createElement("tr");
 
@@ -2717,17 +2671,7 @@ function renderTableFoot(rows, columnTotals, shareTotals) {
             cell.scope = "row";
             cell.textContent = `Total (${formatIndianNumber(rows.length)})`;
         } else {
-
-            /*
-             * Against the unsearched denominator this reads 100%
-             * on the full list, and on a search it reads how much
-             * of the market the matches account for.
-             */
-            fillNumericCell(
-                cell,
-                totals[column.key],
-                denominators[column.key]
-            );
+            cell.textContent = formatIndianNumber(totals[column.key]);
         }
 
         tr.appendChild(cell);
@@ -2756,27 +2700,10 @@ function renderTable() {
 
     const pageRows = getPaginatedRows(rows);
 
-    /*
-     * Two sets of totals, because they answer different
-     * questions. The foot sums what is on screen, so it follows
-     * the search. Market share must not - searching for one maker
-     * would otherwise show it holding 100% of the market - so its
-     * denominator stays the unsearched set, leaving a maker's
-     * share identical whether or not it was searched for.
-     * Filters still apply to both: they define which market is
-     * being measured.
-     */
-    const columnTotals = calculateColumnTotals(rows, state.columns);
-
-    const shareTotals =
-        state.searchTerms.length === 0
-            ? columnTotals
-            : calculateColumnTotals(state.rows, state.columns);
-
     dom.makerSummaryTableBody.innerHTML = "";
 
     renderTableHead();
-    renderTableFoot(rows, columnTotals, shareTotals);
+    renderTableFoot(rows);
 
     updateResultCount(rows.length, state.rows.length);
     updatePagination(totalPages);
@@ -2836,19 +2763,11 @@ function renderTable() {
 
             } else if (column.type === "total") {
 
-                fillNumericCell(
-                    td,
-                    row.total,
-                    shareTotals[column.key]
-                );
+                td.textContent = formatIndianNumber(row.total);
 
             } else {
 
-                fillNumericCell(
-                    td,
-                    row.values[column.key],
-                    shareTotals[column.key]
-                );
+                td.textContent = formatIndianNumber(row.values[column.key]);
             }
 
             tr.appendChild(td);

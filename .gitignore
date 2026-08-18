@@ -1,0 +1,12 @@
+# Source data exports (large, not code)
+RTO/
+
+# Local Supabase scaffolding and generated migrations
+supabase/
+
+# Node
+node_modules/
+package-lock.json
+
+# Excel lock files
+~$*
