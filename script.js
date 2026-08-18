@@ -2,82 +2,89 @@
    VEHICLE REGISTRATION ANALYTICS DASHBOARD
    File: /script.js
 
-   Vanilla JavaScript + Supabase JS Client
-   NO RPC FUNCTIONS
+   Vanilla JavaScript + local PostgREST (no Supabase client)
 
    ------------------------------------------------------------
-   SCHEMA (verified against the live project)
+   SCHEMA (local vehicle_analytics database)
 
-   maker_rtoname_2026_all_records   94,122 rows   LONG
-       maker | rto | registrations | year
-       1,931 makers x 1,412 RTOs.  Sum 1,93,14,842
+   Twelve tables, all WIDE and all Maker x Vehicle Class:
+   Maker | <vehicle classes> | Total
 
-   maker_month_wise_2026_all_records  1,932 rows  WIDE
-       SR_NO | Maker | 2026-Jan .. 2026-Aug | Total
-       Sum 1,93,14,842
+       MAKER_WISE_2025              2,045 rows   72 classes
+       MAKER_WISE_2026              1,949 rows   73 classes
+       Gujarat_Class_Wise_2025        428 rows   59 classes
+       Gujarat_Class_Wise_2026        434 rows   51 classes
+       Maker_Class_Wise_GJ01_2025     147 rows   39 classes
+       Maker_Class_Wise_GJ01_2026     131 rows   33 classes
+       Maker_Class_Wise_GJ13_2025     110 rows   28 classes
+       Maker_Class_Wise_GJ13_2026     119 rows   29 classes
+       Maker_Class_Wise_GJ27_2025     148 rows   37 classes
+       Maker_Class_Wise_GJ27_2026     127 rows   30 classes
+       Maker_Class_Wise_GJ38_2025     151 rows   29 classes
+       Maker_Class_Wise_GJ38_2026     141 rows   26 classes
 
-   state_wise_month_wise_2026            36 rows  WIDE
-       SR_NO | State | 2026-Jan .. 2026-Aug | Total
-       Sum 1,93,14,823
-
-   state_wise_class_wise                 36 rows  WIDE
-       SR_NO | State | <76 vehicle classes> | Total
-       Sum 1,93,14,823
-
-   MAKER_WISE                           904 rows  WIDE
-       SR_NO | MAKER | <33 vehicle classes> | TOTAL
-       Sum 20,26,329  --  ELECTRIC VEHICLES ONLY
-
-   maker_calendar_year_2026_all_records   5 rows
-       A truncated export (5 makers x 539 RTOs). Not used.
+   Scope (6) x Year (2) selects exactly one of them.
 
    ------------------------------------------------------------
    WHAT THE DATA CAN AND CANNOT DO
 
-   maker x rto     yes      maker x month   yes
-   state x month   yes      state x class   yes  (national)
-   maker x class   yes      but ELECTRIC ONLY
-   maker x state   NO TABLE EXISTS
-   national maker x class   NO TABLE EXISTS
+   maker x class   yes, per scope and year
+   maker x month   NO TABLE EXISTS
+   state x class   NO TABLE EXISTS
+   maker x rto     NO TABLE EXISTS  (RTO here means scope, not
+                                     a column dimension)
 
-   Because there is no maker x state table, State cannot be a
-   filter on a maker listing. It is a separate breakdown -
-   hence the Breakdown control, which swaps the row entity and
-   re-points every filter at a table that can actually answer.
+   Vahan drops classes with no entries, so the column set
+   differs between tables - note the class counts above. The
+   schema is therefore re-read from a sample row on every
+   scope or year switch rather than assumed once.
 
-   PostgREST caps responses at 1,000 rows on this project
-   (verified: asked for 5,000, received 1,000), so every read
-   pages with .range().
+   Reads page with .range() in 1,000-row chunks; the largest
+   table is two round trips.
    ============================================================ */
 
 
 /* ============================================================
-   1. SUPABASE CONFIGURATION
+   1. API CONFIGURATION
    ============================================================ */
 
-const SUPABASE_URL =
-    "https://yifnagndjbeqszexzaem.supabase.co";
-
 /*
- * Publishable key - safe to ship in client code, but it makes
- * every table it can reach world-readable. Keep RLS enabled
- * with read-only policies on this project.
+ * Local PostgREST in front of the vehicle_analytics Postgres.
+ * No API key: the API exposes a read-only role and is bound to
+ * localhost.
  */
-const SUPABASE_ANON_KEY =
-    "sb_publishable_HOBG1-ykEePfvvoJdm4X9w_3DU0itBG";
+const API_URL = "http://localhost:3003";
 
 
 /* ============================================================
    2. TABLE CONFIGURATION
    ============================================================ */
 
-const TABLES = {
-    MAKER_MONTH: "maker_month_wise_2026_all_records",
-    MAKER_RTO: "maker_rtoname_2026_all_records",
-    MAKER_CLASS: "MAKER_WISE",
-    STATE_MONTH: "state_wise_month_wise_2026",
-    STATE_CLASS: "state_wise_class_wise"
+/*
+ * Every table is Maker x Vehicle Class. Scope and year together
+ * pick one of them. Class columns differ per table - Vahan drops
+ * classes with no entries - so the schema is re-read on each
+ * switch rather than assumed.
+ */
+const SCOPE_TABLES = {
+    all_india: { 2025: "MAKER_WISE_2025",            2026: "MAKER_WISE_2026" },
+    gujarat:   { 2025: "Gujarat_Class_Wise_2025",    2026: "Gujarat_Class_Wise_2026" },
+    gj01:      { 2025: "Maker_Class_Wise_GJ01_2025", 2026: "Maker_Class_Wise_GJ01_2026" },
+    gj13:      { 2025: "Maker_Class_Wise_GJ13_2025", 2026: "Maker_Class_Wise_GJ13_2026" },
+    gj27:      { 2025: "Maker_Class_Wise_GJ27_2025", 2026: "Maker_Class_Wise_GJ27_2026" },
+    gj38:      { 2025: "Maker_Class_Wise_GJ38_2025", 2026: "Maker_Class_Wise_GJ38_2026" }
 };
+
+
+const AVAILABLE_YEARS = ["2026", "2025"];
+
+
+function tableFor(scope, year) {
+
+    const byYear = SCOPE_TABLES[scope] || SCOPE_TABLES[DEFAULT_VIEW];
+
+    return byYear[year] || byYear[AVAILABLE_YEARS[0]];
+}
 
 
 /* ============================================================
@@ -88,8 +95,6 @@ const CONFIG = {
 
     ALL: "all",
 
-    DATA_YEAR: "2026",
-
     PAGE_SIZE: 25,
 
     PAGE_SIZES: [25, 50, 100],
@@ -99,17 +104,12 @@ const CONFIG = {
     MAX_SEARCH_ROWS: 5,
 
     /*
-     * Server row cap. Reads page in these chunks.
+     * Reads page in these chunks. The largest table is ~2,000
+     * rows, so this is two round trips at worst.
      */
     FETCH_PAGE_SIZE: 1000,
 
-    MAX_FETCH_PAGES: 200,
-
-    /*
-     * Concurrent page requests when sweeping a large table
-     * (the RTO list needs ~95 pages).
-     */
-    FETCH_CONCURRENCY: 8
+    MAX_FETCH_PAGES: 200
 };
 
 
@@ -117,55 +117,37 @@ const CONFIG = {
  * Each view is one physical table, rendered with its own
  * columns. The default is MAKER_WISE.
  */
-const VIEWS = {
+/*
+ * One entry per scope. All are Maker x Class, so they differ
+ * only in label - the shape of the view model is unchanged.
+ */
+function makeScope(id, label) {
 
-    maker_class: {
-        id: "maker_class",
+    return {
+        id,
         schemaKey: "makerClass",
         entityKind: "maker",
         entity: "Maker",
         entityPlural: "Makers",
         columnKind: "class",
-        title: "Maker × Vehicle Class",
+        title: `${label} — Maker × Vehicle Class`,
+        scopeLabel: label,
         searchPlaceholder: "Search maker..."
-    },
+    };
+}
 
-    maker_month: {
-        id: "maker_month",
-        schemaKey: "makerMonth",
-        entityKind: "maker",
-        entity: "Maker",
-        entityPlural: "Makers",
-        columnKind: "month",
-        title: "Maker × Month",
-        searchPlaceholder: "Search maker..."
-    },
 
-    state_class: {
-        id: "state_class",
-        schemaKey: "stateClass",
-        entityKind: "state",
-        entity: "State",
-        entityPlural: "States",
-        columnKind: "class",
-        title: "State × Vehicle Class",
-        searchPlaceholder: "Search state..."
-    },
-
-    state_month: {
-        id: "state_month",
-        schemaKey: "stateMonth",
-        entityKind: "state",
-        entity: "State",
-        entityPlural: "States",
-        columnKind: "month",
-        title: "State × Month",
-        searchPlaceholder: "Search state..."
-    }
+const VIEWS = {
+    all_india: makeScope("all_india", "All India"),
+    gujarat:   makeScope("gujarat", "Gujarat"),
+    gj01:      makeScope("gj01", "GJ01"),
+    gj13:      makeScope("gj13", "GJ13"),
+    gj27:      makeScope("gj27", "GJ27"),
+    gj38:      makeScope("gj38", "GJ38")
 };
 
 
-const DEFAULT_VIEW = "maker_class";
+const DEFAULT_VIEW = "all_india";
 
 
 const METADATA_COLUMNS = [
@@ -225,10 +207,156 @@ const CLASS_GROUPS = [
 
 
 /* ============================================================
-   4. SUPABASE CLIENT
+   4. REST CLIENT
+
+   A small PostgREST client shaped like the query builder this
+   file already used, so every call site stays as it was:
+   client.from(t).select(cols).range(a, b).in(col, vals)
    ============================================================ */
 
-let supabaseClient = null;
+let restClient = null;
+
+
+class RestQuery {
+
+    constructor(baseUrl, table) {
+
+        this.baseUrl = baseUrl;
+        this.table = table;
+        this.params = new URLSearchParams();
+        this.headers = {};
+        this.signal = null;
+        this.headOnly = false;
+    }
+
+    select(columns, options = {}) {
+
+        this.params.set("select", columns || "*");
+
+        if (options.count) {
+            this.headers.Prefer = `count=${options.count}`;
+        }
+
+        if (options.head) {
+            this.headOnly = true;
+        }
+
+        return this;
+    }
+
+    range(from, to) {
+
+        this.headers["Range-Unit"] = "items";
+        this.headers.Range = `${from}-${to}`;
+
+        return this;
+    }
+
+    limit(count) {
+
+        this.params.set("limit", String(count));
+
+        return this;
+    }
+
+    /*
+     * PostgREST wants in.("a","b") with inner quotes doubled.
+     */
+    in(column, values) {
+
+        const list = values
+            .map(value => `"${String(value).replace(/"/g, '""')}"`)
+            .join(",");
+
+        this.params.append(column, `in.(${list})`);
+
+        return this;
+    }
+
+    abortSignal(signal) {
+
+        this.signal = signal;
+
+        return this;
+    }
+
+    async run() {
+
+        const url =
+            `${this.baseUrl}/${encodeURIComponent(this.table)}` +
+            `?${this.params.toString()}`;
+
+        let response;
+
+        try {
+
+            response = await fetch(url, {
+                method: this.headOnly ? "HEAD" : "GET",
+                headers: this.headers,
+                signal: this.signal
+            });
+
+        } catch (error) {
+
+            /*
+             * Network-level failure - the API is down or
+             * unreachable. Shaped like a PostgREST error so
+             * callers need not care which it was.
+             */
+            return {
+                data: null,
+                count: null,
+                error: { message: error.message, code: "FETCH_FAILED" }
+            };
+        }
+
+        const range = response.headers.get("content-range");
+
+        const count =
+            range && range.includes("/")
+                ? Number(range.split("/")[1])
+                : null;
+
+        if (!response.ok) {
+
+            let message = `${response.status} ${response.statusText}`;
+
+            try {
+                const body = await response.json();
+                if (body && body.message) {
+                    message = body.message;
+                }
+            } catch (ignored) {
+                /* non-JSON error body */
+            }
+
+            return {
+                data: null,
+                count,
+                error: { message, code: String(response.status) }
+            };
+        }
+
+        if (this.headOnly) {
+            return { data: null, count, error: null };
+        }
+
+        return { data: await response.json(), count, error: null };
+    }
+
+    then(resolve, reject) {
+
+        return this.run().then(resolve, reject);
+    }
+}
+
+
+function createRestClient(baseUrl) {
+
+    return {
+        from: table => new RestQuery(baseUrl, table)
+    };
+}
 
 
 /* ============================================================
@@ -248,6 +376,8 @@ const state = {
     activeController: null,
 
     view: DEFAULT_VIEW,
+
+    year: AVAILABLE_YEARS[0],
 
     /*
      * Rendered column set: index, entity, one per value column,
@@ -386,6 +516,7 @@ function cacheDOM() {
 
         /* Filters */
         "breakdownFilter",
+        "yearFilter",
         "fromYearFilter",
         "toYearFilter",
         "yearRangeError",
@@ -633,28 +764,14 @@ function isMonthColumn(name) {
 
 
 /* ============================================================
-   9. SUPABASE INITIALIZATION
+   9. API INITIALIZATION
    ============================================================ */
 
-async function initializeSupabase() {
+async function initializeApi() {
 
-    if (
-        typeof window.supabase === "undefined" ||
-        typeof window.supabase.createClient !== "function"
-    ) {
+    restClient = createRestClient(API_URL);
 
-        throw new Error(
-            "Supabase library failed to load. Check your network " +
-            "connection or any content blocker, then retry."
-        );
-    }
-
-    supabaseClient = window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_ANON_KEY
-    );
-
-    return supabaseClient;
+    return restClient;
 }
 
 
@@ -670,11 +787,27 @@ function buildSelect(columns) {
 }
 
 
+/*
+ * Wraps an API error, keeping the machine-readable code so the
+ * UI can tell "the database is down" apart from "that one table
+ * is missing". Without this the code is lost in the message.
+ */
+function apiError(table, error) {
+
+    const wrapped = new Error(`${table}: ${error.message}`);
+
+    wrapped.code = error.code;
+    wrapped.table = table;
+
+    return wrapped;
+}
+
+
 async function fetchPage(table, select, from, to, options = {}) {
 
     const { filters = [], signal = null } = options;
 
-    let query = supabaseClient.from(table).select(select).range(from, to);
+    let query = restClient.from(table).select(select).range(from, to);
 
     filters.forEach(filter => {
         query = query.in(filter.column, filter.values);
@@ -687,7 +820,7 @@ async function fetchPage(table, select, from, to, options = {}) {
     const { data, error } = await query;
 
     if (error) {
-        throw new Error(`${table}: ${error.message}`);
+        throw apiError(table, error);
     }
 
     return Array.isArray(data) ? data : [];
@@ -725,66 +858,15 @@ async function fetchAllRows(table, columns, options = {}) {
 }
 
 
-/*
- * Concurrent paging for the 94k-row RTO table, where 95
- * sequential round trips would be painfully slow.
- */
-async function fetchAllRowsConcurrent(table, columns, totalRows, options = {}) {
-
-    const select = buildSelect(columns);
-
-    const pageCount = Math.min(
-        Math.ceil(totalRows / CONFIG.FETCH_PAGE_SIZE),
-        CONFIG.MAX_FETCH_PAGES
-    );
-
-    const rows = [];
-
-    for (
-        let start = 0;
-        start < pageCount;
-        start += CONFIG.FETCH_CONCURRENCY
-    ) {
-
-        const batch = [];
-
-        for (
-            let page = start;
-            page < Math.min(start + CONFIG.FETCH_CONCURRENCY, pageCount);
-            page += 1
-        ) {
-
-            const from = page * CONFIG.FETCH_PAGE_SIZE;
-
-            batch.push(
-                fetchPage(
-                    table,
-                    select,
-                    from,
-                    from + CONFIG.FETCH_PAGE_SIZE - 1,
-                    options
-                )
-            );
-        }
-
-        const results = await Promise.all(batch);
-
-        results.forEach(data => rows.push(...data));
-    }
-
-    return rows;
-}
-
-
 async function fetchSampleRow(table) {
 
-    const { data, error } = await supabaseClient
+    const { data, error } = await restClient
         .from(table)
         .select("*")
         .limit(1);
 
     if (error) {
-        throw new Error(`${table}: ${error.message}`);
+        throw apiError(table, error);
     }
 
     return Array.isArray(data) && data.length > 0 ? data[0] : null;
@@ -793,12 +875,12 @@ async function fetchSampleRow(table) {
 
 async function fetchRowCount(table) {
 
-    const { count, error } = await supabaseClient
+    const { count, error } = await restClient
         .from(table)
         .select("*", { count: "exact", head: true });
 
     if (error) {
-        throw new Error(`${table}: ${error.message}`);
+        throw apiError(table, error);
     }
 
     return count || 0;
@@ -871,60 +953,32 @@ async function describeWideTable(table, entityKind) {
 }
 
 
+/*
+ * Only the selected scope+year table is described. Class columns
+ * vary between tables, so this re-runs on every switch rather
+ * than caching one shape for the whole session.
+ */
 async function discoverSchema() {
 
-    const [makerMonth, makerClass, stateMonth, stateClass] =
-        await Promise.all([
-            describeWideTable(TABLES.MAKER_MONTH, "maker"),
-            describeWideTable(TABLES.MAKER_CLASS, "maker"),
-            describeWideTable(TABLES.STATE_MONTH, "state"),
-            describeWideTable(TABLES.STATE_CLASS, "state")
-        ]);
+    const table = tableFor(state.view, state.year);
 
-    if (!makerMonth) {
+    const makerClass = await describeWideTable(table, "maker");
+
+    if (!makerClass) {
         throw new Error(
-            `${TABLES.MAKER_MONTH} is unavailable, so maker totals ` +
-            "cannot be loaded."
+            `${table} is unavailable, so maker totals cannot be loaded.`
         );
     }
 
-    state.schema.makerMonth = makerMonth;
     state.schema.makerClass = makerClass;
-    state.schema.stateMonth = stateMonth;
-    state.schema.stateClass = stateClass;
 
-    /*
-     * The RTO table is long, not wide, so it is described by
-     * hand rather than by column sniffing.
-     */
-    try {
+    /* No month, state or RTO tables in this database. */
+    state.schema.makerMonth = null;
+    state.schema.stateMonth = null;
+    state.schema.stateClass = null;
+    state.schema.makerRto = null;
 
-        const sample = await fetchSampleRow(TABLES.MAKER_RTO);
-
-        if (sample) {
-
-            state.schema.makerRto = {
-                table: TABLES.MAKER_RTO,
-                makerColumn: findColumn(sample, ["maker", "Maker", "MAKER"]),
-                regionColumn: findColumn(sample, ["rto", "RTO", "rto_name"]),
-                valueColumn: findColumn(sample, [
-                    "registrations", "Registrations", "REGISTRATIONS", "count"
-                ]),
-                yearColumn: findColumn(sample, ["year", "Year", "YEAR"])
-            };
-        }
-
-    } catch (error) {
-
-        console.info(
-            `Region dimension unavailable (${TABLES.MAKER_RTO}):`,
-            error.message
-        );
-
-        state.schema.makerRto = null;
-    }
-
-    state.availableYears = [CONFIG.DATA_YEAR];
+    state.availableYears = AVAILABLE_YEARS.slice();
 }
 
 
@@ -997,7 +1051,7 @@ function getClassesForGroupLabel(label) {
  */
 function classSourceIsElectricOnly() {
 
-    return state.classSource === TABLES.MAKER_CLASS;
+    return false;
 }
 
 
@@ -1625,69 +1679,6 @@ function loadClassFilters() {
 }
 
 
-/*
- * The RTO list is a full sweep of a 94k-row table, so it runs
- * after first paint and the control reports its own progress.
- */
-async function loadRegionsInBackground() {
-
-    const schema = state.schema.makerRto;
-
-    if (!schema || state.regionsLoaded || state.regionsLoading) {
-        return;
-    }
-
-    state.regionsLoading = true;
-
-    if (dom.regionFilter) {
-        dom.regionFilter.disabled = true;
-        populateSelect(dom.regionFilter, [], "Loading regions...");
-    }
-
-    updateFilterNotice();
-
-    try {
-
-        const total = await fetchRowCount(schema.table);
-
-        const rows = await fetchAllRowsConcurrent(
-            schema.table,
-            [schema.regionColumn],
-            total
-        );
-
-        const slugs = uniqueSorted(rows.map(row => row[schema.regionColumn]));
-
-        state.regions = slugs.map(slug => ({
-            value: slug,
-            label: prettifyRegion(slug)
-        }));
-
-        state.regionsLoaded = true;
-
-        populateSelect(dom.regionFilter, state.regions, "All Regions");
-
-    } catch (error) {
-
-        console.warn("Region list failed to load:", error);
-
-        state.regions = [];
-        populateSelect(dom.regionFilter, [], "Regions unavailable");
-
-    } finally {
-
-        state.regionsLoading = false;
-
-        if (dom.regionFilter) {
-            dom.regionFilter.disabled = false;
-        }
-
-        applyViewVisibility();
-        updateFilterNotice();
-    }
-}
-
-
 async function loadFilterOptions(signal) {
 
     await loadEntityOptions(signal);
@@ -1703,27 +1694,7 @@ async function loadFilterOptions(signal) {
 
 function loadYears() {
 
-    populateSelect(dom.fromYearFilter, state.availableYears, "All");
-    populateSelect(dom.toYearFilter, state.availableYears, "All");
-
     updateYearRangeHeader();
-}
-
-
-function getYearRange() {
-
-    const years = state.availableYears;
-
-    if (years.length === 0) {
-        return { from: null, to: null };
-    }
-
-    const { fromYear, toYear } = state.filters;
-
-    return {
-        from: isAll(fromYear) ? years[0] : fromYear,
-        to: isAll(toYear) ? years[years.length - 1] : toYear
-    };
 }
 
 
@@ -1764,20 +1735,21 @@ function readFiltersFromUI() {
             ? dom.breakdownFilter.value
             : DEFAULT_VIEW;
 
+    state.year =
+        dom.yearFilter && AVAILABLE_YEARS.includes(dom.yearFilter.value)
+            ? dom.yearFilter.value
+            : AVAILABLE_YEARS[0];
+
     state.filters = {
 
-        fromYear: normalizeFilter(dom.fromYearFilter?.value),
-        toYear: normalizeFilter(dom.toYearFilter?.value),
+        fromYear: CONFIG.ALL,
+        toYear: CONFIG.ALL,
 
-        makers: isStateView() ? [] : getSelectedMakersFromUI(),
+        makers: getSelectedMakersFromUI(),
 
-        state: isStateView()
-            ? normalizeFilter(dom.stateFilter?.value)
-            : CONFIG.ALL,
+        state: CONFIG.ALL,
 
-        region: isStateView()
-            ? CONFIG.ALL
-            : normalizeFilter(dom.regionFilter?.value),
+        region: CONFIG.ALL,
 
         month: normalizeFilter(dom.monthFilter?.value),
 
@@ -1787,26 +1759,6 @@ function readFiltersFromUI() {
     };
 
     return state.filters;
-}
-
-
-function validateYearFilters() {
-
-    const { fromYear, toYear } = state.filters;
-
-    if (
-        !isAll(fromYear) &&
-        !isAll(toYear) &&
-        Number(fromYear) > Number(toYear)
-    ) {
-
-        return {
-            valid: false,
-            message: "From Year cannot be later than To Year."
-        };
-    }
-
-    return { valid: true, message: "" };
 }
 
 
@@ -1835,21 +1787,27 @@ function clearYearError() {
    15. VIEW + FILTER COMPATIBILITY
    ============================================================ */
 
+/*
+ * State, region and month have no backing table in this
+ * database, so their controls stay hidden. The year-range pair
+ * is replaced by the single Year select.
+ */
 function applyViewVisibility() {
 
-    const isState = isStateView();
+    setGroupVisible(dom.stateFilterGroup, false);
+    setGroupVisible(dom.regionFilterGroup, false);
+    setGroupVisible(dom.monthFilterGroup, false);
 
-    setGroupVisible(dom.stateFilterGroup, isState);
+    const yearRange = dom.fromYearFilter?.closest(".year-range-filters");
 
-    setGroupVisible(
-        dom.regionFilterGroup,
-        !isState && Boolean(state.schema.makerRto)
-    );
+    if (yearRange) {
+        yearRange.hidden = true;
+    }
 
     const makerGroup = dom.makerFilter?.closest(".filter-group");
 
     if (makerGroup) {
-        makerGroup.hidden = isState;
+        makerGroup.hidden = false;
     }
 }
 
@@ -1899,34 +1857,18 @@ function updateFilterNotice() {
 
     const messages = [];
 
-    if (state.regionsLoading) {
-        messages.push("Loading the RTO list in the background...");
-    }
+    /*
+     * Vahan drops classes with no entries, so each scope+year
+     * table carries a different column set. Say so, since the
+     * column count visibly changes when switching.
+     */
+    const schema = currentSchema();
 
-    if (!isStateView() && !state.schema.makerRto) {
+    if (schema) {
         messages.push(
-            "Region / RTO filtering is unavailable in this project."
-        );
-    }
-
-    if (isStateView()) {
-        messages.push(
-            "State tables carry no maker or RTO detail — no table " +
-            "crosses state with either."
-        );
-    }
-
-    if (regionIsActive()) {
-        messages.push(
-            "Showing RTO data, so the month and class columns are " +
-            "unavailable — no table combines them."
-        );
-    }
-
-    if (state.view === "maker_class") {
-        messages.push(
-            "MAKER_WISE covers electric vehicles only. Switch to " +
-            "Maker × Month for national totals."
+            `${currentView().scopeLabel} ${state.year}: ` +
+            `${schema.classColumns.length} vehicle classes with ` +
+            "registrations. Other scopes and years differ."
         );
     }
 
@@ -2361,7 +2303,7 @@ function calculateKPIs(rows, classRows, classSchema, visibleClassColumns) {
      */
     const comparable =
         Array.isArray(visibleClassColumns) ||
-        classSchema.table !== TABLES.MAKER_CLASS;
+        true;
 
     const classTotal = relevant.reduce(
         (sum, row) => sum + toNumber(row[classSchema.totalColumn]),
@@ -2870,15 +2812,8 @@ function updateActiveFilters() {
         fragment.appendChild(element);
     }
 
-    addFilter("Breakdown", currentView().entity);
-
-    if (
-        !isAll(state.filters.fromYear) ||
-        !isAll(state.filters.toYear)
-    ) {
-        const { from, to } = getYearRange();
-        addFilter("Years", from === to ? from : `${from} – ${to}`);
-    }
+    addFilter("Scope", currentView().scopeLabel);
+    addFilter("Year", state.year);
 
     if (state.filters.makers.length > 0) {
         addFilter("Maker", state.filters.makers.join(", "));
@@ -2897,7 +2832,7 @@ function updateActiveFilters() {
     /*
      * Breakdown always shows, so "no filters" means only it.
      */
-    if (count <= 1) {
+    if (count <= 2) {
 
         const empty = document.createElement("span");
         empty.className = "active-filter active-filter--empty";
@@ -2918,13 +2853,7 @@ function updateYearRangeHeader() {
         return;
     }
 
-    const { from, to } = getYearRange();
-
-    element.textContent = !from || !to
-        ? "—"
-        : from === to
-            ? String(from)
-            : `${from}–${to}`;
+    element.textContent = state.year || "—";
 }
 
 
@@ -2942,16 +2871,13 @@ function updateDatasetNote() {
         column => column.type === "value"
     ).length;
 
-    let text =
-        `Source: ${source} · calendar year ${CONFIG.DATA_YEAR} · ` +
+    const text =
+        `Source: ${source} · ${view.scopeLabel} · calendar year ` +
+        `${state.year} · ` +
         `${formatIndianNumber(state.dimensionTotal)} registrations ` +
         `across ${formatIndianNumber(state.rows.length)} ` +
         `${view.entityPlural.toLowerCase()} and ` +
         `${formatIndianNumber(valueColumnCount)} columns.`;
-
-    if (source === TABLES.MAKER_CLASS) {
-        text += " Electric vehicles only.";
-    }
 
     dom.datasetNote.hidden = false;
     dom.datasetNote.textContent = text;
@@ -2988,9 +2914,60 @@ function hideLoading() {
 }
 
 
-function displayError(message) {
+/*
+ * A dead API fails every table at once, so naming one of them
+ * misleads: it reads like a missing table when nothing is wrong
+ * with the schema.
+ */
+const DB_UNREACHABLE_MESSAGE =
+    "Can't reach the database right now. Check that the local " +
+    "API and Postgres containers are running, then press Retry.";
 
-    console.error(message);
+
+function isDatabaseUnreachable(error) {
+
+    if (!error) {
+        return false;
+    }
+
+    if (error.code === "PGRST002" || error.code === "FETCH_FAILED") {
+        return true;
+    }
+
+    const text = String(error.message || error);
+
+    return (
+        /schema cache/i.test(text) ||
+        /failed to fetch/i.test(text) ||
+        /networkerror/i.test(text) ||
+        /load failed/i.test(text)
+    );
+}
+
+
+/*
+ * Accepts an Error or a plain string. Errors are classified so a
+ * dead API reads as a service problem rather than a data one.
+ */
+function toUserMessage(error, fallback) {
+
+    if (typeof error === "string") {
+        return error;
+    }
+
+    if (isDatabaseUnreachable(error)) {
+        return DB_UNREACHABLE_MESSAGE;
+    }
+
+    return (error && error.message) || fallback;
+}
+
+
+function displayError(error, fallback = "Something went wrong.") {
+
+    const message = toUserMessage(error, fallback);
+
+    console.error(error);
 
     if (dom.errorMessage && dom.errorMessageText) {
         dom.errorMessageText.textContent = message;
@@ -3041,14 +3018,20 @@ async function applyFilters({ global = false } = {}) {
     clearYearError();
 
     const previousView = state.view;
+    const previousYear = state.year;
 
     readFiltersFromUI();
 
     /*
-     * Switching breakdown re-points the class taxonomy at a
-     * different table, so the class filters must be rebuilt.
+     * Scope and year each select a different physical table, and
+     * class columns differ between them, so the schema and the
+     * class taxonomy both have to be rebuilt on either change.
      */
-    if (state.view !== previousView) {
+    if (state.view !== previousView || state.year !== previousYear) {
+
+        state.tableCache = new Map();
+
+        await discoverSchema();
 
         applyViewVisibility();
         loadMonths();
@@ -3062,14 +3045,6 @@ async function applyFilters({ global = false } = {}) {
 
         updateViewLabels();
         readFiltersFromUI();
-    }
-
-    const yearValidation = validateYearFilters();
-
-    if (!yearValidation.valid) {
-        displayYearError(yearValidation.message);
-        hideLoading();
-        return false;
     }
 
     enforceFilterCompatibility();
@@ -3155,7 +3130,7 @@ async function applyFilters({ global = false } = {}) {
             dom.datasetNote.hidden = true;
         }
 
-        displayError(error.message || "Unable to load dashboard data.");
+        displayError(error, "Unable to load dashboard data.");
 
         return false;
 
@@ -3179,9 +3154,11 @@ async function resetFilters() {
         dom.breakdownFilter.value = DEFAULT_VIEW;
     }
 
+    if (dom.yearFilter) {
+        dom.yearFilter.value = AVAILABLE_YEARS[0];
+    }
+
     [
-        dom.fromYearFilter,
-        dom.toYearFilter,
         dom.makerFilter,
         dom.stateFilter,
         dom.monthFilter,
@@ -3204,6 +3181,11 @@ async function resetFilters() {
     state.currentPage = 1;
 
     state.view = DEFAULT_VIEW;
+    state.year = AVAILABLE_YEARS[0];
+
+    state.tableCache = new Map();
+
+    await discoverSchema();
 
     applyViewVisibility();
     loadMonths();
@@ -3527,8 +3509,7 @@ function setupFilterListeners() {
 
     [
         dom.breakdownFilter,
-        dom.fromYearFilter,
-        dom.toYearFilter,
+        dom.yearFilter,
         dom.makerFilter,
         dom.stateFilter,
         dom.monthFilter,
@@ -3596,7 +3577,7 @@ async function initializeDashboard({ force = false } = {}) {
 
     try {
 
-        await initializeSupabase();
+        await initializeApi();
         await discoverSchema();
 
         /*
@@ -3623,12 +3604,6 @@ async function initializeDashboard({ force = false } = {}) {
 
         await applyFilters({ global: true });
 
-        /*
-         * Deliberately not awaited - the dashboard is usable
-         * while the RTO list streams in behind it.
-         */
-        loadRegionsInBackground();
-
     } catch (error) {
 
         console.error("Dashboard initialization failed:", error);
@@ -3644,7 +3619,7 @@ async function initializeDashboard({ force = false } = {}) {
             dom.datasetNote.hidden = true;
         }
 
-        displayError(error.message || "Dashboard initialization failed.");
+        displayError(error, "Dashboard initialization failed.");
 
     } finally {
 
@@ -3666,7 +3641,6 @@ window.vehicleDashboard = {
     clearTableSearch,
     fetchDashboardData,
     loadFilterOptions,
-    loadRegionsInBackground,
     getSelectedMakersFromUI,
     state
 };
