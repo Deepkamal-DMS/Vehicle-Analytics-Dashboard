@@ -2,10 +2,10 @@
    VEHICLE REGISTRATION ANALYTICS DASHBOARD
    File: /script.js
 
-   Vanilla JavaScript + local PostgREST (no Supabase client)
+   Vanilla JavaScript + Supabase PostgREST (no Supabase client)
 
    ------------------------------------------------------------
-   SCHEMA (local vehicle_analytics database)
+   SCHEMA (Supabase project ytgoonducepylslknkag)
 
    Twelve tables, all WIDE and all Maker x Vehicle Class:
    Maker | <vehicle classes> | Total
@@ -49,11 +49,22 @@
    ============================================================ */
 
 /*
- * Local PostgREST in front of the vehicle_analytics Postgres.
- * No API key: the API exposes a read-only role and is bound to
- * localhost.
+ * Supabase's PostgREST, same wire protocol the local one spoke,
+ * so the client below is unchanged apart from the two headers
+ * every request now has to carry.
+ *
+ * The publishable key is safe in client-side source: it grants
+ * the anon role, and each table has row level security on with
+ * a SELECT-only policy. Writes are refused by the database.
  */
-const API_URL = "http://localhost:3003";
+const API_URL = "https://ytgoonducepylslknkag.supabase.co/rest/v1";
+
+const API_KEY = "sb_publishable_9IVGzYTxQDj2UoLOaBtkFw_7H5ILVGY";
+
+const API_HEADERS = {
+    apikey: API_KEY,
+    Authorization: `Bearer ${API_KEY}`
+};
 
 
 /* ============================================================
@@ -219,12 +230,17 @@ let restClient = null;
 
 class RestQuery {
 
-    constructor(baseUrl, table) {
+    constructor(baseUrl, table, authHeaders = {}) {
 
         this.baseUrl = baseUrl;
         this.table = table;
         this.params = new URLSearchParams();
-        this.headers = {};
+
+        /*
+         * Seeded rather than merged at send time so range() and
+         * select() keep appending to one object as before.
+         */
+        this.headers = { ...authHeaders };
         this.signal = null;
         this.headOnly = false;
     }
@@ -351,10 +367,10 @@ class RestQuery {
 }
 
 
-function createRestClient(baseUrl) {
+function createRestClient(baseUrl, authHeaders) {
 
     return {
-        from: table => new RestQuery(baseUrl, table)
+        from: table => new RestQuery(baseUrl, table, authHeaders)
     };
 }
 
@@ -786,7 +802,7 @@ function isMonthColumn(name) {
 
 async function initializeApi() {
 
-    restClient = createRestClient(API_URL);
+    restClient = createRestClient(API_URL, API_HEADERS);
 
     return restClient;
 }
