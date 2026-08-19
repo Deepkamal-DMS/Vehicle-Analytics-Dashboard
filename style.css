@@ -1613,18 +1613,47 @@ header, the totals row and the pinned columns stay put.
 }
 
 .col-value {
-    min-width: 104px;
+    min-width: 152px;
 }
 
 .col-total {
-    width: 132px;
-    min-width: 132px;
+    width: 180px;
+    min-width: 180px;
 }
 
 .numeric-column {
     text-align: right;
 
     font-variant-numeric: tabular-nums;
+}
+
+/*
+Each numeric cell holds a count and its market share. Pushing
+them to opposite edges gives the column two readable rails - all
+counts down the left, all shares down the right - without
+doubling the number of columns.
+*/
+
+.data-table .cell-split {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.data-table .cell-amount {
+    text-align: left;
+}
+
+.data-table .cell-share {
+    color: var(--text-secondary);
+
+    font-size: 10px;
+    font-weight: 500;
+
+    font-variant-numeric: tabular-nums;
+
+    text-align: right;
 }
 
 .sticky-left,
