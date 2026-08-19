@@ -1648,6 +1648,9 @@ doubling the number of columns.
 .data-table .cell-share {
     color: var(--text-secondary);
 
+    /* Slightly recessed, so the count stays the primary figure. */
+    opacity: 0.95;
+
     font-size: 10px;
     font-weight: 500;
 
