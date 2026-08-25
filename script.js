@@ -477,7 +477,13 @@ const state = {
      * Month tables are read independently of the scope tables:
      * one cached read per column set, reused as filters change.
      */
-    monthly: { schema: null, describing: null, cache: new Map() },
+    monthly: {
+        schema: null,
+        describing: null,
+        makers: null,
+        cache: new Map(),
+        makerCache: new Map()
+    },
 
     /*
      * The trend carries its own maker choice, independent of the
@@ -3007,14 +3013,6 @@ const MONTH_TABLES = [
 /* April first - a fiscal year runs April to March. */
 const FISCAL_MONTH_ORDER = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
 
-const MONTH_TABLE_PREFIX = "Maker_Class_Wise_";
-
-
-function monthTableName(key) {
-    return `${MONTH_TABLE_PREFIX}${key}`;
-}
-
-
 function fiscalYearStart(month, year) {
     return month >= 4 ? year : year - 1;
 }
@@ -3127,42 +3125,44 @@ function monthlyValueColumns() {
  * The trend answers to its own maker select, not the sidebar's, so
  * the two tables can sit at different makers at once.
  */
-function matchesTrendMaker(entity) {
+/*
+ * Names of the three views the trend reads. Before they existed
+ * this section paged all 37,074 maker-rows to fill a 4 x 12 grid;
+ * these narrow or aggregate the same figures server-side.
+ */
+const MONTHLY_TOTALS_VIEW = "monthly_totals";
+const MONTHLY_BY_MAKER_VIEW = "monthly_by_maker";
+const MONTHLY_MAKERS_VIEW = "monthly_makers";
 
-    if (isAll(state.trendMaker)) {
-        return true;
-    }
-
-    return normalizeKey(state.trendMaker) === normalizeKey(entity);
-}
+const MONTH_COLUMN = "month";
 
 
 /*
- * Built from the month tables themselves - their maker list runs
- * back to 2024 and so is wider than the scope tables'.
+ * The distinct maker list, straight from its own view. It runs back
+ * to 2024 and so is wider than the scope tables' - 2,552 names
+ * against 1,949.
  */
-function loadTrendMakerOptions(byMonth) {
+async function loadTrendMakerOptions(signal) {
 
-    if (!dom.trendMakerFilter) {
+    if (!dom.trendMakerFilter || state.monthly.makers) {
         return;
     }
 
-    const schema = state.monthly.schema;
-    const names = new Set();
+    const rows = await fetchAllRows(
+        MONTHLY_MAKERS_VIEW,
+        [state.monthly.schema.entityColumn],
+        { signal }
+    );
 
-    for (const rows of byMonth.values()) {
-        for (const row of rows) {
-            names.add(row[schema.entityColumn]);
-        }
-    }
-
-    const previous = state.trendMaker;
+    state.monthly.makers = uniqueSorted(
+        rows.map(row => row[state.monthly.schema.entityColumn])
+    );
 
     populateSelect(
         dom.trendMakerFilter,
-        uniqueSorted([...names]),
+        state.monthly.makers,
         "All Makers",
-        previous
+        state.trendMaker
     );
 
     /* A maker absent from the data falls back to All. */
@@ -3176,7 +3176,7 @@ async function describeMonthlySchema() {
         return state.monthly.schema;
     }
 
-    /* Two overlapping loads would otherwise both probe the table. */
+    /* Two overlapping loads would otherwise both probe the view. */
     if (state.monthly.describing) {
         return state.monthly.describing;
     }
@@ -3192,26 +3192,27 @@ async function describeMonthlySchema() {
 
 async function describeMonthlySchemaOnce() {
 
-    const sample = await fetchSampleRow(monthTableName("Jan"));
+    const sample = await fetchSampleRow(MONTHLY_TOTALS_VIEW);
 
     if (!sample) {
         throw new Error(
-            "The monthly tables are unavailable, so the trend cannot load."
+            "The monthly views are unavailable, so the trend cannot load."
         );
     }
 
-    const entityColumn = getEntityColumn(sample, "maker");
     const totalColumn = getTotalColumn(sample);
     const yearColumn = getYearColumn(sample);
 
     state.monthly.schema = {
-        entityColumn,
+        /* Only monthly_by_maker carries it, but both views share it. */
+        entityColumn: "Maker",
         totalColumn,
         yearColumn,
+        monthColumn: MONTH_COLUMN,
         classColumns: Object.keys(sample).filter(
             column =>
-                column !== entityColumn &&
                 column !== totalColumn &&
+                column !== MONTH_COLUMN &&
                 !isMetadataColumn(column)
         )
     };
@@ -3221,89 +3222,120 @@ async function describeMonthlySchemaOnce() {
 
 
 /*
- * One cached read per column set. Total alone answers most of the
- * questions, and the wider read only happens once a category or
- * subcategory is actually chosen.
+ * Thirty-two rows: one per month per year, every class already
+ * summed across makers. Answers IND always, and VOL too whenever
+ * no single maker is chosen.
  */
-function getMonthlyRows(valueColumns, signal) {
+function getMonthlyTotals(valueColumns, signal) {
 
     const schema = state.monthly.schema;
-
     const key = valueColumns ? valueColumns.join("|") : "__total__";
 
-    /*
-     * The promise is cached, not just its result. Startup calls this
-     * twice - once as the filter options load, once as the dashboard
-     * settles - and caching only the result let the second call start
-     * a whole second round of fetches before the first had finished.
-     */
     if (state.monthly.cache.has(key)) {
         return state.monthly.cache.get(key);
     }
 
     const columns = [
+        schema.monthColumn,
         schema.yearColumn,
-        schema.entityColumn,
         schema.totalColumn,
         ...(valueColumns || [])
     ];
 
     /*
-     * Twelve independent tables, so they are read at once rather than
-     * one after another. Sequentially this was about forty round
-     * trips end to end.
+     * The promise is cached, not its result: startup calls this
+     * twice, and caching only the result let the second call start
+     * a second fetch before the first had finished.
      */
-    const pending = Promise.all(
-        MONTH_TABLES.map(month =>
-            fetchAllRows(monthTableName(month.key), columns, { signal })
-                .then(rows => [month.number, rows])
-        )
-    ).then(entries => new Map(entries));
+    const pending = fetchAllRows(MONTHLY_TOTALS_VIEW, columns, { signal });
 
     state.monthly.cache.set(key, pending);
-
-    /* A failed read must not be remembered as an empty month. */
     pending.catch(() => state.monthly.cache.delete(key));
 
     return pending;
 }
 
 
-function buildMonthlyPivot(byMonth, valueColumns) {
+/*
+ * One maker's thirty-two rows, filtered in the database rather than
+ * by reading every maker and discarding the rest.
+ */
+function getMonthlyForMaker(maker, valueColumns, signal) {
+
+    const schema = state.monthly.schema;
+    const key = maker + "\u0000" + (valueColumns ? valueColumns.join("|") : "");
+
+    if (state.monthly.makerCache.has(key)) {
+        return state.monthly.makerCache.get(key);
+    }
+
+    const columns = [
+        schema.monthColumn,
+        schema.yearColumn,
+        schema.totalColumn,
+        ...(valueColumns || [])
+    ];
+
+    const pending = fetchAllRows(MONTHLY_BY_MAKER_VIEW, columns, {
+        signal,
+        filters: [{ column: schema.entityColumn, values: [maker] }]
+    });
+
+    state.monthly.makerCache.set(key, pending);
+    pending.catch(() => state.monthly.makerCache.delete(key));
+
+    return pending;
+}
+
+
+/*
+ * industryRows carries every maker; selectedRows is whatever the
+ * Maker select narrowed to, or the same rows when it is on All.
+ */
+function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
 
     const schema = state.monthly.schema;
     const years = new Set();
     const cells = new Map();
 
-    for (const [monthNumber, rows] of byMonth) {
+    const at = row => {
 
-        for (const row of rows) {
+        const month = Number(row[schema.monthColumn]);
+        const year = Number(row[schema.yearColumn]);
 
-            const year = Number(row[schema.yearColumn]);
+        if (!Number.isFinite(month) || !Number.isFinite(year)) {
+            return null;
+        }
 
-            if (!Number.isFinite(year)) {
-                continue;
-            }
+        const start = fiscalYearStart(month, year);
 
-            const start = fiscalYearStart(monthNumber, year);
+        years.add(start);
 
-            years.add(start);
+        const id = `${start}:${month}`;
+        const cell = cells.get(id) || { industry: 0, selected: 0 };
 
-            const id = `${start}:${monthNumber}`;
+        cells.set(id, cell);
 
-            const cell = cells.get(id) || { industry: 0, selected: 0 };
+        return cell;
+    };
 
-            const total = toNumber(row[schema.totalColumn]);
+    for (const row of industryRows) {
 
-            cell.industry += total;
+        const cell = at(row);
 
-            if (matchesTrendMaker(row[schema.entityColumn])) {
-                cell.selected += valueColumns
-                    ? sumColumns(row, valueColumns)
-                    : total;
-            }
+        if (cell) {
+            cell.industry += toNumber(row[schema.totalColumn]);
+        }
+    }
 
-            cells.set(id, cell);
+    for (const row of selectedRows) {
+
+        const cell = at(row);
+
+        if (cell) {
+            cell.selected += valueColumns
+                ? sumColumns(row, valueColumns)
+                : toNumber(row[schema.totalColumn]);
         }
     }
 
@@ -3440,17 +3472,32 @@ async function loadMonthlyTrend(signal) {
 
         await describeMonthlySchema();
 
-        const valueColumns = monthlyValueColumns();
-
-        const byMonth = await getMonthlyRows(valueColumns, signal);
-
         if (!state.trendOptionsLoaded) {
-            loadTrendMakerOptions(byMonth);
             loadTrendClassOptions();
             state.trendOptionsLoaded = true;
         }
 
-        const pivot = buildMonthlyPivot(byMonth, valueColumns);
+        const valueColumns = monthlyValueColumns();
+
+        /*
+         * The industry series is always needed. A chosen maker adds
+         * one more small read; on All Makers the same rows serve as
+         * both sides of the comparison.
+         */
+        const [industryRows] = await Promise.all([
+            getMonthlyTotals(valueColumns, signal),
+            loadTrendMakerOptions(signal)
+        ]);
+
+        const selectedRows = isAll(state.trendMaker)
+            ? industryRows
+            : await getMonthlyForMaker(state.trendMaker, valueColumns, signal);
+
+        const pivot = buildMonthlyPivot(
+            industryRows,
+            selectedRows,
+            valueColumns
+        );
 
         renderMonthlyTrend(pivot);
 
