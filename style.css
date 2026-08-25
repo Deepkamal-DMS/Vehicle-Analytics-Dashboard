@@ -2336,12 +2336,23 @@ rather than at the top of the scroll area.
    was mounted.
    ========================================================= */
 
+/*
+The default toolbar caps its left column at 390px, which suits the
+Details search box but forces these two onto separate lines.
+*/
+.table-toolbar--trend .table-toolbar__left {
+    width: auto;
+    flex: 1 1 auto;
+
+    min-width: 0;
+}
+
 .trend-filters {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
 
-    gap: 10px 22px;
+    gap: 10px 20px;
 
     margin-bottom: 10px;
 }
@@ -2366,7 +2377,7 @@ rather than at the top of the scroll area.
 }
 
 .trend-filter .combo {
-    width: 280px;
+    width: 236px;
 }
 
 .trend-filter .combo__input {
