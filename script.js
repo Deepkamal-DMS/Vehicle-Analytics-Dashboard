@@ -477,7 +477,7 @@ const state = {
      * Month tables are read independently of the scope tables:
      * one cached read per column set, reused as filters change.
      */
-    monthly: { schema: null, cache: new Map() },
+    monthly: { schema: null, describing: null, cache: new Map() },
 
     /*
      * The trend carries its own maker choice, independent of the
@@ -3176,6 +3176,22 @@ async function describeMonthlySchema() {
         return state.monthly.schema;
     }
 
+    /* Two overlapping loads would otherwise both probe the table. */
+    if (state.monthly.describing) {
+        return state.monthly.describing;
+    }
+
+    state.monthly.describing = describeMonthlySchemaOnce()
+        .finally(() => {
+            state.monthly.describing = null;
+        });
+
+    return state.monthly.describing;
+}
+
+
+async function describeMonthlySchemaOnce() {
+
     const sample = await fetchSampleRow(monthTableName("Jan"));
 
     if (!sample) {
@@ -3209,12 +3225,18 @@ async function describeMonthlySchema() {
  * questions, and the wider read only happens once a category or
  * subcategory is actually chosen.
  */
-async function getMonthlyRows(valueColumns, signal) {
+function getMonthlyRows(valueColumns, signal) {
 
     const schema = state.monthly.schema;
 
     const key = valueColumns ? valueColumns.join("|") : "__total__";
 
+    /*
+     * The promise is cached, not just its result. Startup calls this
+     * twice - once as the filter options load, once as the dashboard
+     * settles - and caching only the result let the second call start
+     * a whole second round of fetches before the first had finished.
+     */
     if (state.monthly.cache.has(key)) {
         return state.monthly.cache.get(key);
     }
@@ -3226,22 +3248,24 @@ async function getMonthlyRows(valueColumns, signal) {
         ...(valueColumns || [])
     ];
 
-    const byMonth = new Map();
+    /*
+     * Twelve independent tables, so they are read at once rather than
+     * one after another. Sequentially this was about forty round
+     * trips end to end.
+     */
+    const pending = Promise.all(
+        MONTH_TABLES.map(month =>
+            fetchAllRows(monthTableName(month.key), columns, { signal })
+                .then(rows => [month.number, rows])
+        )
+    ).then(entries => new Map(entries));
 
-    for (const month of MONTH_TABLES) {
+    state.monthly.cache.set(key, pending);
 
-        const rows = await fetchAllRows(
-            monthTableName(month.key),
-            columns,
-            { signal }
-        );
+    /* A failed read must not be remembered as an empty month. */
+    pending.catch(() => state.monthly.cache.delete(key));
 
-        byMonth.set(month.number, rows);
-    }
-
-    state.monthly.cache.set(key, byMonth);
-
-    return byMonth;
+    return pending;
 }
 
 
