@@ -2347,12 +2347,19 @@ Details search box but forces these two onto separate lines.
     min-width: 0;
 }
 
+/*
+Never wrap: at a narrow window the two shrink instead, which
+keeps them on one line well below the width where a fixed
+236px pair would have dropped Class onto its own row.
+*/
 .trend-filters {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
 
-    gap: 10px 20px;
+    gap: 16px;
+
+    width: 100%;
 
     margin-bottom: 10px;
 }
@@ -2361,7 +2368,10 @@ Details search box but forces these two onto separate lines.
     display: flex;
     align-items: center;
 
-    gap: 10px;
+    flex: 1 1 0;
+    min-width: 0;
+
+    gap: 8px;
 }
 
 .trend-filter label {
@@ -2377,7 +2387,11 @@ Details search box but forces these two onto separate lines.
 }
 
 .trend-filter .combo {
-    width: 236px;
+    flex: 1 1 auto;
+
+    width: auto;
+    min-width: 0;
+    max-width: 260px;
 }
 
 .trend-filter .combo__input {
