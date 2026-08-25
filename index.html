@@ -29,10 +29,17 @@
         rel="stylesheet"
     >
 
-    <!-- Main stylesheet -->
+    <!--
+         Main stylesheet.
+
+         GitHub Pages serves these with max-age=600, so without the
+         version a browser keeps the old copy for ten minutes after
+         a deploy and the change looks like it never shipped. Bump
+         v on both this and script.js whenever either changes.
+    -->
     <link
         rel="stylesheet"
-        href="style.css"
+        href="style.css?v=8"
     >
 
 </head>
@@ -1210,9 +1217,10 @@
          JAVASCRIPT
          ========================================================= -->
 
+    <!-- Bump v in step with the stylesheet above. -->
     <script
         type="module"
-        src="script.js"
+        src="script.js?v=8"
     ></script>
 
 </body>
