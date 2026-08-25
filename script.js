@@ -3319,12 +3319,19 @@ function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
         return cell;
     };
 
+    /*
+     * The class choice narrows IND as well as VOL, so a share is
+     * read within the segment: Maruti against the Motor Car market,
+     * not against every registration of every kind.
+     */
     for (const row of industryRows) {
 
         const cell = at(row);
 
         if (cell) {
-            cell.industry += toNumber(row[schema.totalColumn]);
+            cell.industry += valueColumns
+                ? sumColumns(row, valueColumns)
+                : toNumber(row[schema.totalColumn]);
         }
     }
 
