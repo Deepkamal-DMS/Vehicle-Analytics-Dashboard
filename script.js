@@ -343,12 +343,27 @@ class RestQuery {
         if (!response.ok) {
 
             let message = `${response.status} ${response.statusText}`;
+            let code = String(response.status);
 
             try {
+
                 const body = await response.json();
+
                 if (body && body.message) {
                     message = body.message;
                 }
+
+                /*
+                 * PostgREST's own code is far more specific than the
+                 * HTTP status - PGRST205 (no such table) and PGRST002
+                 * (cannot reach the database) both arrive as errors
+                 * mentioning the schema cache, and only one of them
+                 * means the database is down.
+                 */
+                if (body && body.code) {
+                    code = String(body.code);
+                }
+
             } catch (ignored) {
                 /* non-JSON error body */
             }
@@ -356,7 +371,7 @@ class RestQuery {
             return {
                 data: null,
                 count,
-                error: { message, code: String(response.status) }
+                error: { message, code, status: response.status }
             };
         }
 
@@ -457,6 +472,12 @@ const state = {
      * Cached wide tables, keyed by table name.
      */
     tableCache: new Map(),
+
+    /*
+     * Month tables are read independently of the scope tables:
+     * one cached read per column set, reused as filters change.
+     */
+    monthly: { schema: null, cache: new Map() },
 
     rows: [],
     filteredRows: [],
@@ -586,8 +607,16 @@ function cacheDOM() {
 
         /* Header */
         "data-year-range",
-        "activeFilters",
-        "datasetNote",
+
+        /* Monthly trend */
+        "monthlyTrendHead",
+        "monthlyTrendBody",
+        "monthlyTrendFoot",
+        "monthlyTrendMeta",
+        "monthlyTrendLoading",
+        "monthlyTrendError",
+        "monthlyTrendErrorText",
+        "monthlyTrendContent",
 
         /* Loading */
         "globalLoading",
@@ -2919,76 +2948,6 @@ function updateViewLabels() {
 }
 
 
-function updateActiveFilters() {
-
-    if (!dom.activeFilters) {
-        return;
-    }
-
-    dom.activeFilters.innerHTML = "";
-
-    const fragment = document.createDocumentFragment();
-
-    const label = document.createElement("span");
-    label.className = "active-filters__label";
-    label.textContent = "Active Filters:";
-    fragment.appendChild(label);
-
-    let count = 0;
-
-    function addFilter(name, value) {
-
-        if (isAll(value) || value === "") {
-            return;
-        }
-
-        count += 1;
-
-        const element = document.createElement("span");
-        element.className = "active-filter";
-
-        const strong = document.createElement("strong");
-        strong.textContent = `${name}:`;
-
-        element.appendChild(strong);
-        element.appendChild(document.createTextNode(` ${value}`));
-
-        fragment.appendChild(element);
-    }
-
-    addFilter("Scope", currentView().scopeLabel);
-    addFilter("Year", state.year);
-
-    if (state.filters.makers.length > 0) {
-        addFilter("Maker", state.filters.makers.join(", "));
-    }
-
-    addFilter("State", state.filters.state);
-
-    if (!isAll(state.filters.region)) {
-        addFilter("Region", prettifyRegion(state.filters.region));
-    }
-
-    addFilter("Month", state.filters.month);
-    addFilter("Category", state.filters.category);
-    addFilter("Subcategory", state.filters.subcategory);
-
-    /*
-     * Breakdown always shows, so "no filters" means only it.
-     */
-    if (count <= 2) {
-
-        const empty = document.createElement("span");
-        empty.className = "active-filter active-filter--empty";
-        empty.textContent = "No other filters";
-
-        fragment.appendChild(empty);
-    }
-
-    dom.activeFilters.appendChild(fragment);
-}
-
-
 function updateYearRangeHeader() {
 
     const element = dom["data-year-range"];
@@ -3001,30 +2960,392 @@ function updateYearRangeHeader() {
 }
 
 
-function updateDatasetNote() {
+/* ============================================================
+   22b. MONTHLY TREND
 
-    if (!dom.datasetNote) {
+   Fiscal years down the side, months across the top. Each month
+   carries three figures:
+
+       IND  every maker's registrations that month
+       VOL  what the Maker and Category filters select
+       MS   VOL as a share of IND
+
+   The twelve month tables are All-India only, so this section
+   deliberately ignores the Scope filter and says so on screen.
+   ============================================================ */
+
+const MONTH_TABLES = [
+    { number: 1, key: "Jan", label: "January" },
+    { number: 2, key: "Feb", label: "February" },
+    { number: 3, key: "Mar", label: "March" },
+    { number: 4, key: "Apr", label: "April" },
+    { number: 5, key: "May", label: "May" },
+    { number: 6, key: "Jun", label: "June" },
+    { number: 7, key: "Jul", label: "July" },
+    { number: 8, key: "Aug", label: "August" },
+    { number: 9, key: "Sep", label: "September" },
+    { number: 10, key: "Oct", label: "October" },
+    { number: 11, key: "Nov", label: "November" },
+    { number: 12, key: "Dec", label: "December" }
+];
+
+
+/* April first - a fiscal year runs April to March. */
+const FISCAL_MONTH_ORDER = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
+
+const MONTH_TABLE_PREFIX = "Maker_Class_Wise_";
+
+
+function monthTableName(key) {
+    return `${MONTH_TABLE_PREFIX}${key}`;
+}
+
+
+function fiscalYearStart(month, year) {
+    return month >= 4 ? year : year - 1;
+}
+
+
+function fiscalYearLabel(start) {
+    return `FY ${start}-${String(start + 1).slice(-2)}`;
+}
+
+
+/*
+ * The month tables carry their own column set, so the category
+ * filter is resolved against them rather than against whichever
+ * scope table happens to be selected.
+ */
+function monthlyValueColumns() {
+
+    const schema = state.monthly.schema;
+
+    if (!schema) {
+        return [];
+    }
+
+    const { category, subcategory } = state.filters;
+
+    if (!isAll(subcategory)) {
+        return schema.classColumns.filter(column => column === subcategory);
+    }
+
+    if (!isAll(category)) {
+
+        const group = CLASS_GROUPS.find(
+            candidate => normalizeKey(candidate.label) === normalizeKey(category)
+        );
+
+        if (!group) {
+            return [];
+        }
+
+        const chosen = [];
+
+        for (const column of schema.classColumns) {
+
+            const matched = CLASS_GROUPS.find(
+                candidate => candidate.test(column)
+            );
+
+            if (matched && matched.id === group.id) {
+                chosen.push(column);
+            }
+        }
+
+        return chosen;
+    }
+
+    /* Everything selected: Total already is the row sum. */
+    return null;
+}
+
+
+async function describeMonthlySchema() {
+
+    if (state.monthly.schema) {
+        return state.monthly.schema;
+    }
+
+    const sample = await fetchSampleRow(monthTableName("Jan"));
+
+    if (!sample) {
+        throw new Error(
+            "The monthly tables are unavailable, so the trend cannot load."
+        );
+    }
+
+    const entityColumn = getEntityColumn(sample, "maker");
+    const totalColumn = getTotalColumn(sample);
+    const yearColumn = getYearColumn(sample);
+
+    state.monthly.schema = {
+        entityColumn,
+        totalColumn,
+        yearColumn,
+        classColumns: Object.keys(sample).filter(
+            column =>
+                column !== entityColumn &&
+                column !== totalColumn &&
+                !isMetadataColumn(column)
+        )
+    };
+
+    return state.monthly.schema;
+}
+
+
+/*
+ * One cached read per column set. Total alone answers most of the
+ * questions, and the wider read only happens once a category or
+ * subcategory is actually chosen.
+ */
+async function getMonthlyRows(valueColumns, signal) {
+
+    const schema = state.monthly.schema;
+
+    const key = valueColumns ? valueColumns.join("|") : "__total__";
+
+    if (state.monthly.cache.has(key)) {
+        return state.monthly.cache.get(key);
+    }
+
+    const columns = [
+        schema.yearColumn,
+        schema.entityColumn,
+        schema.totalColumn,
+        ...(valueColumns || [])
+    ];
+
+    const byMonth = new Map();
+
+    for (const month of MONTH_TABLES) {
+
+        const rows = await fetchAllRows(
+            monthTableName(month.key),
+            columns,
+            { signal }
+        );
+
+        byMonth.set(month.number, rows);
+    }
+
+    state.monthly.cache.set(key, byMonth);
+
+    return byMonth;
+}
+
+
+function buildMonthlyPivot(byMonth, valueColumns) {
+
+    const schema = state.monthly.schema;
+    const years = new Set();
+    const cells = new Map();
+
+    for (const [monthNumber, rows] of byMonth) {
+
+        for (const row of rows) {
+
+            const year = Number(row[schema.yearColumn]);
+
+            if (!Number.isFinite(year)) {
+                continue;
+            }
+
+            const start = fiscalYearStart(monthNumber, year);
+
+            years.add(start);
+
+            const id = `${start}:${monthNumber}`;
+
+            const cell = cells.get(id) || { industry: 0, selected: 0 };
+
+            const total = toNumber(row[schema.totalColumn]);
+
+            cell.industry += total;
+
+            if (matchesEntityFilter(row[schema.entityColumn])) {
+                cell.selected += valueColumns
+                    ? sumColumns(row, valueColumns)
+                    : total;
+            }
+
+            cells.set(id, cell);
+        }
+    }
+
+    const rows = [...years].sort((a, b) => a - b).map(start => ({
+        start,
+        label: fiscalYearLabel(start),
+        months: FISCAL_MONTH_ORDER.map(
+            month => cells.get(`${start}:${month}`) || null
+        )
+    }));
+
+    const totals = FISCAL_MONTH_ORDER.map(month => {
+
+        let industry = 0;
+        let selected = 0;
+        let present = false;
+
+        for (const start of years) {
+
+            const cell = cells.get(`${start}:${month}`);
+
+            if (cell) {
+                industry += cell.industry;
+                selected += cell.selected;
+                present = true;
+            }
+        }
+
+        return present ? { industry, selected } : null;
+    });
+
+    return { rows, totals };
+}
+
+
+function monthlyCell(cell) {
+
+    if (!cell) {
+        return `
+            <td class="numeric monthly-trend__empty">&mdash;</td>
+            <td class="numeric monthly-trend__empty">&mdash;</td>
+            <td class="numeric monthly-trend__empty">&mdash;</td>
+        `;
+    }
+
+    const share = cell.industry > 0
+        ? (cell.selected / cell.industry) * 100
+        : 0;
+
+    return `
+        <td class="numeric">${formatIndianNumber(cell.industry)}</td>
+        <td class="numeric monthly-trend__vol">${formatIndianNumber(cell.selected)}</td>
+        <td class="numeric monthly-trend__ms">${share.toFixed(1)}%</td>
+    `;
+}
+
+
+function renderMonthlyTrend(pivot) {
+
+    const months = FISCAL_MONTH_ORDER.map(
+        number => MONTH_TABLES.find(month => month.number === number)
+    );
+
+    if (dom.monthlyTrendHead) {
+
+        dom.monthlyTrendHead.innerHTML = `
+            <tr>
+                <th rowspan="2" class="monthly-trend__year-head">
+                    Fiscal Year
+                </th>
+                ${months.map(month => `
+                    <th colspan="3" class="monthly-trend__month-head">
+                        ${month.label}
+                    </th>
+                `).join("")}
+            </tr>
+            <tr>
+                ${months.map(() => `
+                    <th class="numeric monthly-trend__sub">IND</th>
+                    <th class="numeric monthly-trend__sub">VOL</th>
+                    <th class="numeric monthly-trend__sub">MS</th>
+                `).join("")}
+            </tr>
+        `;
+    }
+
+    if (dom.monthlyTrendBody) {
+
+        dom.monthlyTrendBody.innerHTML = pivot.rows.map(row => `
+            <tr>
+                <th scope="row" class="monthly-trend__year">${row.label}</th>
+                ${row.months.map(monthlyCell).join("")}
+            </tr>
+        `).join("");
+    }
+
+    if (dom.monthlyTrendFoot) {
+
+        dom.monthlyTrendFoot.innerHTML = `
+            <tr>
+                <th scope="row" class="monthly-trend__year">Total</th>
+                ${pivot.totals.map(monthlyCell).join("")}
+            </tr>
+        `;
+    }
+}
+
+
+function setMonthlyTrendState(view) {
+
+    if (dom.monthlyTrendLoading) {
+        dom.monthlyTrendLoading.hidden = view !== "loading";
+    }
+
+    if (dom.monthlyTrendError) {
+        dom.monthlyTrendError.hidden = view !== "error";
+    }
+
+    if (dom.monthlyTrendContent) {
+        dom.monthlyTrendContent.hidden = view !== "ready";
+    }
+}
+
+
+async function loadMonthlyTrend(signal) {
+
+    if (!dom.monthlyTrendContent) {
         return;
     }
 
-    const view = currentView();
+    try {
 
-    const source = state.sourceTable || currentSchema()?.table || "—";
+        setMonthlyTrendState("loading");
 
-    const valueColumnCount = state.columns.filter(
-        column => column.type === "value"
-    ).length;
+        await describeMonthlySchema();
 
-    const text =
-        `Source: ${source} · ${view.scopeLabel} · calendar year ` +
-        `${state.year} · ` +
-        `${formatIndianNumber(state.dimensionTotal)} registrations ` +
-        `across ${formatIndianNumber(state.rows.length)} ` +
-        `${view.entityPlural.toLowerCase()} and ` +
-        `${formatIndianNumber(valueColumnCount)} columns.`;
+        const valueColumns = monthlyValueColumns();
 
-    dom.datasetNote.hidden = false;
-    dom.datasetNote.textContent = text;
+        const byMonth = await getMonthlyRows(valueColumns, signal);
+
+        const pivot = buildMonthlyPivot(byMonth, valueColumns);
+
+        renderMonthlyTrend(pivot);
+
+        if (dom.monthlyTrendMeta) {
+
+            const selected = pivot.totals.reduce(
+                (sum, cell) => sum + (cell ? cell.selected : 0),
+                0
+            );
+
+            dom.monthlyTrendMeta.textContent =
+                `${pivot.rows.length} fiscal years · ` +
+                `${formatIndianNumber(selected)} in selection`;
+        }
+
+        setMonthlyTrendState("ready");
+
+    } catch (error) {
+
+        if (isAbortError(error)) {
+            return;
+        }
+
+        console.error("Monthly trend failed:", error);
+
+        if (dom.monthlyTrendErrorText) {
+            dom.monthlyTrendErrorText.textContent = toUserMessage(
+                error,
+                "The monthly trend could not be loaded."
+            );
+        }
+
+        setMonthlyTrendState("error");
+    }
 }
 
 
@@ -3064,13 +3385,40 @@ function hideLoading() {
  * with the schema.
  */
 const DB_UNREACHABLE_MESSAGE =
-    "Can't reach the database right now. Check that the local " +
-    "API and Postgres containers are running, then press Retry.";
+    "Can't reach the database right now. Check your connection, " +
+    "then press Retry.";
+
+
+/*
+ * A table the API does not know about. Since the tables are named
+ * in this file, the usual cause is a stale cached copy of it -
+ * GitHub Pages serves script.js with max-age=600, so for ten
+ * minutes after a deploy a browser can still be asking for tables
+ * that were renamed or dropped.
+ */
+const TABLE_MISSING_MESSAGE =
+    "This page is asking for a table that no longer exists, which " +
+    "usually means it is running a cached copy. Reload with " +
+    "Ctrl+Shift+R (Cmd+Shift+R on a Mac).";
+
+
+function isTableMissing(error) {
+
+    if (!error) {
+        return false;
+    }
+
+    if (error.code === "PGRST205") {
+        return true;
+    }
+
+    return /could not find the table/i.test(String(error.message || error));
+}
 
 
 function isDatabaseUnreachable(error) {
 
-    if (!error) {
+    if (!error || isTableMissing(error)) {
         return false;
     }
 
@@ -3080,8 +3428,12 @@ function isDatabaseUnreachable(error) {
 
     const text = String(error.message || error);
 
+    /*
+     * Matched narrowly: PGRST205 also says "schema cache", and that
+     * one means the table is gone, not the database.
+     */
     return (
-        /schema cache/i.test(text) ||
+        /could not query the database/i.test(text) ||
         /failed to fetch/i.test(text) ||
         /networkerror/i.test(text) ||
         /load failed/i.test(text)
@@ -3097,6 +3449,10 @@ function toUserMessage(error, fallback) {
 
     if (typeof error === "string") {
         return error;
+    }
+
+    if (isTableMissing(error)) {
+        return TABLE_MISSING_MESSAGE;
     }
 
     if (isDatabaseUnreachable(error)) {
@@ -3203,7 +3559,6 @@ async function applyFilters({ global = false } = {}) {
 
     state.currentPage = 1;
 
-    updateActiveFilters();
     updateYearRangeHeader();
     updateViewLabels();
 
@@ -3257,8 +3612,15 @@ async function applyFilters({ global = false } = {}) {
         );
 
         updateKPICards();
-        updateDatasetNote();
         renderTable();
+
+        /*
+         * Deliberately not awaited. The trend reads twelve separate
+         * tables, so letting it settle on its own keeps the main
+         * table on screen at the usual speed; it reports its own
+         * loading and failure states.
+         */
+        loadMonthlyTrend(controller.signal);
 
         return true;
 
@@ -3276,10 +3638,6 @@ async function applyFilters({ global = false } = {}) {
         state.kpis = emptyKPIs();
 
         updateKPICards();
-
-        if (dom.datasetNote) {
-            dom.datasetNote.hidden = true;
-        }
 
         displayError(error, "Unable to load dashboard data.");
 
@@ -3750,7 +4108,6 @@ async function initializeDashboard({ force = false } = {}) {
 
         updateViewLabels();
         enforceFilterCompatibility();
-        updateActiveFilters();
         updateYearRangeHeader();
 
         await applyFilters({ global: true });
@@ -3765,10 +4122,6 @@ async function initializeDashboard({ force = false } = {}) {
         state.kpis = emptyKPIs();
 
         updateKPICards();
-
-        if (dom.datasetNote) {
-            dom.datasetNote.hidden = true;
-        }
 
         displayError(error, "Dashboard initialization failed.");
 

@@ -470,39 +470,6 @@
 
 
             <!-- =================================================
-                 ACTIVE FILTERS
-                 ================================================= -->
-
-            <div
-                id="activeFilters"
-                class="active-filters"
-                aria-live="polite"
-                aria-label="Active filters"
-            >
-
-                <span class="active-filters__label">
-                    Active Filters:
-                </span>
-
-                <span class="active-filter active-filter--empty">
-                    No active filters
-                </span>
-
-            </div>
-
-
-            <!-- =================================================
-                 DATASET SCOPE NOTE
-                 ================================================= -->
-
-            <p
-                id="datasetNote"
-                class="dataset-note"
-                hidden
-            ></p>
-
-
-            <!-- =================================================
                  OVERVIEW
                  ================================================= -->
 
@@ -731,6 +698,119 @@
                         </div>
 
                     </article>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 MONTHLY TREND
+
+                 Fiscal years down the side, months across the top,
+                 each month carrying industry volume, the current
+                 selection's volume, and the resulting market share.
+                 ================================================= -->
+
+            <section
+                class="content-section"
+                aria-labelledby="monthly-trend-title"
+            >
+
+                <div class="table-card">
+
+                    <!-- Table header -->
+
+                    <div class="section-heading section-heading--table">
+
+                        <div>
+
+                            <span class="section-eyebrow">
+                                TREND
+                            </span>
+
+                            <h2 id="monthly-trend-title">
+                                Monthly Trend &mdash; All India
+                            </h2>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Table toolbar -->
+
+                    <div class="table-toolbar">
+
+                        <div class="table-toolbar__left">
+
+                            <p class="monthly-trend__note">
+                                <strong>IND</strong> is every maker's
+                                registrations that month,
+                                <strong>VOL</strong> is what the Maker and
+                                Category filters select, and
+                                <strong>MS</strong> is VOL as a share of
+                                IND. Month data is All-India only, so the
+                                Scope filter does not apply here.
+                            </p>
+
+                        </div>
+
+                        <div class="table-toolbar__right">
+
+                            <span
+                                id="monthlyTrendMeta"
+                                class="result-count"
+                            ></span>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Loading -->
+
+                    <div
+                        id="monthlyTrendLoading"
+                        class="table-state table-state--loading"
+                    >
+                        <div class="spinner"></div>
+                        <p>Loading monthly trend&hellip;</p>
+                    </div>
+
+
+                    <!-- Error -->
+
+                    <div
+                        id="monthlyTrendError"
+                        class="table-state table-state--error"
+                        role="alert"
+                        hidden
+                    >
+                        <div class="table-state__icon">!</div>
+                        <p id="monthlyTrendErrorText"></p>
+                    </div>
+
+
+                    <!-- Table -->
+
+                    <div
+                        id="monthlyTrendContent"
+                        class="table-wrapper monthly-trend"
+                        hidden
+                    >
+
+                        <table class="data-table monthly-trend__table">
+
+                            <thead id="monthlyTrendHead"></thead>
+
+                            <tbody id="monthlyTrendBody"></tbody>
+
+                            <tfoot id="monthlyTrendFoot"></tfoot>
+
+                        </table>
+
+                    </div>
 
                 </div>
 

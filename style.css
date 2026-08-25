@@ -992,78 +992,6 @@ truth, just not visible or focusable.
 
 
 /* =========================================================
-   8. ACTIVE FILTERS / DATASET NOTE
-   ========================================================= */
-
-.active-filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-
-    gap: 7px;
-
-    min-height: 28px;
-
-    margin-bottom: 10px;
-}
-
-.active-filters__label {
-    color: var(--text-muted);
-
-    font-size: 9px;
-    font-weight: 700;
-
-    margin-right: 3px;
-
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-}
-
-.active-filter {
-    display: inline-flex;
-    align-items: center;
-
-    min-height: 27px;
-
-    padding: 4px 10px;
-
-    color: var(--primary-dark);
-
-    background: var(--primary-soft);
-
-    border: 1px solid var(--primary-border);
-
-    border-radius: 999px;
-
-    font-size: 10px;
-    font-weight: 600;
-}
-
-.active-filter strong {
-    margin-right: 4px;
-
-    font-weight: 700;
-}
-
-.active-filter--empty {
-    color: var(--text-muted);
-
-    background: var(--surface);
-
-    border-color: var(--border);
-}
-
-.dataset-note {
-    margin: 0 0 18px;
-
-    color: var(--text-muted);
-
-    font-size: 10px;
-    font-weight: 500;
-}
-
-
-/* =========================================================
    9. SECTION HEADINGS
    ========================================================= */
 
@@ -2170,10 +2098,6 @@ th[aria-sort="descending"] .sort-icon {
         width: 100px;
     }
 
-    .active-filters {
-        align-items: flex-start;
-    }
-
     .error-banner {
         align-items: flex-start;
 
@@ -2254,4 +2178,132 @@ th[aria-sort="descending"] .sort-icon {
 
         transition-duration: 0.01ms !important;
     }
+}
+
+/* =========================================================
+   MONTHLY TREND
+
+   Same visual language as the maker table below it: shared
+   .data-table base, sticky header, striped and hoverable rows,
+   a recessed share figure and a light totals row. The only
+   additions are the month grouping across the top and the
+   pinned fiscal-year column.
+   ========================================================= */
+
+.monthly-trend__note {
+    margin: 0;
+
+    color: var(--text-secondary);
+
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.monthly-trend__note strong {
+    color: var(--text);
+
+    font-weight: 600;
+}
+
+.monthly-trend__table {
+    min-width: max-content;
+}
+
+/*
+Two header rows, so the second one has to sit below the first
+rather than at the top of the scroll area.
+*/
+.monthly-trend__table thead tr:first-child th {
+    top: 0;
+    z-index: 4;
+}
+
+.monthly-trend__table thead tr:last-child th {
+    top: 33px;
+    z-index: 3;
+}
+
+.monthly-trend__month-head {
+    text-align: center;
+}
+
+.monthly-trend__sub {
+    color: var(--text-muted);
+
+    font-size: 9px;
+
+    text-align: right;
+}
+
+/* A hairline opens each month group so the triplets read apart. */
+.monthly-trend__month-head:not(:first-of-type),
+.monthly-trend__sub:nth-child(3n + 1),
+.monthly-trend__table tbody td:nth-child(3n + 2),
+.monthly-trend__table tfoot td:nth-child(3n + 2) {
+    border-left: 1px solid var(--border);
+}
+
+.monthly-trend__table th.monthly-trend__year-head,
+.monthly-trend__table th.monthly-trend__year {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+
+    min-width: 108px;
+
+    color: var(--text);
+
+    background: var(--surface);
+
+    font-weight: 600;
+
+    text-align: left;
+}
+
+.monthly-trend__table thead th.monthly-trend__year-head {
+    z-index: 6;
+
+    background: var(--surface-soft);
+}
+
+.monthly-trend__table tbody tr:nth-child(even) th.monthly-trend__year {
+    background: var(--row-alt);
+}
+
+.monthly-trend__table tbody tr:hover th.monthly-trend__year {
+    background: var(--row-hover);
+}
+
+.monthly-trend__table tfoot th.monthly-trend__year {
+    z-index: 6;
+
+    background: var(--surface-soft);
+}
+
+.monthly-trend__table tbody td,
+.monthly-trend__table tfoot td {
+    text-align: right;
+
+    font-variant-numeric: tabular-nums;
+}
+
+/* The selected figure is the one being read, so it leads. */
+.monthly-trend__vol {
+    color: var(--text);
+
+    font-weight: 600;
+}
+
+/* Recessed the same way the maker table recesses its shares. */
+.monthly-trend__ms {
+    color: var(--text-secondary);
+
+    opacity: 0.95;
+
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.monthly-trend__empty {
+    color: var(--text-light);
 }
