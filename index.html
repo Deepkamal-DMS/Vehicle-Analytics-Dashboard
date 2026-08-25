@@ -744,30 +744,53 @@
 
                         <div class="table-toolbar__left">
 
-                            <div class="trend-maker">
+                            <div class="trend-filters">
 
-                                <label for="trendMakerFilter">
-                                    Maker
-                                </label>
+                                <div class="trend-filter">
 
-                                <select
-                                    id="trendMakerFilter"
-                                    name="trendMaker"
-                                >
-                                    <option value="all">
-                                        All Makers
-                                    </option>
-                                </select>
+                                    <label for="trendMakerFilter">
+                                        Maker
+                                    </label>
+
+                                    <select
+                                        id="trendMakerFilter"
+                                        name="trendMaker"
+                                    >
+                                        <option value="all">
+                                            All Makers
+                                        </option>
+                                    </select>
+
+                                </div>
+
+                                <div class="trend-filter">
+
+                                    <label for="trendClassFilter">
+                                        Class
+                                    </label>
+
+                                    <select
+                                        id="trendClassFilter"
+                                        name="trendClass"
+                                    >
+                                        <option value="all">
+                                            All Classes
+                                        </option>
+                                    </select>
+
+                                </div>
 
                             </div>
 
                             <p class="monthly-trend__note">
                                 <strong>IND</strong> is every maker's
                                 registrations that month,
-                                <strong>VOL</strong> is the maker chosen
-                                here, and <strong>MS</strong> is that
-                                maker's share. Month data is All-India
-                                only, so the Scope filter does not apply.
+                                <strong>VOL</strong> is the maker and
+                                class chosen here, and
+                                <strong>MS</strong> is VOL as a share of
+                                IND. These two control this table only.
+                                Month data is All-India, so the Scope
+                                filter does not apply.
                             </p>
 
                         </div>

@@ -485,7 +485,8 @@ const state = {
      * makers at the same time.
      */
     trendMaker: CONFIG.ALL,
-    trendMakersLoaded: false,
+    trendClass: CONFIG.ALL,
+    trendOptionsLoaded: false,
 
     rows: [],
     filteredRows: [],
@@ -622,6 +623,7 @@ function cacheDOM() {
         "monthlyTrendFoot",
         "monthlyTrendMeta",
         "trendMakerFilter",
+        "trendClassFilter",
         "monthlyTrendHint",
         "monthlyTrendLoading",
         "monthlyTrendError",
@@ -1209,6 +1211,7 @@ function groupColumnsFor(schema, groupId) {
 const SEARCHABLE_FILTERS = [
     "makerFilter",
     "trendMakerFilter",
+    "trendClassFilter",
     "stateFilter",
     "monthFilter",
     "regionFilter",
@@ -3023,9 +3026,75 @@ function fiscalYearLabel(start) {
 
 
 /*
- * The month tables carry their own column set, so the category
- * filter is resolved against them rather than against whichever
- * scope table happens to be selected.
+ * Group choices are prefixed so one control can offer both without
+ * a class ever being mistaken for the group of the same name.
+ */
+const TREND_GROUP_PREFIX = "group:";
+
+
+/*
+ * The first group whose test matches wins, which is the same order
+ * CLASS_GROUPS is evaluated in everywhere else.
+ */
+function classGroupIdFor(column) {
+
+    const group = CLASS_GROUPS.find(candidate => candidate.test(column));
+
+    return group ? group.id : null;
+}
+
+
+/*
+ * All Classes, then the groups that actually have columns, then
+ * every individual class. Group labels lead with "All" so a group
+ * reads apart from a class in one flat list.
+ */
+function loadTrendClassOptions() {
+
+    if (!dom.trendClassFilter) {
+        return;
+    }
+
+    const schema = state.monthly.schema;
+
+    if (!schema) {
+        return;
+    }
+
+    const present = new Set(
+        schema.classColumns.map(classGroupIdFor).filter(Boolean)
+    );
+
+    const groups = CLASS_GROUPS
+        .filter(group => present.has(group.id))
+        .map(group => ({
+            value: `${TREND_GROUP_PREFIX}${group.id}`,
+            label: `All ${group.label}`
+        }));
+
+    const classes = uniqueSorted(schema.classColumns).map(column => ({
+        value: column,
+        label: column
+    }));
+
+    populateSelect(
+        dom.trendClassFilter,
+        [...groups, ...classes],
+        "All Classes",
+        state.trendClass
+    );
+
+    state.trendClass = dom.trendClassFilter.value;
+}
+
+
+/*
+ * The month tables carry their own column set, so the class choice
+ * is resolved against them rather than against whichever scope
+ * table happens to be selected.
+ *
+ * Returns null when everything is selected, which lets the caller
+ * read the row's Total instead of summing 75 columns.
  */
 function monthlyValueColumns() {
 
@@ -3035,40 +3104,22 @@ function monthlyValueColumns() {
         return [];
     }
 
-    const { category, subcategory } = state.filters;
+    const chosen = state.trendClass;
 
-    if (!isAll(subcategory)) {
-        return schema.classColumns.filter(column => column === subcategory);
+    if (isAll(chosen)) {
+        return null;
     }
 
-    if (!isAll(category)) {
+    if (String(chosen).startsWith(TREND_GROUP_PREFIX)) {
 
-        const group = CLASS_GROUPS.find(
-            candidate => normalizeKey(candidate.label) === normalizeKey(category)
+        const id = String(chosen).slice(TREND_GROUP_PREFIX.length);
+
+        return schema.classColumns.filter(
+            column => classGroupIdFor(column) === id
         );
-
-        if (!group) {
-            return [];
-        }
-
-        const chosen = [];
-
-        for (const column of schema.classColumns) {
-
-            const matched = CLASS_GROUPS.find(
-                candidate => candidate.test(column)
-            );
-
-            if (matched && matched.id === group.id) {
-                chosen.push(column);
-            }
-        }
-
-        return chosen;
     }
 
-    /* Everything selected: Total already is the row sum. */
-    return null;
+    return schema.classColumns.filter(column => column === chosen);
 }
 
 
@@ -3369,9 +3420,10 @@ async function loadMonthlyTrend(signal) {
 
         const byMonth = await getMonthlyRows(valueColumns, signal);
 
-        if (!state.trendMakersLoaded) {
+        if (!state.trendOptionsLoaded) {
             loadTrendMakerOptions(byMonth);
-            state.trendMakersLoaded = true;
+            loadTrendClassOptions();
+            state.trendOptionsLoaded = true;
         }
 
         const pivot = buildMonthlyPivot(byMonth, valueColumns);
@@ -3386,16 +3438,14 @@ async function loadMonthlyTrend(signal) {
         if (dom.monthlyTrendHint) {
 
             const unnarrowed =
-                isAll(state.trendMaker) &&
-                isAll(state.filters.category) &&
-                isAll(state.filters.subcategory);
+                isAll(state.trendMaker) && isAll(state.trendClass);
 
             dom.monthlyTrendHint.hidden = !unnarrowed;
 
             dom.monthlyTrendHint.textContent = unnarrowed
-                ? "Choose a Maker above to make VOL and MS meaningful. " +
-                  "With All Makers selected VOL is the whole industry, " +
-                  "so it repeats IND and every share reads 100%."
+                ? "Choose a Maker or Class above to make VOL and MS " +
+                  "meaningful. With both set to All, VOL is the whole " +
+                  "industry, so it repeats IND and every share reads 100%."
                 : "";
         }
 
@@ -3754,6 +3804,7 @@ async function resetFilters() {
     [
         dom.makerFilter,
         dom.trendMakerFilter,
+        dom.trendClassFilter,
         dom.stateFilter,
         dom.monthFilter,
         dom.regionFilter,
@@ -3767,6 +3818,7 @@ async function resetFilters() {
     });
 
     state.trendMaker = CONFIG.ALL;
+    state.trendClass = CONFIG.ALL;
 
     refreshAllCombos();
 
@@ -4130,18 +4182,31 @@ function setupFilterListeners() {
      */
     if (dom.trendMakerFilter) {
 
-        dom.trendMakerFilter.addEventListener("change", async () => {
+        [dom.trendMakerFilter, dom.trendClassFilter].forEach(element => {
 
-            state.trendMaker = dom.trendMakerFilter.value;
+            if (!element) {
+                return;
+            }
 
-            /*
-             * Clicking an option already writes the input, but a
-             * change raised any other way would leave the visible
-             * text behind the value.
-             */
-            refreshCombo(dom.trendMakerFilter);
+            element.addEventListener("change", async () => {
 
-            await loadMonthlyTrend();
+                state.trendMaker = dom.trendMakerFilter
+                    ? dom.trendMakerFilter.value
+                    : CONFIG.ALL;
+
+                state.trendClass = dom.trendClassFilter
+                    ? dom.trendClassFilter.value
+                    : CONFIG.ALL;
+
+                /*
+                 * Clicking an option already writes the input, but a
+                 * change raised any other way would leave the visible
+                 * text behind the value.
+                 */
+                refreshCombo(element);
+
+                await loadMonthlyTrend();
+            });
         });
     }
 

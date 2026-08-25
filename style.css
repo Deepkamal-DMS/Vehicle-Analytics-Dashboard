@@ -2328,7 +2328,7 @@ rather than at the top of the scroll area.
 }
 
 /* =========================================================
-   TREND MAKER SELECT
+   TREND FILTERS
 
    The combo markup is shared with the sidebar, which is dark.
    These rules retone it for the light content area; scoping by
@@ -2336,16 +2336,24 @@ rather than at the top of the scroll area.
    was mounted.
    ========================================================= */
 
-.trend-maker {
+.trend-filters {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
 
-    gap: 10px;
+    gap: 10px 22px;
 
     margin-bottom: 10px;
 }
 
-.trend-maker label {
+.trend-filter {
+    display: flex;
+    align-items: center;
+
+    gap: 10px;
+}
+
+.trend-filter label {
     color: var(--text-muted);
 
     font-size: 9px;
@@ -2357,11 +2365,11 @@ rather than at the top of the scroll area.
     white-space: nowrap;
 }
 
-.trend-maker .combo {
+.trend-filter .combo {
     width: 280px;
 }
 
-.trend-maker .combo__input {
+.trend-filter .combo__input {
     min-height: 34px;
 
     padding: 7px 30px 7px 11px;
@@ -2375,21 +2383,21 @@ rather than at the top of the scroll area.
     font-size: 11px;
 }
 
-.trend-maker .combo__input::placeholder {
+.trend-filter .combo__input::placeholder {
     color: var(--text-muted);
 }
 
-.trend-maker .combo__input:hover:not(:disabled) {
+.trend-filter .combo__input:hover:not(:disabled) {
     border-color: var(--primary);
 }
 
-.trend-maker .combo__input:focus {
+.trend-filter .combo__input:focus {
     border-color: var(--primary);
 
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
-.trend-maker .combo__list {
+.trend-filter .combo__list {
     background: var(--surface);
 
     border-color: var(--border-dark);
@@ -2397,23 +2405,23 @@ rather than at the top of the scroll area.
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
 }
 
-.trend-maker .combo__option {
+.trend-filter .combo__option {
     color: var(--text-secondary);
 }
 
-.trend-maker .combo__option--active {
+.trend-filter .combo__option--active {
     color: var(--text);
 
     background: var(--surface-muted);
 }
 
-.trend-maker .combo__option--selected {
+.trend-filter .combo__option--selected {
     color: var(--primary-dark);
 
     background: var(--primary-soft);
 }
 
-.trend-maker .combo__empty,
-.trend-maker .combo__more {
+.trend-filter .combo__empty,
+.trend-filter .combo__more {
     color: var(--text-muted);
 }
