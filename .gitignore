@@ -10,3 +10,9 @@ package-lock.json
 
 # Excel lock files
 ~$*
+
+# Reference screenshots: these carry real dealer figures and the
+# repo is public, so they stay local.
+ref.jpeg
+ref.jpg
+ref.png
