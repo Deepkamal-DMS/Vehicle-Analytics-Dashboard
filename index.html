@@ -744,14 +744,30 @@
 
                         <div class="table-toolbar__left">
 
+                            <div class="trend-maker">
+
+                                <label for="trendMakerFilter">
+                                    Maker
+                                </label>
+
+                                <select
+                                    id="trendMakerFilter"
+                                    name="trendMaker"
+                                >
+                                    <option value="all">
+                                        All Makers
+                                    </option>
+                                </select>
+
+                            </div>
+
                             <p class="monthly-trend__note">
                                 <strong>IND</strong> is every maker's
                                 registrations that month,
-                                <strong>VOL</strong> is what the Maker and
-                                Category filters select, and
-                                <strong>MS</strong> is VOL as a share of
-                                IND. Month data is All-India only, so the
-                                Scope filter does not apply here.
+                                <strong>VOL</strong> is the maker chosen
+                                here, and <strong>MS</strong> is that
+                                maker's share. Month data is All-India
+                                only, so the Scope filter does not apply.
                             </p>
 
                         </div>

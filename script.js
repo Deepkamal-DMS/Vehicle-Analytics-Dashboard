@@ -479,6 +479,14 @@ const state = {
      */
     monthly: { schema: null, cache: new Map() },
 
+    /*
+     * The trend carries its own maker choice, independent of the
+     * sidebar's, so the two tables can be read against different
+     * makers at the same time.
+     */
+    trendMaker: CONFIG.ALL,
+    trendMakersLoaded: false,
+
     rows: [],
     filteredRows: [],
     dimensionTotal: 0,
@@ -613,6 +621,7 @@ function cacheDOM() {
         "monthlyTrendBody",
         "monthlyTrendFoot",
         "monthlyTrendMeta",
+        "trendMakerFilter",
         "monthlyTrendHint",
         "monthlyTrendLoading",
         "monthlyTrendError",
@@ -1199,6 +1208,7 @@ function groupColumnsFor(schema, groupId) {
 
 const SEARCHABLE_FILTERS = [
     "makerFilter",
+    "trendMakerFilter",
     "stateFilter",
     "monthFilter",
     "regionFilter",
@@ -3062,6 +3072,53 @@ function monthlyValueColumns() {
 }
 
 
+/*
+ * The trend answers to its own maker select, not the sidebar's, so
+ * the two tables can sit at different makers at once.
+ */
+function matchesTrendMaker(entity) {
+
+    if (isAll(state.trendMaker)) {
+        return true;
+    }
+
+    return normalizeKey(state.trendMaker) === normalizeKey(entity);
+}
+
+
+/*
+ * Built from the month tables themselves - their maker list runs
+ * back to 2024 and so is wider than the scope tables'.
+ */
+function loadTrendMakerOptions(byMonth) {
+
+    if (!dom.trendMakerFilter) {
+        return;
+    }
+
+    const schema = state.monthly.schema;
+    const names = new Set();
+
+    for (const rows of byMonth.values()) {
+        for (const row of rows) {
+            names.add(row[schema.entityColumn]);
+        }
+    }
+
+    const previous = state.trendMaker;
+
+    populateSelect(
+        dom.trendMakerFilter,
+        uniqueSorted([...names]),
+        "All Makers",
+        previous
+    );
+
+    /* A maker absent from the data falls back to All. */
+    state.trendMaker = dom.trendMakerFilter.value;
+}
+
+
 async function describeMonthlySchema() {
 
     if (state.monthly.schema) {
@@ -3165,7 +3222,7 @@ function buildMonthlyPivot(byMonth, valueColumns) {
 
             cell.industry += total;
 
-            if (matchesEntityFilter(row[schema.entityColumn])) {
+            if (matchesTrendMaker(row[schema.entityColumn])) {
                 cell.selected += valueColumns
                     ? sumColumns(row, valueColumns)
                     : total;
@@ -3312,6 +3369,11 @@ async function loadMonthlyTrend(signal) {
 
         const byMonth = await getMonthlyRows(valueColumns, signal);
 
+        if (!state.trendMakersLoaded) {
+            loadTrendMakerOptions(byMonth);
+            state.trendMakersLoaded = true;
+        }
+
         const pivot = buildMonthlyPivot(byMonth, valueColumns);
 
         renderMonthlyTrend(pivot);
@@ -3324,17 +3386,16 @@ async function loadMonthlyTrend(signal) {
         if (dom.monthlyTrendHint) {
 
             const unnarrowed =
-                state.filters.makers.length === 0 &&
+                isAll(state.trendMaker) &&
                 isAll(state.filters.category) &&
                 isAll(state.filters.subcategory);
 
             dom.monthlyTrendHint.hidden = !unnarrowed;
 
             dom.monthlyTrendHint.textContent = unnarrowed
-                ? "Pick a Maker or Category to make VOL and MS " +
-                  "meaningful. With everything selected the selection " +
-                  "is the whole industry, so VOL repeats IND and every " +
-                  "share reads 100%."
+                ? "Choose a Maker above to make VOL and MS meaningful. " +
+                  "With All Makers selected VOL is the whole industry, " +
+                  "so it repeats IND and every share reads 100%."
                 : "";
         }
 
@@ -3692,6 +3753,7 @@ async function resetFilters() {
 
     [
         dom.makerFilter,
+        dom.trendMakerFilter,
         dom.stateFilter,
         dom.monthFilter,
         dom.regionFilter,
@@ -3703,6 +3765,8 @@ async function resetFilters() {
             select.value = CONFIG.ALL;
         }
     });
+
+    state.trendMaker = CONFIG.ALL;
 
     refreshAllCombos();
 
@@ -4059,6 +4123,27 @@ function setupFilterListeners() {
             await applyFilters();
         });
     });
+
+    /*
+     * The trend's own maker only affects the trend, so it redraws
+     * that section rather than running the whole dashboard.
+     */
+    if (dom.trendMakerFilter) {
+
+        dom.trendMakerFilter.addEventListener("change", async () => {
+
+            state.trendMaker = dom.trendMakerFilter.value;
+
+            /*
+             * Clicking an option already writes the input, but a
+             * change raised any other way would leave the visible
+             * text behind the value.
+             */
+            refreshCombo(dom.trendMakerFilter);
+
+            await loadMonthlyTrend();
+        });
+    }
 
     if (dom.clearFiltersButton) {
 
