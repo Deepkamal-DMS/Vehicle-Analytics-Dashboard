@@ -2307,3 +2307,22 @@ rather than at the top of the scroll area.
 .monthly-trend__empty {
     color: var(--text-light);
 }
+
+/* Content-area twin of .filter-notice, which is sidebar-toned. */
+.table-notice {
+    margin: 0 22px 14px;
+
+    padding: 9px 12px;
+
+    color: var(--text-secondary);
+
+    background: var(--primary-soft);
+
+    border: 1px solid var(--primary-border);
+    border-left: 3px solid var(--primary);
+
+    border-radius: var(--radius-sm);
+
+    font-size: 10px;
+    line-height: 1.55;
+}

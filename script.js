@@ -613,6 +613,7 @@ function cacheDOM() {
         "monthlyTrendBody",
         "monthlyTrendFoot",
         "monthlyTrendMeta",
+        "monthlyTrendHint",
         "monthlyTrendLoading",
         "monthlyTrendError",
         "monthlyTrendErrorText",
@@ -3314,6 +3315,28 @@ async function loadMonthlyTrend(signal) {
         const pivot = buildMonthlyPivot(byMonth, valueColumns);
 
         renderMonthlyTrend(pivot);
+
+        /*
+         * With no maker and no class chosen, "the selection" is the
+         * whole industry, so VOL repeats IND and every share is
+         * 100%. That is correct but useless, so say why.
+         */
+        if (dom.monthlyTrendHint) {
+
+            const unnarrowed =
+                state.filters.makers.length === 0 &&
+                isAll(state.filters.category) &&
+                isAll(state.filters.subcategory);
+
+            dom.monthlyTrendHint.hidden = !unnarrowed;
+
+            dom.monthlyTrendHint.textContent = unnarrowed
+                ? "Pick a Maker or Category to make VOL and MS " +
+                  "meaningful. With everything selected the selection " +
+                  "is the whole industry, so VOL repeats IND and every " +
+                  "share reads 100%."
+                : "";
+        }
 
         if (dom.monthlyTrendMeta) {
 
