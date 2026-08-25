@@ -7,28 +7,32 @@
    ------------------------------------------------------------
    SCHEMA (Supabase project ytgoonducepylslknkag)
 
-   Twelve tables, all WIDE and all Maker x Vehicle Class:
-   Maker | <vehicle classes> | Total
+   Six tables, all WIDE and all Maker x Vehicle Class:
+   year | Maker | <vehicle classes> | Total
 
-       MAKER_WISE_2025              2,045 rows   72 classes
-       MAKER_WISE_2026              1,949 rows   73 classes
-       Gujarat_Class_Wise_2025        428 rows   59 classes
-       Gujarat_Class_Wise_2026        434 rows   51 classes
-       Maker_Class_Wise_GJ01_2025     147 rows   39 classes
-       Maker_Class_Wise_GJ01_2026     131 rows   33 classes
-       Maker_Class_Wise_GJ13_2025     110 rows   28 classes
-       Maker_Class_Wise_GJ13_2026     119 rows   29 classes
-       Maker_Class_Wise_GJ27_2025     148 rows   37 classes
-       Maker_Class_Wise_GJ27_2026     127 rows   30 classes
-       Maker_Class_Wise_GJ38_2025     151 rows   29 classes
-       Maker_Class_Wise_GJ38_2026     141 rows   26 classes
+       MAKER_WISE                 3,994 rows   74 classes
+       Gujarat_Class_Wise           862 rows   61 classes
+       Maker_Class_Wise_GJ01        278 rows   43 classes
+       Maker_Class_Wise_GJ13        229 rows   32 classes
+       Maker_Class_Wise_GJ27        275 rows   38 classes
+       Maker_Class_Wise_GJ38        292 rows   31 classes
 
-   Scope (6) x Year (2) selects exactly one of them.
+   Scope picks the table; year is a column within it. Each holds
+   2025 and 2026, and a new year adds rows rather than tables.
+
+   These replaced twelve scope-x-year tables (MAKER_WISE_2025
+   beside MAKER_WISE_2026, and so on), which have been dropped.
+   Any cached copy of an older script.js still asks for those
+   names and will get a 404.
+
+   Twelve more tables, one per calendar month, carry the same
+   shape at month grain - Maker_Class_Wise_Jan .. _Dec, 37,074
+   rows over 2024-2026. Nothing here reads them yet.
 
    ------------------------------------------------------------
    WHAT THE DATA CAN AND CANNOT DO
 
-   maker x class   yes, per scope and year
+   maker x class   yes, per scope, filtered by year
    maker x month   NO TABLE EXISTS
    state x class   NO TABLE EXISTS
    maker x rto     NO TABLE EXISTS  (RTO here means scope, not
@@ -72,29 +76,32 @@ const API_HEADERS = {
    ============================================================ */
 
 /*
- * Every table is Maker x Vehicle Class. Scope and year together
- * pick one of them. Class columns differ per table - Vahan drops
- * classes with no entries - so the schema is re-read on each
- * switch rather than assumed.
+ * Every table is Maker x Vehicle Class, one per scope. The year
+ * used to be part of the table name - MAKER_WISE_2025 next to
+ * MAKER_WISE_2026 - which meant a new year needed six new tables
+ * and nothing could span years. It is now a column, so a scope is
+ * one table and the year is an ordinary filter.
+ *
+ * Class columns still differ per scope - Vahan drops classes with
+ * no entries - so the schema is read from the table rather than
+ * assumed.
  */
 const SCOPE_TABLES = {
-    all_india: { 2025: "MAKER_WISE_2025",            2026: "MAKER_WISE_2026" },
-    gujarat:   { 2025: "Gujarat_Class_Wise_2025",    2026: "Gujarat_Class_Wise_2026" },
-    gj01:      { 2025: "Maker_Class_Wise_GJ01_2025", 2026: "Maker_Class_Wise_GJ01_2026" },
-    gj13:      { 2025: "Maker_Class_Wise_GJ13_2025", 2026: "Maker_Class_Wise_GJ13_2026" },
-    gj27:      { 2025: "Maker_Class_Wise_GJ27_2025", 2026: "Maker_Class_Wise_GJ27_2026" },
-    gj38:      { 2025: "Maker_Class_Wise_GJ38_2025", 2026: "Maker_Class_Wise_GJ38_2026" }
+    all_india: "MAKER_WISE",
+    gujarat:   "Gujarat_Class_Wise",
+    gj01:      "Maker_Class_Wise_GJ01",
+    gj13:      "Maker_Class_Wise_GJ13",
+    gj27:      "Maker_Class_Wise_GJ27",
+    gj38:      "Maker_Class_Wise_GJ38"
 };
 
 
 const AVAILABLE_YEARS = ["2026", "2025"];
 
 
-function tableFor(scope, year) {
+function tableFor(scope) {
 
-    const byYear = SCOPE_TABLES[scope] || SCOPE_TABLES[DEFAULT_VIEW];
-
-    return byYear[year] || byYear[AVAILABLE_YEARS[0]];
+    return SCOPE_TABLES[scope] || SCOPE_TABLES[DEFAULT_VIEW];
 }
 
 
@@ -787,6 +794,17 @@ function getTotalColumn(row) {
 
 
 /*
+ * The scope tables carry every year, so this is what the year
+ * selector filters on. It is already in METADATA_COLUMNS, so it
+ * never reaches the class columns.
+ */
+function getYearColumn(row) {
+
+    return findColumn(row, ["year", "Year", "YEAR"]);
+}
+
+
+/*
  * Month columns look like 2026-Jan.
  */
 function isMonthColumn(name) {
@@ -957,6 +975,7 @@ async function describeWideTable(table, entityKind) {
     }
 
     const totalColumn = getTotalColumn(sample);
+    const yearColumn = getYearColumn(sample);
 
     /*
      * The source row number. Using it rather than a positional
@@ -978,11 +997,30 @@ async function describeWideTable(table, entityKind) {
         table,
         entityColumn,
         totalColumn,
+        yearColumn,
         srNoColumn,
         valueColumns,
         monthColumns: valueColumns.filter(isMonthColumn),
         classColumns: valueColumns.filter(column => !isMonthColumn(column))
     };
+}
+
+
+/*
+ * One cached fetch per table now covers every year, so the year
+ * selector narrows the cached rows instead of triggering a reload.
+ */
+function rowsForSelectedYear(schema, rows) {
+
+    if (!schema || !schema.yearColumn) {
+        return rows;
+    }
+
+    const wanted = String(state.year);
+
+    return rows.filter(
+        row => String(row[schema.yearColumn]) === wanted
+    );
 }
 
 
@@ -993,7 +1031,7 @@ async function describeWideTable(table, entityKind) {
  */
 async function discoverSchema() {
 
-    const table = tableFor(state.view, state.year);
+    const table = tableFor(state.view);
 
     const makerClass = await describeWideTable(table, "maker");
 
@@ -1646,11 +1684,18 @@ async function loadEntityOptions(signal) {
         columns.unshift(schema.srNoColumn);
     }
 
-    const rows = await getCachedTable(
+    if (schema.yearColumn) {
+        columns.unshift(schema.yearColumn);
+    }
+
+    const cached = await getCachedTable(
         schema.table,
         [...columns, ...schema.valueColumns],
         signal
     );
+
+    /* Makers come and go between years, so list only this year's. */
+    const rows = rowsForSelectedYear(schema, cached);
 
     const names = uniqueSorted(rows.map(row => row[schema.entityColumn]));
 
@@ -2092,7 +2137,13 @@ async function fetchDashboardData(filters, signal) {
         selectColumns.unshift(schema.srNoColumn);
     }
 
-    const raw = await getCachedTable(schema.table, selectColumns, signal);
+    if (schema.yearColumn) {
+        selectColumns.unshift(schema.yearColumn);
+    }
+
+    const cached = await getCachedTable(schema.table, selectColumns, signal);
+
+    const raw = rowsForSelectedYear(schema, cached);
 
     const rows = raw.map(row => {
 
@@ -3115,12 +3166,15 @@ async function applyFilters({ global = false } = {}) {
 
     readFiltersFromUI();
 
+    const viewChanged = state.view !== previousView;
+    const yearChanged = state.year !== previousYear;
+
     /*
-     * Scope and year each select a different physical table, and
-     * class columns differ between them, so the schema and the
-     * class taxonomy both have to be rebuilt on either change.
+     * Only the scope selects a different table now. Its class
+     * columns differ from the previous scope's, so the cache, the
+     * schema and the class taxonomy all have to be rebuilt.
      */
-    if (state.view !== previousView || state.year !== previousYear) {
+    if (viewChanged) {
 
         state.tableCache = new Map();
 
@@ -3129,11 +3183,15 @@ async function applyFilters({ global = false } = {}) {
         applyViewVisibility();
         loadMonths();
         loadClassFilters();
+    }
 
-        /*
-         * Repopulated from the newly selected table, so the
-         * entity list always matches what is on screen.
-         */
+    /*
+     * A year change keeps the same table and its cached rows - the
+     * year is a column now - so nothing is refetched. Only the
+     * entity list narrows, since makers come and go between years.
+     */
+    if (viewChanged || yearChanged) {
+
         await loadEntityOptions(controller.signal);
 
         updateViewLabels();
