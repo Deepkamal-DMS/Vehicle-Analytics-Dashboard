@@ -2304,6 +2304,45 @@ rather than at the top of the scroll area.
     font-weight: 500;
 }
 
+
+/* ---------------------------------------------------------------
+   Total column
+
+   The row's twelve months summed, sitting after them. It is a
+   summary of the row rather than another month, so it gets the
+   footer's tint and a heavier rule to break it off the last month
+   group - the same treatment the Total ROW already carries.
+   --------------------------------------------------------------- */
+
+.monthly-trend__table .monthly-trend__total-cell,
+.monthly-trend__table th.monthly-trend__total-head {
+    background: var(--surface-soft);
+}
+
+/*
+ * The third-from-last cell is the Total group's IND in every row -
+ * header, body and footer alike - which is where the rule goes.
+ */
+.monthly-trend__table th.monthly-trend__total-head,
+.monthly-trend__table thead th.monthly-trend__total-cell:nth-last-child(3),
+.monthly-trend__table tbody td.monthly-trend__total-cell:nth-last-child(3),
+.monthly-trend__table tfoot td.monthly-trend__total-cell:nth-last-child(3) {
+    border-left: 2px solid var(--border);
+}
+
+.monthly-trend__table th.monthly-trend__total-head {
+    color: var(--text);
+
+    font-weight: 700;
+}
+
+/* IND and VOL both matter here, so neither is recessed. */
+.monthly-trend__table td.monthly-trend__total-cell {
+    color: var(--text);
+
+    font-weight: 600;
+}
+
 .monthly-trend__empty {
     color: var(--text-light);
 }

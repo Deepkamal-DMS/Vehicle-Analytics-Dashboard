@@ -3436,13 +3436,51 @@ function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
         }
     }
 
-    const rows = [...years].sort((a, b) => a - b).map(start => ({
-        start,
-        label: fiscalYearLabel(start),
-        months: FISCAL_MONTH_ORDER.map(
+    /*
+     * Adds a run of cells into one. Empty in, null out - a fiscal
+     * year with no data at all should read as a dash, not as zero.
+     *
+     * MS is deliberately not carried through: a share of shares is
+     * meaningless. monthlyCell recomputes it from the summed IND and
+     * VOL, which weights each month by its own size.
+     */
+    const sumCells = list => {
+
+        let industry = 0;
+        let selected = 0;
+        let present = false;
+
+        for (const cell of list) {
+
+            if (cell) {
+                industry += cell.industry;
+                selected += cell.selected;
+                present = true;
+            }
+        }
+
+        return present ? { industry, selected } : null;
+    };
+
+    const rows = [...years].sort((a, b) => a - b).map(start => {
+
+        const months = FISCAL_MONTH_ORDER.map(
             month => cells.get(`${start}:${month}`) || null
-        )
-    }));
+        );
+
+        return {
+            start,
+            label: fiscalYearLabel(start),
+            months,
+            /*
+             * The first and last fiscal years are usually partial -
+             * the data starts in Jan 2024 and stops mid-2026 - so
+             * these totals cover the months actually present, which
+             * is what the empty month cells beside them show.
+             */
+            total: sumCells(months)
+        };
+    });
 
     const totals = FISCAL_MONTH_ORDER.map(month => {
 
@@ -3464,17 +3502,23 @@ function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
         return present ? { industry, selected } : null;
     });
 
-    return { rows, totals };
+    return { rows, totals, grandTotal: sumCells(totals) };
 }
 
 
-function monthlyCell(cell) {
+/*
+ * `extra` marks the trailing Total column, which is otherwise an
+ * ordinary triple of cells.
+ */
+function monthlyCell(cell, extra = "") {
+
+    const mark = extra ? ` ${extra}` : "";
 
     if (!cell) {
         return `
-            <td class="numeric monthly-trend__empty">&mdash;</td>
-            <td class="numeric monthly-trend__empty">&mdash;</td>
-            <td class="numeric monthly-trend__empty">&mdash;</td>
+            <td class="numeric monthly-trend__empty${mark}">&mdash;</td>
+            <td class="numeric monthly-trend__empty${mark}">&mdash;</td>
+            <td class="numeric monthly-trend__empty${mark}">&mdash;</td>
         `;
     }
 
@@ -3483,9 +3527,9 @@ function monthlyCell(cell) {
         : 0;
 
     return `
-        <td class="numeric">${formatIndianNumber(cell.industry)}</td>
-        <td class="numeric monthly-trend__vol">${formatIndianNumber(cell.selected)}</td>
-        <td class="numeric monthly-trend__ms">${share.toFixed(1)}%</td>
+        <td class="numeric${mark}">${formatIndianNumber(cell.industry)}</td>
+        <td class="numeric monthly-trend__vol${mark}">${formatIndianNumber(cell.selected)}</td>
+        <td class="numeric monthly-trend__ms${mark}">${share.toFixed(1)}%</td>
     `;
 }
 
@@ -3508,6 +3552,12 @@ function renderMonthlyTrend(pivot) {
                         ${month.label}
                     </th>
                 `).join("")}
+                <th
+                    colspan="3"
+                    class="monthly-trend__month-head monthly-trend__total-head"
+                >
+                    Total
+                </th>
             </tr>
             <tr>
                 ${months.map(() => `
@@ -3515,16 +3565,25 @@ function renderMonthlyTrend(pivot) {
                     <th class="numeric monthly-trend__sub">VOL</th>
                     <th class="numeric monthly-trend__sub">MS</th>
                 `).join("")}
+                <th class="numeric monthly-trend__sub monthly-trend__total-cell">IND</th>
+                <th class="numeric monthly-trend__sub monthly-trend__total-cell">VOL</th>
+                <th class="numeric monthly-trend__sub monthly-trend__total-cell">MS</th>
             </tr>
         `;
     }
 
     if (dom.monthlyTrendBody) {
 
+        /*
+         * Wrapped rather than passed by reference: map hands the
+         * index in as the second argument, which monthlyCell now
+         * uses for the column class.
+         */
         dom.monthlyTrendBody.innerHTML = pivot.rows.map(row => `
             <tr>
                 <th scope="row" class="monthly-trend__year">${row.label}</th>
-                ${row.months.map(monthlyCell).join("")}
+                ${row.months.map(cell => monthlyCell(cell)).join("")}
+                ${monthlyCell(row.total, "monthly-trend__total-cell")}
             </tr>
         `).join("");
     }
@@ -3534,7 +3593,8 @@ function renderMonthlyTrend(pivot) {
         dom.monthlyTrendFoot.innerHTML = `
             <tr>
                 <th scope="row" class="monthly-trend__year">Total</th>
-                ${pivot.totals.map(monthlyCell).join("")}
+                ${pivot.totals.map(cell => monthlyCell(cell)).join("")}
+                ${monthlyCell(pivot.grandTotal, "monthly-trend__total-cell")}
             </tr>
         `;
     }
