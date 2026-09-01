@@ -1,5 +1,6 @@
 # Source data exports (large, not code)
 RTO/
+Vahan New/
 
 # Local Supabase scaffolding and generated migrations
 supabase/
@@ -16,3 +17,10 @@ package-lock.json
 ref.jpeg
 ref.jpg
 ref.png
+
+# Generated locally by tools/build-local-db.js and fetch-scope-tables.js
+local/data/
+
+# Never commit the Supabase management token
+.env
+local/.env

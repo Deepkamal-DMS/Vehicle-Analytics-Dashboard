@@ -1,0 +1,54 @@
+# Local stand-in for the Supabase project.
+#
+# The dashboard spoke to a local PostgREST on :3003 before commit
+# 94cb9aa moved it to Supabase, and script.js still uses that same
+# fetch-based client - so pointing API_URL back at localhost:3003 is
+# all the front-end needs.
+#
+# Postgres is published on 5433, not 5432, so this cannot collide
+# with a Postgres already installed on the machine.
+#
+#     docker compose up -d
+#     docker compose down -v     (also wipes the data volume)
+
+services:
+
+  db:
+    image: postgres:17-alpine
+    container_name: vad-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: vahan
+    ports:
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./local/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vahan"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Same wire protocol Supabase serves, so the dashboard cannot tell
+  # the difference apart from the two auth headers it stops needing.
+  api:
+    image: postgrest/postgrest:v12.2.3
+    container_name: vad-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:authenticator@db:5432/vahan
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3003
+      # Matches Supabase's cap, so paging behaves identically.
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_SERVER_CORS_ALLOWED_ORIGINS: "*"
+    ports:
+      - "3003:3000"
+
+volumes:
+  db-data:
