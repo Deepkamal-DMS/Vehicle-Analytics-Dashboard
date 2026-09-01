@@ -7,11 +7,12 @@
    ------------------------------------------------------------
    SCHEMA (Supabase project ytgoonducepylslknkag)
 
-   Six tables, all WIDE and all Maker x Vehicle Class:
+   YEAR GRAIN - the Details card. All WIDE, Maker x Vehicle Class:
    year | Maker | <vehicle classes> | Total
 
        MAKER_WISE                 3,994 rows   74 classes
        Gujarat_Class_Wise           862 rows   61 classes
+       Ahmedabad_Class_Wise         414 rows   49 classes  (view)
        Maker_Class_Wise_GJ01        278 rows   43 classes
        Maker_Class_Wise_GJ13        229 rows   32 classes
        Maker_Class_Wise_GJ27        275 rows   38 classes
@@ -19,24 +20,40 @@
 
    Scope picks the table; year is a column within it. Each holds
    2025 and 2026, and a new year adds rows rather than tables.
+   Ahmedabad is a view: GJ01 + GJ27 + GJ38 summed PER MAKER, since
+   the three share most of their makers.
 
-   These replaced twelve scope-x-year tables (MAKER_WISE_2025
-   beside MAKER_WISE_2026, and so on), which have been dropped.
-   Any cached copy of an older script.js still asks for those
-   names and will get a 404.
+   MONTH GRAIN - the trend. Three families of twelve tables, one
+   per calendar month, same wide shape with the month in the name:
 
-   Twelve more tables, one per calendar month, carry the same
-   shape at month grain - Maker_Class_Wise_Jan .. _Dec, 37,074
-   rows over 2024-2026. Nothing here reads them yet.
+       Maker_Class_Wise_<Mon>      37,074 rows   75 classes
+       Gujarat_Class_Wise_<Mon>     6,334 rows   64 classes
+       Ahmedabad_Class_Wise_<Mon>   7,152 rows   53 classes + rto
+
+   Only the Ahmedabad family carries an "rto" column, which is what
+   lets one set of twelve serve GJ01, GJ27, GJ38 and their rollup.
+
+   The trend reads three views over all of it, each carrying a
+   "scope" column that MUST be filtered on - they hold every scope
+   at once, so an unfiltered read sums six scopes together:
+
+       trend_totals      192 rows, classes summed across makers
+       trend_by_maker    54,019 rows
+       trend_makers      distinct makers per scope
+
+   The older monthly_* views are still on the project. They are
+   All-India-only and have no scope column, and exist purely so a
+   cached copy of an earlier script.js keeps working. Nothing here
+   reads them.
 
    ------------------------------------------------------------
    WHAT THE DATA CAN AND CANNOT DO
 
    maker x class   yes, per scope, filtered by year
-   maker x month   NO TABLE EXISTS
+   maker x month   yes, per scope - except GJ13, which has no
+                   month tables (SCOPES_WITHOUT_TREND)
    state x class   NO TABLE EXISTS
-   maker x rto     NO TABLE EXISTS  (RTO here means scope, not
-                                     a column dimension)
+   maker x rto     only within Ahmedabad's three RTOs
 
    Vahan drops classes with no entries, so the column set
    differs between tables - note the class counts above. The
@@ -89,6 +106,7 @@ const API_HEADERS = {
 const SCOPE_TABLES = {
     all_india: "MAKER_WISE",
     gujarat:   "Gujarat_Class_Wise",
+    ahmedabad: "Ahmedabad_Class_Wise",
     gj01:      "Maker_Class_Wise_GJ01",
     gj13:      "Maker_Class_Wise_GJ13",
     gj27:      "Maker_Class_Wise_GJ27",
@@ -97,6 +115,16 @@ const SCOPE_TABLES = {
 
 
 const AVAILABLE_YEARS = ["2026", "2025"];
+
+
+/*
+ * When the six scope tables were last pulled from Vahan. Only the
+ * part-year matters: 2025 and earlier are closed and reconcile with
+ * the month tables to within single digits, but 2026 is a snapshot
+ * taken part-way through August and runs about 5 lakh units behind
+ * the trend at All India. Update both fields on a re-pull.
+ */
+const DATA_AS_OF = { year: "2026", label: "20 August 2026" };
 
 
 function tableFor(scope) {
@@ -158,11 +186,19 @@ function makeScope(id, label) {
 const VIEWS = {
     all_india: makeScope("all_india", "All India"),
     gujarat:   makeScope("gujarat", "Gujarat"),
+    ahmedabad: makeScope("ahmedabad", "Ahmedabad"),
     gj01:      makeScope("gj01", "GJ01"),
     gj13:      makeScope("gj13", "GJ13"),
     gj27:      makeScope("gj27", "GJ27"),
     gj38:      makeScope("gj38", "GJ38")
 };
+
+
+/*
+ * GJ13 is the one scope with no month tables behind it, so its trend
+ * has nothing to draw. Everything else about the scope works.
+ */
+const SCOPES_WITHOUT_TREND = new Set(["gj13"]);
 
 
 const DEFAULT_VIEW = "all_india";
@@ -481,6 +517,8 @@ const state = {
         schema: null,
         describing: null,
         makers: null,
+        /* Which scope `makers` was built for; see resetTrendForScope. */
+        scope: null,
         cache: new Map(),
         makerCache: new Map()
     },
@@ -1999,6 +2037,21 @@ function updateFilterNotice() {
         );
     }
 
+    /*
+     * The scope tables were pulled from Vahan in mid-August 2026; the
+     * month tables behind the trend close on 31 August. So the two
+     * cards disagree on 2026 by a few per cent - about 5 lakh units
+     * at All India - and will keep disagreeing until the scope
+     * tables are re-pulled. Better said out loud than discovered.
+     */
+    if (String(state.year) === DATA_AS_OF.year) {
+        messages.push(
+            `2026 figures here are as of ${DATA_AS_OF.label}. The ` +
+            "monthly trend runs to the end of August, so its 2026 " +
+            "totals are slightly higher."
+        );
+    }
+
     if (messages.length === 0) {
         dom.filterNotice.hidden = true;
         dom.filterNotice.textContent = "";
@@ -3130,11 +3183,27 @@ function monthlyValueColumns() {
  * this section paged all 37,074 maker-rows to fill a 4 x 12 grid;
  * these narrow or aggregate the same figures server-side.
  */
-const MONTHLY_TOTALS_VIEW = "monthly_totals";
-const MONTHLY_BY_MAKER_VIEW = "monthly_by_maker";
-const MONTHLY_MAKERS_VIEW = "monthly_makers";
+const MONTHLY_TOTALS_VIEW = "trend_totals";
+const MONTHLY_BY_MAKER_VIEW = "trend_by_maker";
+const MONTHLY_MAKERS_VIEW = "trend_makers";
 
 const MONTH_COLUMN = "month";
+
+/*
+ * Every read below is narrowed by this. The views carry all six
+ * scopes at once - 192 rows in trend_totals where there used to be
+ * 32 - so an unfiltered read would sum All India together with
+ * Gujarat, Ahmedabad and the three RTOs and inflate IND by about a
+ * tenth. The older monthly_* views had no scope to filter on, which
+ * is why they are still there for anything running old code.
+ */
+const SCOPE_COLUMN = "scope";
+
+
+function trendScope() {
+
+    return currentView().id;
+}
 
 
 /*
@@ -3151,7 +3220,10 @@ async function loadTrendMakerOptions(signal) {
     const rows = await fetchAllRows(
         MONTHLY_MAKERS_VIEW,
         [state.monthly.schema.entityColumn],
-        { signal }
+        {
+            signal,
+            filters: [{ column: SCOPE_COLUMN, values: [trendScope()] }]
+        }
     );
 
     state.monthly.makers = uniqueSorted(
@@ -3213,6 +3285,7 @@ async function describeMonthlySchemaOnce() {
             column =>
                 column !== totalColumn &&
                 column !== MONTH_COLUMN &&
+                column !== SCOPE_COLUMN &&
                 !isMetadataColumn(column)
         )
     };
@@ -3229,7 +3302,15 @@ async function describeMonthlySchemaOnce() {
 function getMonthlyTotals(valueColumns, signal) {
 
     const schema = state.monthly.schema;
-    const key = valueColumns ? valueColumns.join("|") : "__total__";
+
+    /*
+     * Keyed by scope as well as columns. Without the scope in the
+     * key, switching from All India to GJ38 would be served the
+     * cached All India rows and quietly show the wrong numbers.
+     */
+    const key =
+        trendScope() + " " +
+        (valueColumns ? valueColumns.join("|") : "__total__");
 
     if (state.monthly.cache.has(key)) {
         return state.monthly.cache.get(key);
@@ -3247,7 +3328,10 @@ function getMonthlyTotals(valueColumns, signal) {
      * twice, and caching only the result let the second call start
      * a second fetch before the first had finished.
      */
-    const pending = fetchAllRows(MONTHLY_TOTALS_VIEW, columns, { signal });
+    const pending = fetchAllRows(MONTHLY_TOTALS_VIEW, columns, {
+        signal,
+        filters: [{ column: SCOPE_COLUMN, values: [trendScope()] }]
+    });
 
     state.monthly.cache.set(key, pending);
     pending.catch(() => state.monthly.cache.delete(key));
@@ -3263,7 +3347,10 @@ function getMonthlyTotals(valueColumns, signal) {
 function getMonthlyForMaker(maker, valueColumns, signal) {
 
     const schema = state.monthly.schema;
-    const key = maker + "\u0000" + (valueColumns ? valueColumns.join("|") : "");
+    /* Scope-keyed for the same reason getMonthlyTotals is. */
+    const key =
+        trendScope() + "\u0000" + maker + "\u0000" +
+        (valueColumns ? valueColumns.join("|") : "");
 
     if (state.monthly.makerCache.has(key)) {
         return state.monthly.makerCache.get(key);
@@ -3278,7 +3365,10 @@ function getMonthlyForMaker(maker, valueColumns, signal) {
 
     const pending = fetchAllRows(MONTHLY_BY_MAKER_VIEW, columns, {
         signal,
-        filters: [{ column: schema.entityColumn, values: [maker] }]
+        filters: [
+            { column: SCOPE_COLUMN, values: [trendScope()] },
+            { column: schema.entityColumn, values: [maker] }
+        ]
     });
 
     state.monthly.makerCache.set(key, pending);
@@ -3467,15 +3557,56 @@ function setMonthlyTrendState(view) {
 }
 
 
+/*
+ * The maker list belongs to one scope, so it is thrown away when the
+ * scope changes rather than carried across. The two row caches are
+ * keyed by scope and can stay.
+ */
+function resetTrendForScope() {
+
+    const scope = trendScope();
+
+    if (state.monthly.scope === scope) {
+        return;
+    }
+
+    state.monthly.scope = scope;
+    state.monthly.makers = null;
+
+    /* A maker absent from the new scope falls back to All Makers. */
+    state.trendMaker = CONFIG.ALL;
+}
+
+
 async function loadMonthlyTrend(signal) {
 
     if (!dom.monthlyTrendContent) {
         return;
     }
 
+    /*
+     * GJ13 has no month tables behind it, so there is nothing to
+     * draw. Saying so beats an empty grid that looks like a bug.
+     */
+    if (SCOPES_WITHOUT_TREND.has(trendScope())) {
+
+        setMonthlyTrendState("error");
+
+        if (dom.monthlyTrendErrorText) {
+            dom.monthlyTrendErrorText.textContent =
+                `No month-level data has been loaded for ` +
+                `${currentView().scopeLabel} yet, so the trend cannot be ` +
+                "shown for this scope. Every other scope has it.";
+        }
+
+        return;
+    }
+
     try {
 
         setMonthlyTrendState("loading");
+
+        resetTrendForScope();
 
         await describeMonthlySchema();
 
@@ -3535,6 +3666,7 @@ async function loadMonthlyTrend(signal) {
             );
 
             dom.monthlyTrendMeta.textContent =
+                `${currentView().scopeLabel} · ` +
                 `${pivot.rows.length} fiscal years · ` +
                 `${formatIndianNumber(selected)} in selection`;
         }
