@@ -1201,6 +1201,10 @@ truth, just not visible or focusable.
 
 .table-toolbar__right {
     flex-shrink: 0;
+
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .result-count {
@@ -1210,6 +1214,63 @@ truth, just not visible or focusable.
     font-weight: 600;
 
     white-space: nowrap;
+}
+
+
+/* =========================================================
+   DOWNLOAD BUTTON
+
+   One per table. Quiet by default - it sits beside the row
+   count, not competing with the data - and only picks up
+   colour on hover.
+   ========================================================= */
+
+.download-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+
+    padding: 6px 11px;
+
+    border: 1px solid var(--border);
+    border-radius: 7px;
+
+    background: var(--surface);
+    color: var(--text-secondary);
+
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+
+    white-space: nowrap;
+    cursor: pointer;
+
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.download-button:hover:not(:disabled) {
+    border-color: var(--primary);
+    background: var(--surface-soft);
+    color: var(--text);
+}
+
+.download-button:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Disabled while a table has nothing to write. */
+.download-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.download-button svg {
+    flex-shrink: 0;
 }
 
 

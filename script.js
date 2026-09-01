@@ -519,6 +519,8 @@ const state = {
         makers: null,
         /* Which scope `makers` was built for; see resetTrendForScope. */
         scope: null,
+        /* The last rendered grid, kept so the export can write it. */
+        pivot: null,
         cache: new Map(),
         makerCache: new Map()
     },
@@ -639,6 +641,8 @@ function cacheDOM() {
         "makerSearchList",
         "searchRowTemplate",
         "resultCount",
+        "detailsDownloadButton",
+        "trendDownloadButton",
         "tableContent",
         "maker-summary-title",
 
@@ -2857,6 +2861,11 @@ function renderTable() {
 
     state.filteredRows = rows;
 
+    /* Nothing on screen means nothing to write. */
+    if (dom.detailsDownloadButton) {
+        dom.detailsDownloadButton.disabled = rows.length === 0;
+    }
+
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
 
     if (state.currentPage > totalPages) {
@@ -3536,6 +3545,13 @@ function monthlyCell(cell, extra = "") {
 
 function renderMonthlyTrend(pivot) {
 
+    /* What the export writes, so the two cannot disagree. */
+    state.monthly.pivot = pivot;
+
+    if (dom.trendDownloadButton) {
+        dom.trendDownloadButton.disabled = pivot.rows.length === 0;
+    }
+
     const months = FISCAL_MONTH_ORDER.map(
         number => MONTH_TABLES.find(month => month.number === number)
     );
@@ -3754,7 +3770,666 @@ async function loadMonthlyTrend(signal) {
 
 
 /* ============================================================
-   23. LOADING / ERROR
+   23. XLSX EXPORT
+
+   Writes a real .xlsx - a ZIP of XML parts - rather than a CSV
+   named .xlsx or an HTML table served as application/vnd.ms-excel,
+   which recent Excel opens behind a security warning.
+
+   No library. The repo has no package.json and should keep it
+   that way, and tools/xlsx-read.js already reads the format
+   without one, so the writer matches.
+
+   ZIP entries are STORED, not deflated. Deflate in the browser
+   means CompressionStream, which is async and not in every
+   browser the dashboard has to work in; storing costs file size
+   on tables of a few thousand rows and nothing else. These export
+   at a few hundred KB.
+
+   Strings are inline (t="inlineStr") so there is no shared string
+   table to build and keep in sync.
+   ============================================================ */
+
+const CRC_TABLE = (() => {
+
+    const table = new Uint32Array(256);
+
+    for (let n = 0; n < 256; n += 1) {
+
+        let c = n;
+
+        for (let k = 0; k < 8; k += 1) {
+            c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        }
+
+        table[n] = c >>> 0;
+    }
+
+    return table;
+})();
+
+
+function crc32(bytes) {
+
+    let c = 0xffffffff;
+
+    for (let at = 0; at < bytes.length; at += 1) {
+        c = CRC_TABLE[(c ^ bytes[at]) & 0xff] ^ (c >>> 8);
+    }
+
+    return (c ^ 0xffffffff) >>> 0;
+}
+
+
+/*
+ * The C0 controls Excel refuses, built from escapes so the source
+ * carries no literal control characters of its own.
+ */
+const CONTROL_CHARACTERS = new RegExp(
+    "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]",
+    "g"
+);
+
+
+function xmlEscape(value) {
+
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        /* Excel rejects the C0 range outright, so drop it. */
+        .replace(CONTROL_CHARACTERS, "");
+}
+
+
+/* 0 -> A, 25 -> Z, 26 -> AA. */
+function columnLetter(index) {
+
+    let letters = "";
+    let n = index;
+
+    for (;;) {
+
+        letters = String.fromCharCode(65 + (n % 26)) + letters;
+
+        if (n < 26) {
+            return letters;
+        }
+
+        n = Math.floor(n / 26) - 1;
+    }
+}
+
+
+/*
+ * A cell is a number, or anything else rendered as text. null and
+ * "" are written as an empty cell rather than a zero, so a gap in
+ * the source stays a gap in the sheet.
+ */
+function sheetCell(value, reference, styleIndex) {
+
+    const style = styleIndex ? ` s="${styleIndex}"` : "";
+
+    if (value === null || value === undefined || value === "") {
+        return "";
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return `<c r="${reference}"${style}><v>${value}</v></c>`;
+    }
+
+    return (
+        `<c r="${reference}"${style} t="inlineStr">` +
+        `<is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`
+    );
+}
+
+
+/*
+ * rows: array of arrays. A cell may be a bare value or
+ * { value, style } where style indexes the tiny stylesheet below:
+ * 1 = bold, 2 = bold with a top rule, 3 = one decimal place.
+ */
+function buildSheetXml(rows, { merges = [], widths = [] } = {}) {
+
+    const body = rows.map((cells, rowIndex) => {
+
+        const inner = cells.map((cell, columnIndex) => {
+
+            const reference = columnLetter(columnIndex) + (rowIndex + 1);
+
+            return cell !== null && typeof cell === "object"
+                ? sheetCell(cell.value, reference, cell.style)
+                : sheetCell(cell, reference, 0);
+
+        }).join("");
+
+        return `<row r="${rowIndex + 1}">${inner}</row>`;
+
+    }).join("");
+
+    const cols = widths.length === 0
+        ? ""
+        : "<cols>" + widths.map((width, at) =>
+            `<col min="${at + 1}" max="${at + 1}" width="${width}" ` +
+            'customWidth="1"/>'
+        ).join("") + "</cols>";
+
+    const merged = merges.length === 0
+        ? ""
+        : `<mergeCells count="${merges.length}">` +
+            merges.map(ref => `<mergeCell ref="${ref}"/>`).join("") +
+            "</mergeCells>";
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/' +
+        'spreadsheetml/2006/main">' +
+        cols +
+        `<sheetData>${body}</sheetData>` +
+        merged +
+        "</worksheet>"
+    );
+}
+
+
+const XLSX_STYLES =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/' +
+    'spreadsheetml/2006/main">' +
+    '<numFmts count="1"><numFmt numFmtId="164" formatCode="0.0"/></numFmts>' +
+    '<fonts count="2">' +
+    '<font><sz val="11"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="11"/><name val="Calibri"/></font>' +
+    "</fonts>" +
+    '<fills count="2"><fill><patternFill patternType="none"/></fill>' +
+    '<fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="2"><border><left/><right/><top/><bottom/></border>' +
+    '<border><left/><right/><top style="thin"/><bottom/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" ' +
+    'borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="4">' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" ' +
+    'applyFont="1"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" ' +
+    'applyFont="1" applyBorder="1"/>' +
+    '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" ' +
+    'applyNumberFormat="1"/>' +
+    "</cellXfs>" +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" ' +
+    'builtinId="0"/></cellStyles>' +
+    "</styleSheet>";
+
+
+function xlsxParts(sheetName, sheetXml) {
+
+    const name = xmlEscape(sheetName).slice(0, 31);
+
+    return [
+        {
+            path: "[Content_Types].xml",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<Types xmlns="http://schemas.openxmlformats.org/' +
+                'package/2006/content-types">' +
+                '<Default Extension="rels" ContentType="application/' +
+                'vnd.openxmlformats-package.relationships+xml"/>' +
+                '<Default Extension="xml" ContentType="application/xml"/>' +
+                '<Override PartName="/xl/workbook.xml" ContentType=' +
+                '"application/vnd.openxmlformats-officedocument.' +
+                'spreadsheetml.sheet.main+xml"/>' +
+                '<Override PartName="/xl/worksheets/sheet1.xml" ContentType=' +
+                '"application/vnd.openxmlformats-officedocument.' +
+                'spreadsheetml.worksheet+xml"/>' +
+                '<Override PartName="/xl/styles.xml" ContentType=' +
+                '"application/vnd.openxmlformats-officedocument.' +
+                'spreadsheetml.styles+xml"/>' +
+                "</Types>"
+        },
+        {
+            path: "_rels/.rels",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<Relationships xmlns="http://schemas.openxmlformats.org/' +
+                'package/2006/relationships">' +
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats' +
+                '.org/officeDocument/2006/relationships/officeDocument" ' +
+                'Target="xl/workbook.xml"/></Relationships>'
+        },
+        {
+            path: "xl/workbook.xml",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<workbook xmlns="http://schemas.openxmlformats.org/' +
+                'spreadsheetml/2006/main" xmlns:r="http://schemas.' +
+                'openxmlformats.org/officeDocument/2006/relationships">' +
+                `<sheets><sheet name="${name}" sheetId="1" ` +
+                'r:id="rId1"/></sheets></workbook>'
+        },
+        {
+            path: "xl/_rels/workbook.xml.rels",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<Relationships xmlns="http://schemas.openxmlformats.org/' +
+                'package/2006/relationships">' +
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats' +
+                '.org/officeDocument/2006/relationships/worksheet" ' +
+                'Target="worksheets/sheet1.xml"/>' +
+                '<Relationship Id="rId2" Type="http://schemas.openxmlformats' +
+                '.org/officeDocument/2006/relationships/styles" ' +
+                'Target="styles.xml"/></Relationships>'
+        },
+        { path: "xl/styles.xml", data: XLSX_STYLES },
+        { path: "xl/worksheets/sheet1.xml", data: sheetXml }
+    ];
+}
+
+
+/*
+ * Raw deflate, which is exactly what ZIP method 8 stores. Returns
+ * null where the browser has no CompressionStream, and the caller
+ * falls back to storing the entry uncompressed - a valid ZIP either
+ * way, just a bigger one.
+ *
+ * Worth the trouble: an All India export is around 150,000 cells,
+ * most of them a zero, which stores at about 4 MB and deflates to a
+ * few hundred KB.
+ */
+async function deflateRaw(bytes) {
+
+    if (typeof CompressionStream === "undefined") {
+        return null;
+    }
+
+    try {
+
+        const stream = new Blob([bytes])
+            .stream()
+            .pipeThrough(new CompressionStream("deflate-raw"));
+
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+
+    } catch (error) {
+
+        console.warn("deflate unavailable, storing instead:", error);
+
+        return null;
+    }
+}
+
+
+/*
+ * Written straight into one Uint8Array rather than concatenated, so
+ * a large sheet does not copy itself repeatedly.
+ */
+async function zipArchive(parts) {
+
+    const encoder = new TextEncoder();
+
+    const entries = [];
+
+    for (const part of parts) {
+
+        const raw = encoder.encode(part.data);
+        const packed = await deflateRaw(raw);
+
+        /* Only worth it if it actually came out smaller. */
+        const deflated = packed !== null && packed.length < raw.length;
+
+        entries.push({
+            name: encoder.encode(part.path),
+            data: deflated ? packed : raw,
+            method: deflated ? 8 : 0,
+            size: raw.length,
+            crc: crc32(raw),
+            offset: 0
+        });
+    }
+
+    const LOCAL = 30;
+    const CENTRAL = 46;
+    const END = 22;
+
+    let size = END;
+
+    entries.forEach(entry => {
+        size += LOCAL + entry.name.length + entry.data.length;
+        size += CENTRAL + entry.name.length;
+    });
+
+    const out = new Uint8Array(size);
+    const view = new DataView(out.buffer);
+
+    let at = 0;
+
+    entries.forEach(entry => {
+
+        entry.offset = at;
+
+        view.setUint32(at, 0x04034b50, true);
+        view.setUint16(at + 4, 20, true);
+        view.setUint16(at + 6, 0x0800, true);   /* UTF-8 names */
+        view.setUint16(at + 8, entry.method, true);
+        view.setUint16(at + 10, 0, true);       /* time */
+        view.setUint16(at + 12, 0x21, true);    /* date: 1 Jan 1980 */
+        view.setUint32(at + 14, entry.crc, true);
+        view.setUint32(at + 18, entry.data.length, true);
+        view.setUint32(at + 22, entry.size, true);
+        view.setUint16(at + 26, entry.name.length, true);
+        view.setUint16(at + 28, 0, true);
+
+        at += LOCAL;
+        out.set(entry.name, at);
+        at += entry.name.length;
+        out.set(entry.data, at);
+        at += entry.data.length;
+    });
+
+    const directoryAt = at;
+
+    entries.forEach(entry => {
+
+        view.setUint32(at, 0x02014b50, true);
+        view.setUint16(at + 4, 20, true);
+        view.setUint16(at + 6, 20, true);
+        view.setUint16(at + 8, 0x0800, true);
+        view.setUint16(at + 10, entry.method, true);
+        view.setUint16(at + 12, 0, true);
+        view.setUint16(at + 14, 0x21, true);
+        view.setUint32(at + 16, entry.crc, true);
+        view.setUint32(at + 20, entry.data.length, true);
+        view.setUint32(at + 24, entry.size, true);
+        view.setUint16(at + 28, entry.name.length, true);
+        view.setUint16(at + 30, 0, true);
+        view.setUint16(at + 32, 0, true);
+        view.setUint16(at + 34, 0, true);
+        view.setUint16(at + 36, 0, true);
+        view.setUint32(at + 38, 0, true);
+        view.setUint32(at + 42, entry.offset, true);
+
+        at += CENTRAL;
+        out.set(entry.name, at);
+        at += entry.name.length;
+    });
+
+    view.setUint32(at, 0x06054b50, true);
+    view.setUint16(at + 8, entries.length, true);
+    view.setUint16(at + 10, entries.length, true);
+    view.setUint32(at + 12, at - directoryAt, true);
+    view.setUint32(at + 16, directoryAt, true);
+
+    return out;
+}
+
+
+async function downloadWorkbook(fileName, sheetName, rows, options) {
+
+    const archive = await zipArchive(
+        xlsxParts(sheetName, buildSheetXml(rows, options))
+    );
+
+    const blob = new Blob(
+        [archive],
+        {
+            type: "application/vnd.openxmlformats-officedocument." +
+                "spreadsheetml.sheet"
+        }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = fileName;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    /* Revoked late: Safari has not finished reading it synchronously. */
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+
+/*
+ * Spelled into the file so a downloaded sheet can be read months
+ * later without having to remember what was on screen.
+ */
+function activeFilterSummary({ trend = false } = {}) {
+
+    const parts = [`Scope: ${currentView().scopeLabel}`];
+
+    if (trend) {
+
+        parts.push(
+            `Maker: ${isAll(state.trendMaker) ? "All" : state.trendMaker}`,
+            `Class: ${isAll(state.trendClass) ? "All" : state.trendClass}`
+        );
+
+    } else {
+
+        parts.push(`Year: ${state.year}`);
+
+        if (state.filters.makers.length > 0) {
+            parts.push(`Maker: ${state.filters.makers.join(", ")}`);
+        }
+
+        if (!isAll(state.filters.category)) {
+            parts.push(`Category: ${state.filters.category}`);
+        }
+
+        if (!isAll(state.filters.subcategory)) {
+            parts.push(`Subcategory: ${state.filters.subcategory}`);
+        }
+
+        if (!isAll(state.filters.month)) {
+            parts.push(`Month: ${state.filters.month}`);
+        }
+
+        const terms = state.searchTerms.filter(term => term.trim() !== "");
+
+        if (terms.length > 0) {
+            parts.push(`Search: ${terms.join(" | ")}`);
+        }
+    }
+
+    return parts.join("  ·  ");
+}
+
+
+function exportFileName(prefix) {
+
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    return `${prefix}-${currentView().id}-${stamp}.xlsx`;
+}
+
+
+/*
+ * The Details table, every filtered row rather than the page on
+ * screen. Columns, order and totals are the rendered ones.
+ */
+async function exportDetailsTable() {
+
+    const rows = state.filteredRows;
+
+    if (!rows || rows.length === 0) {
+        return;
+    }
+
+    const columns = state.columns;
+
+    const sheet = [
+        [{ value: `${currentView().title}`, style: 1 }],
+        [activeFilterSummary()],
+        [`${rows.length} rows · exported from all pages, not just the one shown`],
+        [],
+        columns.map(column => ({ value: column.label, style: 1 }))
+    ];
+
+    rows.forEach((row, index) => {
+
+        sheet.push(columns.map(column => {
+
+            if (column.type === "index") {
+                return row.srNo === null || row.srNo === undefined
+                    ? index + 1
+                    : toNumber(row.srNo);
+            }
+
+            if (column.type === "entity") {
+                return row.entity;
+            }
+
+            const value = column.type === "total"
+                ? row.total
+                : row.values[column.key];
+
+            /* Blank stays blank; only a real figure becomes a number. */
+            return value === null || value === undefined || value === ""
+                ? null
+                : toNumber(value);
+        }));
+    });
+
+    const totals = calculateColumnTotals(rows, columns);
+
+    sheet.push(columns.map((column, index) => {
+
+        if (index === 0) {
+            return { value: "Total", style: 2 };
+        }
+
+        if (column.type === "entity") {
+            return { value: `${rows.length} ${currentView().entityPlural}`, style: 2 };
+        }
+
+        return { value: totals[column.key], style: 2 };
+    }));
+
+    const widths = columns.map((column, index) =>
+        index === 0 ? 8 : index === 1 ? 42 : Math.max(12, column.label.length + 2)
+    );
+
+    await downloadWorkbook(
+        exportFileName("details"),
+        `${currentView().scopeLabel} ${state.year}`.slice(0, 31),
+        sheet,
+        { widths }
+    );
+}
+
+
+/*
+ * The trend grid as it reads on screen: a fiscal year per row,
+ * IND / VOL / MS under each month, and the Total group last.
+ */
+async function exportTrendTable() {
+
+    const pivot = state.monthly.pivot;
+
+    if (!pivot || pivot.rows.length === 0) {
+        return;
+    }
+
+    const months = FISCAL_MONTH_ORDER.map(
+        number => MONTH_TABLES.find(month => month.number === number)
+    );
+
+    const groups = [...months.map(month => month.label), "Total"];
+
+    /* Row 5 spans each group across its three columns; row 6 names them. */
+    const groupRow = [""];
+    const subRow = [{ value: "Fiscal Year", style: 1 }];
+
+    groups.forEach(label => {
+        groupRow.push({ value: label, style: 1 }, "", "");
+        subRow.push(
+            { value: "IND", style: 1 },
+            { value: "VOL", style: 1 },
+            { value: "MS %", style: 1 }
+        );
+    });
+
+    const sheet = [
+        [{ value: "Monthly Trend", style: 1 }],
+        [activeFilterSummary({ trend: true })],
+        ["IND is the whole industry, VOL the selection, MS the share of IND"],
+        [],
+        groupRow,
+        subRow
+    ];
+
+    const cellsFor = cell => {
+
+        if (!cell) {
+            return [null, null, null];
+        }
+
+        const share = cell.industry > 0
+            ? (cell.selected / cell.industry) * 100
+            : 0;
+
+        return [
+            cell.industry,
+            cell.selected,
+            { value: Number(share.toFixed(1)), style: 3 }
+        ];
+    };
+
+    pivot.rows.forEach(row => {
+
+        const line = [row.label];
+
+        row.months.forEach(cell => line.push(...cellsFor(cell)));
+        line.push(...cellsFor(row.total));
+
+        sheet.push(line);
+    });
+
+    const footer = [{ value: "Total", style: 2 }];
+
+    pivot.totals.forEach(cell =>
+        cellsFor(cell).forEach(value =>
+            footer.push(
+                value !== null && typeof value === "object"
+                    ? { ...value, style: 2 }
+                    : { value, style: 2 }
+            )
+        )
+    );
+
+    cellsFor(pivot.grandTotal).forEach(value =>
+        footer.push(
+            value !== null && typeof value === "object"
+                ? { ...value, style: 2 }
+                : { value, style: 2 }
+        )
+    );
+
+    sheet.push(footer);
+
+    /* Merge each group label across its three columns, on row 5. */
+    const merges = groups.map((label, index) => {
+
+        const first = 1 + index * 3;
+
+        return `${columnLetter(first)}5:${columnLetter(first + 2)}5`;
+    });
+
+    await downloadWorkbook(
+        exportFileName("trend"),
+        `Trend ${currentView().scopeLabel}`.slice(0, 31),
+        sheet,
+        { merges, widths: [14, ...groups.flatMap(() => [12, 12, 8])] }
+    );
+}
+
+
+/* ============================================================
+   24. LOADING / ERROR
    ============================================================ */
 
 function showLoading({ global = false } = {}) {
@@ -4423,6 +5098,38 @@ function setupPagination() {
 }
 
 
+function setupDownloadListeners() {
+
+    /*
+     * Building the archive is async - deflate is a stream - so the
+     * button is held disabled for the duration. A second click
+     * mid-write would otherwise start a competing export.
+     */
+    const wire = (button, run, label) => {
+
+        if (!button) {
+            return;
+        }
+
+        button.addEventListener("click", async () => {
+
+            button.disabled = true;
+
+            try {
+                await run();
+            } catch (error) {
+                console.error(`${label} export failed:`, error);
+            } finally {
+                button.disabled = false;
+            }
+        });
+    };
+
+    wire(dom.detailsDownloadButton, exportDetailsTable, "Details");
+    wire(dom.trendDownloadButton, exportTrendTable, "Trend");
+}
+
+
 function setupFilterListeners() {
 
     [
@@ -4545,6 +5252,7 @@ async function initializeDashboard({ force = false } = {}) {
             setupSorting();
             setupPagination();
             setupFilterListeners();
+            setupDownloadListeners();
             setupComboDismiss();
             state.wired = true;
         }
