@@ -54,16 +54,28 @@
     --border-dark: #cbd5e1;
 
     /* Table */
-    --row-alt: #f7f9fc;
-    --row-hover: #eef4ff;
+    --row-alt: #f6f8fc;
+    --row-hover: #e8f0fe;
+
+    /*
+     * The pinned columns and the Total column carry a tint of their
+     * own so they read as anchors rather than as more data. Kept in
+     * the blue-grey family the rest of the page uses.
+     */
+    --col-pinned: #f4f7fb;
+    --col-pinned-alt: #eef2f8;
+    --col-accent: #f2f6fd;
 
     /*
      * Lighter than --border. Column rules have to separate without
      * turning a wide table into graph paper, so they sit halfway
      * between the row stripe and the border.
      */
-    --grid-line: #eaeff5;
-    --head-bg: #f1f5fa;
+    --grid-line: #e6ebf2;
+
+    /* Two header tones: the group band above, the labels below. */
+    --head-bg: #e9eff7;
+    --head-bg-soft: #f2f6fb;
 
     /* Sidebar */
     --sidebar: #0f172a;
@@ -1817,13 +1829,51 @@ so those repeat the row's own background.
 .data-table tbody td.col-total,
 .data-table thead th.col-total,
 .data-table tfoot td.col-total {
-    background: var(--surface-soft);
+    background: var(--col-accent);
 
-    border-left: 1px solid var(--border);
+    border-left: 2px solid var(--border-dark);
+}
+
+.data-table tbody tr:nth-child(even) td.col-total {
+    background: var(--col-pinned-alt);
 }
 
 .data-table tbody tr:hover td.col-total {
     background: var(--row-hover);
+}
+
+/*
+ * The pinned Sr No. and Maker columns are furniture, not figures,
+ * so they take the same quiet tint - which also stops the striped
+ * rows showing through them as they scroll.
+ */
+.data-table tbody tr:nth-child(odd) .sticky-left,
+.data-table tbody tr:nth-child(odd) td.col-index,
+.data-table tbody tr:nth-child(odd) td.col-entity {
+    background: var(--col-pinned);
+}
+
+.data-table tbody tr:nth-child(even) .sticky-left,
+.data-table tbody tr:nth-child(even) td.col-index,
+.data-table tbody tr:nth-child(even) td.col-entity {
+    background: var(--col-pinned-alt);
+}
+
+.data-table tbody tr:hover .sticky-left,
+.data-table tbody tr:hover td.col-index,
+.data-table tbody tr:hover td.col-entity {
+    background: var(--row-hover);
+}
+
+/* The rule that closes the pinned pair off from the figures. */
+.data-table td.col-entity,
+.data-table th.col-entity {
+    border-right: 2px solid var(--border-dark);
+}
+
+/* Zero reads as absence, not as a figure worth the same ink. */
+.data-table tbody td.is-zero {
+    color: var(--text-light);
 }
 
 /*
@@ -2447,6 +2497,70 @@ rather than at the top of the scroll area.
 
     font-size: 10px;
     font-weight: 500;
+}
+
+
+/* ---------------------------------------------------------------
+   Sticky stacking order
+
+   Two sticky axes cross here - the header sticks down, the first
+   one or two columns stick left - and the cells where they meet
+   have to sit above both.
+
+   The order was wrong in both directions. "thead tr:first-child th"
+   is (0,2,3) and out-specified the corner rules at (0,2,2), so the
+   corners fell back to the same layer as the month headings and
+   lost to them on DOM order - scrolling right slid the months over
+   Fiscal Year. The body's sticky column sat higher still, at 5,
+   and covered the header on a vertical scroll.
+
+   Stated once, in one place, with enough specificity to hold:
+
+       9  header corners      8  footer corners
+       7  header, row 1       6  header, row 2
+       5  footer cells        4  body sticky columns
+   --------------------------------------------------------------- */
+
+.monthly-trend__table thead tr:first-child th.monthly-trend__year-head,
+.monthly-trend__table thead tr:first-child th.monthly-trend__maker-head {
+    z-index: 9;
+}
+
+.monthly-trend__table thead tr:first-child th {
+    z-index: 7;
+}
+
+.monthly-trend__table thead tr:last-child th {
+    z-index: 6;
+}
+
+.monthly-trend__table tfoot th.monthly-trend__year,
+.monthly-trend__table tfoot td.monthly-trend__maker {
+    z-index: 8;
+}
+
+.monthly-trend__table tfoot th,
+.monthly-trend__table tfoot td {
+    z-index: 5;
+}
+
+.monthly-trend__table tbody th.monthly-trend__year,
+.monthly-trend__table tbody td.monthly-trend__maker {
+    z-index: 4;
+}
+
+/*
+ * A sticky column needs an edge, or the numbers sliding under it
+ * appear to touch it.
+ */
+.monthly-trend__table th.monthly-trend__year-head,
+.monthly-trend__table th.monthly-trend__year {
+    box-shadow: inset -1px 0 0 var(--border);
+}
+
+.monthly-trend__table--with-maker th.monthly-trend__year-head,
+.monthly-trend__table--with-maker th.monthly-trend__year {
+    box-shadow: none;
 }
 
 

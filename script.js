@@ -2869,6 +2869,16 @@ function cellClassFor(column) {
  */
 function fillNumericCell(cell, value, columnTotal) {
 
+    /*
+     * Most cells in this table are zero - a maker builds one kind of
+     * vehicle and nothing else - so a zero is marked and set in a
+     * lighter ink. It leaves the figures that exist standing out of
+     * the grid rather than buried in it.
+     */
+    if (toNumber(value) === 0) {
+        cell.classList.add("is-zero");
+    }
+
     const split = document.createElement("span");
     split.className = "cell-split";
 
