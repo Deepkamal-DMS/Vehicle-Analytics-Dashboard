@@ -647,7 +647,9 @@ function cacheDOM() {
         "searchRowTemplate",
         "resultCount",
         "detailsDownloadButton",
+        "detailsPdfButton",
         "trendDownloadButton",
+        "trendPdfButton",
         "tableContent",
         "maker-summary-title",
 
@@ -2996,9 +2998,11 @@ function renderTable() {
     state.filteredRows = rows;
 
     /* Nothing on screen means nothing to write. */
-    if (dom.detailsDownloadButton) {
-        dom.detailsDownloadButton.disabled = rows.length === 0;
-    }
+    [dom.detailsDownloadButton, dom.detailsPdfButton].forEach(button => {
+        if (button) {
+            button.disabled = rows.length === 0;
+        }
+    });
 
     const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
 
@@ -3796,9 +3800,11 @@ function renderMonthlyTrend(pivot) {
         );
     }
 
-    if (dom.trendDownloadButton) {
-        dom.trendDownloadButton.disabled = pivot.rows.length === 0;
-    }
+    [dom.trendDownloadButton, dom.trendPdfButton].forEach(button => {
+        if (button) {
+            button.disabled = pivot.rows.length === 0;
+        }
+    });
 
     const months = FISCAL_MONTH_ORDER.map(
         number => MONTH_TABLES.find(month => month.number === number)
@@ -4491,19 +4497,8 @@ async function zipArchive(parts) {
 }
 
 
-async function downloadWorkbook(fileName, sheetName, rows, options) {
-
-    const archive = await zipArchive(
-        xlsxParts(sheetName, buildSheetXml(rows, options))
-    );
-
-    const blob = new Blob(
-        [archive],
-        {
-            type: "application/vnd.openxmlformats-officedocument." +
-                "spreadsheetml.sheet"
-        }
-    );
+/* Shared by both formats: hand the bytes to the browser as a file. */
+function saveBlob(blob, fileName) {
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -4517,6 +4512,22 @@ async function downloadWorkbook(fileName, sheetName, rows, options) {
 
     /* Revoked late: Safari has not finished reading it synchronously. */
     setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+
+async function downloadWorkbook(fileName, sheetName, rows, options) {
+
+    const archive = await zipArchive(
+        xlsxParts(sheetName, buildSheetXml(rows, options))
+    );
+
+    saveBlob(
+        new Blob([archive], {
+            type: "application/vnd.openxmlformats-officedocument." +
+                "spreadsheetml.sheet"
+        }),
+        fileName
+    );
 }
 
 
@@ -4568,11 +4579,436 @@ function activeFilterSummary({ trend = false } = {}) {
 }
 
 
-function exportFileName(prefix) {
+/* ============================================================
+   PDF
+
+   Also written by hand, for the same reason the xlsx is: no
+   package.json, no CDN script.
+
+   PDF is a plain byte format, so a table of text needs no library
+   - only the cross-reference table has to be right, since a byte
+   offset that is off by one makes the whole file unreadable.
+   Helvetica is one of the fourteen fonts every reader carries, so
+   nothing is embedded.
+
+   Both tables are far wider than a page. Rather than shrink them
+   to nothing, columns are laid out at a readable size and the
+   sheet is split into bands that continue on later pages, the way
+   a spreadsheet prints. Every page repeats the entity column and
+   the header row so a band is readable on its own.
+   ============================================================ */
+
+/* A4 landscape, in points. */
+const PDF_PAGE = { width: 842, height: 595 };
+
+const PDF_MARGIN = { top: 44, right: 28, bottom: 34, left: 28 };
+
+const PDF_FONT_SIZE = 7.2;
+const PDF_HEAD_SIZE = 7.2;
+const PDF_TITLE_SIZE = 12;
+const PDF_ROW_HEIGHT = 12.5;
+
+
+/*
+ * Helvetica's advance widths, per 1000 units, for the printable
+ * ASCII range starting at space. Without these every column would
+ * have to be sized by guesswork.
+ */
+const HELVETICA_WIDTHS = [
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333,
+    278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278,
+    584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278,
+    500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944,
+    667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556,
+    278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500,
+    278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584
+];
+
+
+function pdfTextWidth(text, size) {
+
+    let units = 0;
+
+    for (let at = 0; at < text.length; at += 1) {
+
+        const code = text.charCodeAt(at);
+        const index = code - 32;
+
+        units += index >= 0 && index < HELVETICA_WIDTHS.length
+            ? HELVETICA_WIDTHS[index]
+            : 556;
+    }
+
+    return (units / 1000) * size;
+}
+
+
+/*
+ * WinAnsi puts a handful of typographic characters in 0x80-0x9F,
+ * where Unicode has control codes instead, so they need mapping by
+ * hand. The em dash is the one that matters here - it is in every
+ * title - but the quotes and the ellipsis turn up in maker names.
+ */
+const WINANSI_SPECIALS = new Map([
+    [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84],
+    [0x2026, 0x85], [0x2020, 0x86], [0x2021, 0x87], [0x02c6, 0x88],
+    [0x2030, 0x89], [0x0160, 0x8a], [0x2039, 0x8b], [0x0152, 0x8c],
+    [0x017d, 0x8e], [0x2018, 0x91], [0x2019, 0x92], [0x201c, 0x93],
+    [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
+    [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b],
+    [0x0153, 0x9c], [0x017e, 0x9e], [0x0178, 0x9f]
+]);
+
+
+/*
+ * WinAnsi is a single-byte encoding, so anything outside it is
+ * replaced rather than written as mojibake.
+ */
+function pdfEscape(text) {
+
+    let out = "";
+
+    for (const character of String(text)) {
+
+        const code = character.codePointAt(0);
+
+        if (character === "(" || character === ")" || character === "\\") {
+            out += "\\" + character;
+        } else if (code >= 32 && code <= 126) {
+            out += character;
+        } else if (WINANSI_SPECIALS.has(code)) {
+            out += "\\" + WINANSI_SPECIALS.get(code).toString(8).padStart(3, "0");
+        } else if (code >= 160 && code <= 255) {
+            out += "\\" + code.toString(8).padStart(3, "0");
+        } else {
+            out += "?";
+        }
+    }
+
+    return out;
+}
+
+
+function pdfTruncate(text, size, limit) {
+
+    const value = String(text === null || text === undefined ? "" : text);
+
+    if (pdfTextWidth(value, size) <= limit) {
+        return value;
+    }
+
+    let cut = value;
+
+    while (cut.length > 1 && pdfTextWidth(cut + "...", size) > limit) {
+        cut = cut.slice(0, -1);
+    }
+
+    return cut + "...";
+}
+
+
+/*
+ * A page of content, built as a PDF content stream. Cells are
+ * { text, align, bold }, columns carry their widths.
+ */
+function pdfPage(lines) {
+
+    return lines.join("\n");
+}
+
+
+function pdfDrawRow(cells, columns, x0, y, size, bold) {
+
+    const parts = [`BT /${bold ? "F2" : "F1"} ${size} Tf`];
+
+    let x = x0;
+
+    cells.forEach((cell, index) => {
+
+        const width = columns[index];
+        const text = pdfTruncate(cell === null ? "" : cell, size, width - 6);
+
+        /* Numbers right-align under their headings; names do not. */
+        const right = index > 0;
+
+        const at = right
+            ? x + width - 3 - pdfTextWidth(text, size)
+            : x + 3;
+
+        parts.push(`1 0 0 1 ${at.toFixed(2)} ${y.toFixed(2)} Tm`);
+        parts.push(`(${pdfEscape(text)}) Tj`);
+
+        x += width;
+    });
+
+    parts.push("ET");
+
+    return parts.join("\n");
+}
+
+
+/*
+ * Splits the columns into bands that each fit the printable width.
+ * The first column - the maker, or the fiscal year - repeats on
+ * every band so a page of numbers is never anonymous.
+ */
+function pdfBands(widths, available) {
+
+    const lead = widths[0];
+    const bands = [];
+
+    let current = [];
+    let used = lead;
+
+    for (let index = 1; index < widths.length; index += 1) {
+
+        if (used + widths[index] > available && current.length > 0) {
+            bands.push(current);
+            current = [];
+            used = lead;
+        }
+
+        current.push(index);
+        used += widths[index];
+    }
+
+    if (current.length > 0) {
+        bands.push(current);
+    }
+
+    return bands;
+}
+
+
+/*
+ * rows[0] is the header. Every other row is body, except any listed
+ * in options.footRows, which are drawn in bold with a rule above.
+ */
+async function buildPdf(title, subtitle, rows, widths, options = {}) {
+
+    const foot = new Set(options.footRows || []);
+
+    const printWidth = PDF_PAGE.width - PDF_MARGIN.left - PDF_MARGIN.right;
+    const bands = pdfBands(widths, printWidth);
+
+    const bodyTop = PDF_PAGE.height - PDF_MARGIN.top - 26;
+    const perPage = Math.floor(
+        (bodyTop - PDF_MARGIN.bottom - PDF_ROW_HEIGHT) / PDF_ROW_HEIGHT
+    );
+
+    const header = rows[0];
+    const body = rows.slice(1);
+
+    const pages = [];
+
+    bands.forEach((band, bandIndex) => {
+
+        const columns = [widths[0], ...band.map(index => widths[index])];
+        const pick = row => [row[0], ...band.map(index => row[index])];
+
+        for (let from = 0; from < body.length; from += perPage) {
+
+            const slice = body.slice(from, from + perPage);
+            const lines = [];
+
+            /* Title, then the filters it was taken under. */
+            lines.push(
+                `BT /F2 ${PDF_TITLE_SIZE} Tf 1 0 0 1 ${PDF_MARGIN.left} ` +
+                `${PDF_PAGE.height - PDF_MARGIN.top} Tm ` +
+                `(${pdfEscape(title)}) Tj ET`
+            );
+
+            lines.push(
+                `BT /F1 7 Tf 0.35 0.4 0.47 rg 1 0 0 1 ${PDF_MARGIN.left} ` +
+                `${PDF_PAGE.height - PDF_MARGIN.top - 13} Tm ` +
+                `(${pdfEscape(subtitle)}) Tj ET 0 0 0 rg`
+            );
+
+            let y = bodyTop;
+
+            /* Header row, on a light band. */
+            lines.push("0.94 0.96 0.99 rg");
+            lines.push(
+                `${PDF_MARGIN.left} ${(y - 3.5).toFixed(2)} ` +
+                `${columns.reduce((a, b) => a + b, 0).toFixed(2)} ` +
+                `${PDF_ROW_HEIGHT.toFixed(2)} re f`
+            );
+            lines.push("0 0 0 rg");
+
+            lines.push(
+                pdfDrawRow(pick(header), columns, PDF_MARGIN.left, y,
+                    PDF_HEAD_SIZE, true)
+            );
+
+            y -= PDF_ROW_HEIGHT;
+
+            slice.forEach((row, index) => {
+
+                const absolute = from + index + 1;
+                const isFoot = foot.has(absolute);
+
+                if (isFoot) {
+                    lines.push("0.8 0.84 0.9 RG 0.6 w");
+                    lines.push(
+                        `${PDF_MARGIN.left} ${(y + PDF_ROW_HEIGHT - 3.5).toFixed(2)} m ` +
+                        `${(PDF_MARGIN.left + columns.reduce((a, b) => a + b, 0)).toFixed(2)} ` +
+                        `${(y + PDF_ROW_HEIGHT - 3.5).toFixed(2)} l S`
+                    );
+                }
+
+                lines.push(
+                    pdfDrawRow(pick(row), columns, PDF_MARGIN.left, y,
+                        PDF_FONT_SIZE, isFoot)
+                );
+
+                y -= PDF_ROW_HEIGHT;
+            });
+
+            const page = Math.floor(from / perPage) + 1;
+            const ofPages = Math.ceil(body.length / perPage);
+
+            lines.push(
+                `BT /F1 6.5 Tf 0.55 0.58 0.63 rg 1 0 0 1 ${PDF_MARGIN.left} ` +
+                `${PDF_MARGIN.bottom - 12} Tm (` +
+                pdfEscape(
+                    `Columns ${bandIndex + 1} of ${bands.length}` +
+                    `  ·  Rows page ${page} of ${ofPages}`
+                ) +
+                ") Tj ET 0 0 0 rg"
+            );
+
+            pages.push(pdfPage(lines));
+        }
+    });
+
+    return assemblePdf(pages);
+}
+
+
+/*
+ * Objects 1..N, then the xref table. Assembled as bytes rather
+ * than a string because the content streams are deflated and so
+ * are not text at all - and because every offset in the xref is a
+ * byte count. Get one wrong and no reader will open the file.
+ *
+ * Content streams are compressed for the same reason the xlsx
+ * entries are: a full Details export is around 170,000 short text
+ * runs, which is several megabytes written plainly.
+ */
+async function assemblePdf(pages) {
+
+    const encoder = new TextEncoder();
+
+    /* Each part is a string or a Uint8Array; both end up as bytes. */
+    const parts = [];
+    const offsets = [];
+
+    let at = 0;
+
+    const put = value => {
+
+        const bytes = typeof value === "string"
+            ? encoder.encode(value)
+            : value;
+
+        parts.push(bytes);
+        at += bytes.length;
+    };
+
+    const startObject = () => {
+        offsets.push(at);
+    };
+
+    put("%PDF-1.4\n");
+
+    const pageIds = pages.map((content, index) => 4 + index * 2);
+
+    startObject();
+    put("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+    startObject();
+    put(
+        "2 0 obj\n<< /Type /Pages /Count " + pages.length +
+        " /Kids [" + pageIds.map(id => `${id} 0 R`).join(" ") + "] >>\nendobj\n"
+    );
+
+    startObject();
+    put(
+        "3 0 obj\n<< /Font << /F1 << /Type /Font /Subtype /Type1 " +
+        "/BaseFont /Helvetica /Encoding /WinAnsiEncoding >> " +
+        "/F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold " +
+        "/Encoding /WinAnsiEncoding >> >> >>\nendobj\n"
+    );
+
+    for (let index = 0; index < pages.length; index += 1) {
+
+        const id = pageIds[index];
+
+        startObject();
+        put(
+            `${id} 0 obj\n<< /Type /Page /Parent 2 0 R ` +
+            `/MediaBox [0 0 ${PDF_PAGE.width} ${PDF_PAGE.height}] ` +
+            `/Resources 3 0 R /Contents ${id + 1} 0 R >>\nendobj\n`
+        );
+
+        const raw = encoder.encode(pages[index]);
+        const packed = await deflateRaw(raw);
+
+        const deflated = packed !== null && packed.length < raw.length;
+        const data = deflated ? packed : raw;
+
+        startObject();
+        put(
+            `${id + 1} 0 obj\n<< /Length ${data.length}` +
+            (deflated ? " /Filter /FlateDecode" : "") +
+            " >>\nstream\n"
+        );
+        put(data);
+        put("\nendstream\nendobj\n");
+    }
+
+    const xrefAt = at;
+
+    let xref = `xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`;
+
+    offsets.forEach(offset => {
+        xref += String(offset).padStart(10, "0") + " 00000 n \n";
+    });
+
+    xref +=
+        `trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\n` +
+        `startxref\n${xrefAt}\n%%EOF\n`;
+
+    put(xref);
+
+    const out = new Uint8Array(at);
+
+    let cursor = 0;
+
+    parts.forEach(bytes => {
+        out.set(bytes, cursor);
+        cursor += bytes.length;
+    });
+
+    return out;
+}
+
+
+async function downloadPdf(fileName, title, subtitle, rows, widths, options) {
+
+    saveBlob(
+        new Blob([await buildPdf(title, subtitle, rows, widths, options)],
+            { type: "application/pdf" }),
+        fileName
+    );
+}
+
+
+function exportFileName(prefix, extension) {
 
     const stamp = new Date().toISOString().slice(0, 10);
 
-    return `${prefix}-${currentView().id}-${stamp}.xlsx`;
+    return `${prefix}-${currentView().id}-${stamp}.${extension}`;
 }
 
 
@@ -4643,10 +5079,175 @@ async function exportDetailsTable() {
     );
 
     await downloadWorkbook(
-        exportFileName("details"),
+        exportFileName("details", "xlsx"),
         `${currentView().scopeLabel} ${state.year}`.slice(0, 31),
         sheet,
         { widths }
+    );
+}
+
+
+/*
+ * The Details table as a PDF. Same rows the spreadsheet gets, laid
+ * out across column bands so nothing has to shrink to fit.
+ */
+async function exportDetailsPdf() {
+
+    const rows = state.filteredRows;
+
+    if (!rows || rows.length === 0) {
+        return;
+    }
+
+    const columns = state.columns;
+
+    const sheet = [columns.map(column => column.label)];
+
+    rows.forEach((row, index) => {
+
+        sheet.push(columns.map(column => {
+
+            if (column.type === "index") {
+                return formatIndianNumber(
+                    row.srNo === null || row.srNo === undefined
+                        ? index + 1
+                        : toNumber(row.srNo)
+                );
+            }
+
+            if (column.type === "entity") {
+                return row.entity;
+            }
+
+            const value = column.type === "total"
+                ? row.total
+                : row.values[column.key];
+
+            return value === null || value === undefined || value === ""
+                ? ""
+                : formatIndianNumber(toNumber(value));
+        }));
+    });
+
+    const totals = calculateColumnTotals(rows, columns);
+
+    sheet.push(columns.map((column, index) => {
+
+        if (index === 0) {
+            return "Total";
+        }
+
+        if (column.type === "entity") {
+            return `${rows.length} ${currentView().entityPlural}`;
+        }
+
+        return formatIndianNumber(totals[column.key]);
+    }));
+
+    /*
+     * The entity column is given room for a real maker name; the
+     * rest are sized to their heading, which is what decides how
+     * many fit in a band.
+     */
+    const widths = columns.map((column, index) => {
+
+        if (index === 0) {
+            return 34;
+        }
+
+        if (column.type === "entity") {
+            return 168;
+        }
+
+        return Math.min(
+            120,
+            Math.max(44, pdfTextWidth(column.label, PDF_HEAD_SIZE) + 10)
+        );
+    });
+
+    await downloadPdf(
+        exportFileName("details", "pdf"),
+        currentView().title,
+        activeFilterSummary() + `  ·  ${rows.length} rows`,
+        sheet,
+        widths,
+        { footRows: [sheet.length - 1] }
+    );
+}
+
+
+/*
+ * The trend grid as a PDF. Each month is one column reading
+ * "IND / VOL / MS" rather than three, because twelve months at
+ * three columns each will not fit any page at a readable size.
+ */
+async function exportTrendPdf() {
+
+    const pivot = state.monthly.pivot;
+
+    if (!pivot || pivot.rows.length === 0) {
+        return;
+    }
+
+    const months = FISCAL_MONTH_ORDER.map(
+        number => MONTH_TABLES.find(month => month.number === number)
+    );
+
+    const head = pivot.multi
+        ? ["Fiscal Year", "Maker"]
+        : ["Fiscal Year"];
+
+    const sheet = [
+        head.concat(months.map(month => month.label.slice(0, 3)), "Total")
+    ];
+
+    const cellText = cell => {
+
+        if (!cell) {
+            return "";
+        }
+
+        const share = cell.industry > 0
+            ? (cell.selected / cell.industry) * 100
+            : 0;
+
+        return `${formatIndianNumber(cell.industry)} / ` +
+            `${formatIndianNumber(cell.selected)} / ${share.toFixed(1)}%`;
+    };
+
+    pivot.rows.forEach(row => {
+
+        const line = pivot.multi
+            ? [fiscalYearLabel(row.start), row.maker]
+            : [row.label];
+
+        row.months.forEach(cell => line.push(cellText(cell)));
+        line.push(cellText(row.total));
+
+        sheet.push(line);
+    });
+
+    const footer = pivot.multi
+        ? ["Total", `All ${pivot.makers.length} selected`]
+        : ["Total"];
+
+    pivot.totals.forEach(cell => footer.push(cellText(cell)));
+    footer.push(cellText(pivot.grandTotal));
+
+    sheet.push(footer);
+
+    const widths = pivot.multi
+        ? [56, 150, ...months.map(() => 108), 108]
+        : [64, ...months.map(() => 112), 112];
+
+    await downloadPdf(
+        exportFileName("trend", "pdf"),
+        `Monthly Trend — ${currentView().scopeLabel}`,
+        activeFilterSummary({ trend: true }) +
+            "  ·  each cell is IND / VOL / MS",
+        sheet,
+        widths,
+        { footRows: [sheet.length - 1] }
     );
 }
 
@@ -4770,7 +5371,7 @@ async function exportTrendTable() {
         : [14, ...groups.flatMap(() => [12, 12, 8])];
 
     await downloadWorkbook(
-        exportFileName("trend"),
+        exportFileName("trend", "xlsx"),
         `Trend ${currentView().scopeLabel}`.slice(0, 31),
         sheet,
         { merges, widths }
@@ -5482,8 +6083,10 @@ function setupDownloadListeners() {
         });
     };
 
-    wire(dom.detailsDownloadButton, exportDetailsTable, "Details");
-    wire(dom.trendDownloadButton, exportTrendTable, "Trend");
+    wire(dom.detailsDownloadButton, exportDetailsTable, "Details xlsx");
+    wire(dom.detailsPdfButton, exportDetailsPdf, "Details pdf");
+    wire(dom.trendDownloadButton, exportTrendTable, "Trend xlsx");
+    wire(dom.trendPdfButton, exportTrendPdf, "Trend pdf");
 }
 
 
