@@ -2367,6 +2367,72 @@ rather than at the top of the scroll area.
 
 
 /* ---------------------------------------------------------------
+   Maker column
+
+   Only present when the trend has more than one maker selected,
+   which is also when the month hairlines shift by one cell.
+   --------------------------------------------------------------- */
+
+.monthly-trend__table th.monthly-trend__maker-head,
+.monthly-trend__table .monthly-trend__maker {
+    position: sticky;
+    left: 108px;
+    z-index: 4;
+
+    max-width: 190px;
+
+    text-align: left;
+
+    background: var(--surface);
+
+    border-right: 1px solid var(--border);
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.monthly-trend__table thead th.monthly-trend__maker-head {
+    z-index: 7;
+
+    background: var(--surface-soft);
+}
+
+.monthly-trend__table tfoot .monthly-trend__maker {
+    background: var(--surface-soft);
+
+    font-weight: 600;
+}
+
+.monthly-trend__table tbody tr:nth-child(even) .monthly-trend__maker {
+    background: var(--row-alt);
+}
+
+.monthly-trend__table tbody tr:hover .monthly-trend__maker {
+    background: var(--row-hover);
+}
+
+/* A rule where each fiscal year's block of makers begins. */
+.monthly-trend__table tbody tr.monthly-trend__group-start > * {
+    border-top: 2px solid var(--border);
+}
+
+/*
+ * With the Maker column in place every row carries one more leading
+ * cell, so the triplet hairlines land on 3n rather than 3n + 2.
+ */
+.monthly-trend__table--with-maker tbody td:nth-child(3n + 2),
+.monthly-trend__table--with-maker tfoot td:nth-child(3n + 2) {
+    border-left: 0;
+}
+
+.monthly-trend__table--with-maker tbody td:nth-child(3n),
+.monthly-trend__table--with-maker tfoot td:nth-child(3n) {
+    border-left: 1px solid var(--border);
+}
+
+
+/* ---------------------------------------------------------------
    Total column
 
    The row's twelve months summed, sitting after them. It is a
@@ -2538,6 +2604,60 @@ keeps them on one line well below the width where a fixed
     color: var(--text);
 
     background: var(--surface-muted);
+}
+
+
+/*
+ * A multi-select combo ticks its chosen options and stays open, so
+ * the selected state has to read at a glance rather than being the
+ * one highlighted row. The trend's list is the only one of these.
+ */
+.combo--multiple .combo__option {
+    position: relative;
+
+    padding-left: 27px;
+}
+
+.combo--multiple .combo__option::before {
+    content: "";
+
+    position: absolute;
+    left: 8px;
+    top: 50%;
+
+    width: 12px;
+    height: 12px;
+
+    margin-top: -6px;
+
+    border: 1px solid var(--border-dark);
+    border-radius: 3px;
+
+    background: var(--surface);
+}
+
+.combo--multiple .combo__option--selected::before {
+    border-color: var(--primary);
+
+    background: var(--primary);
+}
+
+.combo--multiple .combo__option--selected::after {
+    content: "";
+
+    position: absolute;
+    left: 11.5px;
+    top: 50%;
+
+    width: 3px;
+    height: 7px;
+
+    margin-top: -5px;
+
+    border: solid #ffffff;
+    border-width: 0 2px 2px 0;
+
+    transform: rotate(45deg);
 }
 
 .trend-filter .combo__option--selected {

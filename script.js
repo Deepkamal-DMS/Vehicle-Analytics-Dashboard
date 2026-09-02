@@ -530,7 +530,12 @@ const state = {
      * sidebar's, so the two tables can be read against different
      * makers at the same time.
      */
-    trendMaker: CONFIG.ALL,
+    /*
+     * The trend's maker choice takes several at once. Empty means
+     * every maker, so VOL repeats IND; one behaves as it always
+     * has; two or more split each fiscal year into a row per maker.
+     */
+    trendMakers: [],
     trendClass: CONFIG.ALL,
     trendOptionsLoaded: false,
 
@@ -677,6 +682,7 @@ function cacheDOM() {
         "monthlyTrendError",
         "monthlyTrendErrorText",
         "monthlyTrendContent",
+        "monthlyTrendTable",
 
         /* Loading */
         "globalLoading",
@@ -1268,6 +1274,14 @@ const SEARCHABLE_FILTERS = [
 ];
 
 /*
+ * Combos that take more than one value at a time. The list stays
+ * open as options are ticked, and the native <select> underneath
+ * holds "all" rather than any one of them - nothing reads its
+ * value for these, comboValues() is the source of truth.
+ */
+const MULTI_COMBOS = new Set(["trendMakerFilter"]);
+
+/*
  * Long lists are capped so opening a 1,900-entry dropdown does
  * not build 1,900 nodes.
  */
@@ -1349,8 +1363,16 @@ function createCombo(select) {
         options: [],
         matches: [],
         activeIndex: -1,
-        open: false
+        open: false,
+        multiple: MULTI_COMBOS.has(select.id),
+        /* Only meaningful when multiple; empty means "all". */
+        values: []
     };
+
+    if (combo.multiple) {
+        wrapper.classList.add("combo--multiple");
+        input.setAttribute("aria-multiselectable", "true");
+    }
 
     wireCombo(combo);
     refreshCombo(select);
@@ -1384,7 +1406,19 @@ function refreshCombo(select) {
         label: option.textContent.trim()
     }));
 
-    combo.input.value = comboLabelForValue(combo, select.value);
+    if (combo.multiple) {
+
+        /* Drop anything the new option list no longer offers. */
+        const offered = new Set(combo.options.map(option => option.value));
+
+        combo.values = combo.values.filter(value => offered.has(value));
+
+        combo.input.value = multiComboLabel(combo);
+
+    } else {
+        combo.input.value = comboLabelForValue(combo, select.value);
+    }
+
     combo.input.placeholder = comboLabelForValue(combo, CONFIG.ALL) || "Search...";
 
     combo.input.disabled = select.disabled;
@@ -1436,6 +1470,25 @@ function filterComboOptions(combo, query) {
 function renderComboList(combo, query) {
 
     combo.matches = filterComboOptions(combo, query);
+
+    /*
+     * Ticked options come first. The list renders only its first
+     * 200 entries, and with 2,552 makers a selection halfway down
+     * the alphabet would otherwise be invisible - the user could
+     * not see, or untick, what they had already chosen.
+     */
+    if (combo.multiple && combo.values.length > 0) {
+
+        const chosen = [];
+        const rest = [];
+
+        combo.matches.forEach(option => {
+            (combo.values.includes(option.value) ? chosen : rest).push(option);
+        });
+
+        combo.matches = chosen.concat(rest);
+    }
+
     combo.list.innerHTML = "";
 
     if (combo.matches.length === 0) {
@@ -1465,7 +1518,13 @@ function renderComboList(combo, query) {
         item.setAttribute("data-value", option.value);
         item.textContent = option.label;
 
-        if (option.value === combo.select.value) {
+        const chosen = combo.multiple
+            ? (isAll(option.value)
+                ? combo.values.length === 0
+                : combo.values.includes(option.value))
+            : option.value === combo.select.value;
+
+        if (chosen) {
             item.classList.add("combo__option--selected");
             item.setAttribute("aria-selected", "true");
         } else {
@@ -1507,10 +1566,15 @@ function openCombo(combo) {
 
     /*
      * Start from the current selection so arrow keys continue
-     * from where the user already is.
+     * from where the user already is. For a multi combo that is
+     * the first thing ticked, or the top of the list if nothing is.
      */
+    const from = combo.multiple
+        ? combo.values[0]
+        : combo.select.value;
+
     combo.activeIndex = combo.matches.findIndex(
-        option => option.value === combo.select.value
+        option => option.value === from
     );
 
     renderComboList(combo, "");
@@ -1532,9 +1596,12 @@ function closeCombo(combo) {
 
     /*
      * Restore the label - a half-typed query should not look
-     * like a selection.
+     * like a selection. A multi combo has no single value to read
+     * it from; its native select stays on "all" throughout.
      */
-    combo.input.value = comboLabelForValue(combo, combo.select.value);
+    combo.input.value = combo.multiple
+        ? multiComboLabel(combo)
+        : comboLabelForValue(combo, combo.select.value);
 }
 
 
@@ -1566,7 +1633,74 @@ function setActiveComboOption(combo, index) {
 }
 
 
+/*
+ * The values a combo currently holds, always as an array. Empty
+ * means "all", for single and multiple alike, so callers do not
+ * have to know which kind they were handed.
+ */
+function comboValues(select) {
+
+    const combo = combos.get(select);
+
+    if (combo && combo.multiple) {
+        return combo.values.slice();
+    }
+
+    const value = select ? normalizeString(select.value) : "";
+
+    return value && !isAll(value) ? [value] : [];
+}
+
+
+/*
+ * What the input shows when the list is closed. One name reads as
+ * itself; several would not fit, so they are counted.
+ */
+function multiComboLabel(combo) {
+
+    if (combo.values.length === 0) {
+        return "";
+    }
+
+    if (combo.values.length === 1) {
+        return comboLabelForValue(combo, combo.values[0]);
+    }
+
+    return `${combo.values.length} makers`;
+}
+
+
 function commitComboValue(combo, value) {
+
+    if (combo.multiple) {
+
+        /* "All" is the absence of a selection, not one more of them. */
+        if (isAll(value)) {
+            combo.values = [];
+        } else {
+
+            const at = combo.values.indexOf(value);
+
+            if (at === -1) {
+                combo.values.push(value);
+            } else {
+                combo.values.splice(at, 1);
+            }
+        }
+
+        combo.input.value = multiComboLabel(combo);
+
+        /*
+         * Left open: picking several in a row should not mean
+         * reopening the list between each one. The query is
+         * cleared so the full list comes back.
+         */
+        renderComboList(combo, "");
+
+        combo.select.dispatchEvent(new Event("change", { bubbles: true }));
+
+        return;
+    }
 
     if (combo.select.value === value) {
         closeCombo(combo);
@@ -3242,12 +3376,11 @@ async function loadTrendMakerOptions(signal) {
     populateSelect(
         dom.trendMakerFilter,
         state.monthly.makers,
-        "All Makers",
-        state.trendMaker
+        "All Makers"
     );
 
-    /* A maker absent from the data falls back to All. */
-    state.trendMaker = dom.trendMakerFilter.value;
+    /* refreshCombo drops any maker this scope does not offer. */
+    state.trendMakers = comboValues(dom.trendMakerFilter);
 }
 
 
@@ -3350,6 +3483,48 @@ function getMonthlyTotals(valueColumns, signal) {
 
 
 /*
+ * The chosen makers' rows, filtered in the database rather than by
+ * reading every maker and discarding the rest. One request covers
+ * all of them - PostgREST takes a list - and the Maker column comes
+ * back so the rows can be split apart again.
+ */
+function getMonthlyForMakers(makers, valueColumns, signal) {
+
+    const schema = state.monthly.schema;
+
+    /* JSON so a maker containing the separator cannot collide. */
+    const key =
+        trendScope() + " " + JSON.stringify(makers) + " " +
+        (valueColumns ? valueColumns.join("|") : "");
+
+    if (state.monthly.makerCache.has(key)) {
+        return state.monthly.makerCache.get(key);
+    }
+
+    const columns = [
+        schema.entityColumn,
+        schema.monthColumn,
+        schema.yearColumn,
+        schema.totalColumn,
+        ...(valueColumns || [])
+    ];
+
+    const pending = fetchAllRows(MONTHLY_BY_MAKER_VIEW, columns, {
+        signal,
+        filters: [
+            { column: SCOPE_COLUMN, values: [trendScope()] },
+            { column: schema.entityColumn, values: makers }
+        ]
+    });
+
+    state.monthly.makerCache.set(key, pending);
+    pending.catch(() => state.monthly.makerCache.delete(key));
+
+    return pending;
+}
+
+
+/*
  * One maker's thirty-two rows, filtered in the database rather than
  * by reading every maker and discarding the rest.
  */
@@ -3391,13 +3566,30 @@ function getMonthlyForMaker(maker, valueColumns, signal) {
  * industryRows carries every maker; selectedRows is whatever the
  * Maker select narrowed to, or the same rows when it is on All.
  */
-function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
+/*
+ * Builds the grid.
+ *
+ * industryRows is IND - every maker in the scope. series is one
+ * entry per selected maker, each with its own rows; with none
+ * selected it holds a single unnamed entry standing for the whole
+ * industry, which is why VOL then repeats IND.
+ *
+ * With two or more makers the grid gains a Maker column and each
+ * fiscal year becomes one row per maker, so the makers can be read
+ * against each other month by month.
+ */
+function buildMonthlyPivot(industryRows, series, valueColumns) {
 
     const schema = state.monthly.schema;
     const years = new Set();
-    const cells = new Map();
 
-    const at = row => {
+    /* start:month -> IND */
+    const industry = new Map();
+
+    /* maker -> (start:month -> VOL) */
+    const selected = new Map();
+
+    const place = row => {
 
         const month = Number(row[schema.monthColumn]);
         const year = Number(row[schema.yearColumn]);
@@ -3410,13 +3602,12 @@ function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
 
         years.add(start);
 
-        const id = `${start}:${month}`;
-        const cell = cells.get(id) || { industry: 0, selected: 0 };
-
-        cells.set(id, cell);
-
-        return cell;
+        return `${start}:${month}`;
     };
+
+    const measure = row => valueColumns
+        ? sumColumns(row, valueColumns)
+        : toNumber(row[schema.totalColumn]);
 
     /*
      * The class choice narrows IND as well as VOL, so a share is
@@ -3425,25 +3616,28 @@ function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
      */
     for (const row of industryRows) {
 
-        const cell = at(row);
+        const id = place(row);
 
-        if (cell) {
-            cell.industry += valueColumns
-                ? sumColumns(row, valueColumns)
-                : toNumber(row[schema.totalColumn]);
+        if (id) {
+            industry.set(id, (industry.get(id) || 0) + measure(row));
         }
     }
 
-    for (const row of selectedRows) {
+    series.forEach(entry => {
 
-        const cell = at(row);
+        const own = new Map();
 
-        if (cell) {
-            cell.selected += valueColumns
-                ? sumColumns(row, valueColumns)
-                : toNumber(row[schema.totalColumn]);
+        selected.set(entry.maker, own);
+
+        for (const row of entry.rows) {
+
+            const id = place(row);
+
+            if (id) {
+                own.set(id, (own.get(id) || 0) + measure(row));
+            }
         }
-    }
+    });
 
     /*
      * Adds a run of cells into one. Empty in, null out - a fiscal
@@ -3455,63 +3649,106 @@ function buildMonthlyPivot(industryRows, selectedRows, valueColumns) {
      */
     const sumCells = list => {
 
-        let industry = 0;
-        let selected = 0;
+        let ind = 0;
+        let vol = 0;
         let present = false;
 
         for (const cell of list) {
 
             if (cell) {
-                industry += cell.industry;
-                selected += cell.selected;
+                ind += cell.industry;
+                vol += cell.selected;
                 present = true;
             }
         }
 
-        return present ? { industry, selected } : null;
+        return present ? { industry: ind, selected: vol } : null;
     };
 
-    const rows = [...years].sort((a, b) => a - b).map(start => {
+    const cellFor = (maker, start, month) => {
 
-        const months = FISCAL_MONTH_ORDER.map(
-            month => cells.get(`${start}:${month}`) || null
-        );
+        const id = `${start}:${month}`;
 
-        return {
-            start,
-            label: fiscalYearLabel(start),
-            months,
-            /*
-             * The first and last fiscal years are usually partial -
-             * the data starts in Jan 2024 and stops mid-2026 - so
-             * these totals cover the months actually present, which
-             * is what the empty month cells beside them show.
-             */
-            total: sumCells(months)
-        };
-    });
-
-    const totals = FISCAL_MONTH_ORDER.map(month => {
-
-        let industry = 0;
-        let selected = 0;
-        let present = false;
-
-        for (const start of years) {
-
-            const cell = cells.get(`${start}:${month}`);
-
-            if (cell) {
-                industry += cell.industry;
-                selected += cell.selected;
-                present = true;
-            }
+        if (!industry.has(id)) {
+            return null;
         }
 
-        return present ? { industry, selected } : null;
+        const own = selected.get(maker);
+
+        return {
+            industry: industry.get(id) || 0,
+            selected: own ? own.get(id) || 0 : 0
+        };
+    };
+
+    const ordered = [...years].sort((a, b) => a - b);
+    const multi = series.length > 1;
+
+    const rows = [];
+
+    ordered.forEach(start => {
+
+        series.forEach((entry, index) => {
+
+            const months = FISCAL_MONTH_ORDER.map(
+                month => cellFor(entry.maker, start, month)
+            );
+
+            rows.push({
+                start,
+                /* The year is printed once per group, not per maker. */
+                label: index === 0 ? fiscalYearLabel(start) : "",
+                maker: multi ? entry.maker : null,
+                /*
+                 * The first and last fiscal years are usually partial -
+                 * the data starts in Jan 2024 and stops mid-2026 - so
+                 * these totals cover the months actually present, which
+                 * is what the empty month cells beside them show.
+                 */
+                total: sumCells(months),
+                months,
+                firstOfYear: index === 0
+            });
+        });
     });
 
-    return { rows, totals, grandTotal: sumCells(totals) };
+    /*
+     * The footer is every maker at once, so with several selected it
+     * reads as their combined volume against the industry.
+     */
+    const totals = FISCAL_MONTH_ORDER.map(month => {
+
+        let ind = 0;
+        let vol = 0;
+        let present = false;
+
+        ordered.forEach(start => {
+
+            const id = `${start}:${month}`;
+
+            if (!industry.has(id)) {
+                return;
+            }
+
+            present = true;
+            ind += industry.get(id) || 0;
+
+            series.forEach(entry => {
+                const own = selected.get(entry.maker);
+                vol += own ? own.get(id) || 0 : 0;
+            });
+        });
+
+        return present ? { industry: ind, selected: vol } : null;
+    });
+
+    return {
+        rows,
+        totals,
+        grandTotal: sumCells(totals),
+        multi,
+        makers: series.map(entry => entry.maker).filter(Boolean)
+    };
 }
 
 
@@ -3548,6 +3785,17 @@ function renderMonthlyTrend(pivot) {
     /* What the export writes, so the two cannot disagree. */
     state.monthly.pivot = pivot;
 
+    /*
+     * The hairlines between month groups are placed by nth-child, so
+     * the stylesheet has to know the rows gained a leading cell.
+     */
+    if (dom.monthlyTrendTable) {
+        dom.monthlyTrendTable.classList.toggle(
+            "monthly-trend__table--with-maker",
+            Boolean(pivot.multi)
+        );
+    }
+
     if (dom.trendDownloadButton) {
         dom.trendDownloadButton.disabled = pivot.rows.length === 0;
     }
@@ -3558,11 +3806,17 @@ function renderMonthlyTrend(pivot) {
 
     if (dom.monthlyTrendHead) {
 
+        /* The Maker column only appears when there is one to tell apart. */
+        const makerHead = pivot.multi
+            ? '<th rowspan="2" class="monthly-trend__maker-head">Maker</th>'
+            : "";
+
         dom.monthlyTrendHead.innerHTML = `
             <tr>
                 <th rowspan="2" class="monthly-trend__year-head">
                     Fiscal Year
                 </th>
+                ${makerHead}
                 ${months.map(month => `
                     <th colspan="3" class="monthly-trend__month-head">
                         ${month.label}
@@ -3596,8 +3850,14 @@ function renderMonthlyTrend(pivot) {
          * uses for the column class.
          */
         dom.monthlyTrendBody.innerHTML = pivot.rows.map(row => `
-            <tr>
+            <tr${row.firstOfYear && pivot.multi
+                ? ' class="monthly-trend__group-start"'
+                : ""}>
                 <th scope="row" class="monthly-trend__year">${row.label}</th>
+                ${pivot.multi
+                    ? `<td class="monthly-trend__maker" title="${
+                        escapeHtml(row.maker)}">${escapeHtml(row.maker)}</td>`
+                    : ""}
                 ${row.months.map(cell => monthlyCell(cell)).join("")}
                 ${monthlyCell(row.total, "monthly-trend__total-cell")}
             </tr>
@@ -3606,9 +3866,17 @@ function renderMonthlyTrend(pivot) {
 
     if (dom.monthlyTrendFoot) {
 
+        /*
+         * With several makers the footer is their combined volume,
+         * so it is labelled as such rather than left ambiguous.
+         */
         dom.monthlyTrendFoot.innerHTML = `
             <tr>
                 <th scope="row" class="monthly-trend__year">Total</th>
+                ${pivot.multi
+                    ? `<td class="monthly-trend__maker">All ${
+                        pivot.makers.length} selected</td>`
+                    : ""}
                 ${pivot.totals.map(cell => monthlyCell(cell)).join("")}
                 ${monthlyCell(pivot.grandTotal, "monthly-trend__total-cell")}
             </tr>
@@ -3649,8 +3917,14 @@ function resetTrendForScope() {
     state.monthly.scope = scope;
     state.monthly.makers = null;
 
-    /* A maker absent from the new scope falls back to All Makers. */
-    state.trendMaker = CONFIG.ALL;
+    /* Makers absent from the new scope fall back to All Makers. */
+    state.trendMakers = [];
+
+    const combo = combos.get(dom.trendMakerFilter);
+
+    if (combo) {
+        combo.values = [];
+    }
 }
 
 
@@ -3703,13 +3977,50 @@ async function loadMonthlyTrend(signal) {
             loadTrendMakerOptions(signal)
         ]);
 
-        const selectedRows = isAll(state.trendMaker)
-            ? industryRows
-            : await getMonthlyForMaker(state.trendMaker, valueColumns, signal);
+        /*
+         * No maker chosen means the selection is the whole industry,
+         * so the same rows serve as both sides and nothing more is
+         * fetched. Otherwise every chosen maker comes back in one
+         * request and is split apart by name here.
+         */
+        let series;
+
+        if (state.trendMakers.length === 0) {
+
+            series = [{ maker: null, rows: industryRows }];
+
+        } else {
+
+            const rows = await getMonthlyForMakers(
+                state.trendMakers,
+                valueColumns,
+                signal
+            );
+
+            const byMaker = new Map(
+                state.trendMakers.map(maker => [maker, []])
+            );
+
+            rows.forEach(row => {
+
+                const bucket = byMaker.get(
+                    row[state.monthly.schema.entityColumn]
+                );
+
+                if (bucket) {
+                    bucket.push(row);
+                }
+            });
+
+            series = state.trendMakers.map(maker => ({
+                maker,
+                rows: byMaker.get(maker) || []
+            }));
+        }
 
         const pivot = buildMonthlyPivot(
             industryRows,
-            selectedRows,
+            series,
             valueColumns
         );
 
@@ -3723,7 +4034,7 @@ async function loadMonthlyTrend(signal) {
         if (dom.monthlyTrendHint) {
 
             const unnarrowed =
-                isAll(state.trendMaker) && isAll(state.trendClass);
+                state.trendMakers.length === 0 && isAll(state.trendClass);
 
             dom.monthlyTrendHint.hidden = !unnarrowed;
 
@@ -3829,6 +4140,22 @@ const CONTROL_CHARACTERS = new RegExp(
     "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]",
     "g"
 );
+
+
+/*
+ * Maker names come from the database and are written into innerHTML,
+ * so they are escaped rather than trusted. Vahan has names carrying
+ * ampersands - "TATA MOTORS LTD & CO" - which would otherwise break
+ * the markup even with nothing malicious involved.
+ */
+function escapeHtml(value) {
+
+    return String(value === null || value === undefined ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
 
 
 function xmlEscape(value) {
@@ -4204,7 +4531,9 @@ function activeFilterSummary({ trend = false } = {}) {
     if (trend) {
 
         parts.push(
-            `Maker: ${isAll(state.trendMaker) ? "All" : state.trendMaker}`,
+            `Maker: ${state.trendMakers.length === 0
+                ? "All"
+                : state.trendMakers.join(", ")}`,
             `Class: ${isAll(state.trendClass) ? "All" : state.trendClass}`
         );
 
@@ -4341,8 +4670,13 @@ async function exportTrendTable() {
     const groups = [...months.map(month => month.label), "Total"];
 
     /* Row 5 spans each group across its three columns; row 6 names them. */
-    const groupRow = [""];
-    const subRow = [{ value: "Fiscal Year", style: 1 }];
+    const lead = pivot.multi ? 2 : 1;
+
+    const groupRow = pivot.multi ? ["", ""] : [""];
+
+    const subRow = pivot.multi
+        ? [{ value: "Fiscal Year", style: 1 }, { value: "Maker", style: 1 }]
+        : [{ value: "Fiscal Year", style: 1 }];
 
     groups.forEach(label => {
         groupRow.push({ value: label, style: 1 }, "", "");
@@ -4381,7 +4715,14 @@ async function exportTrendTable() {
 
     pivot.rows.forEach(row => {
 
-        const line = [row.label];
+        /*
+         * The screen prints the year once per block of makers; a
+         * spreadsheet gets sorted and filtered, so every row carries
+         * its own year.
+         */
+        const line = pivot.multi
+            ? [fiscalYearLabel(row.start), row.maker]
+            : [row.label];
 
         row.months.forEach(cell => line.push(...cellsFor(cell)));
         line.push(...cellsFor(row.total));
@@ -4389,7 +4730,12 @@ async function exportTrendTable() {
         sheet.push(line);
     });
 
-    const footer = [{ value: "Total", style: 2 }];
+    const footer = pivot.multi
+        ? [
+            { value: "Total", style: 2 },
+            { value: `All ${pivot.makers.length} selected`, style: 2 }
+        ]
+        : [{ value: "Total", style: 2 }];
 
     pivot.totals.forEach(cell =>
         cellsFor(cell).forEach(value =>
@@ -4414,16 +4760,20 @@ async function exportTrendTable() {
     /* Merge each group label across its three columns, on row 5. */
     const merges = groups.map((label, index) => {
 
-        const first = 1 + index * 3;
+        const first = lead + index * 3;
 
         return `${columnLetter(first)}5:${columnLetter(first + 2)}5`;
     });
+
+    const widths = pivot.multi
+        ? [14, 40, ...groups.flatMap(() => [12, 12, 8])]
+        : [14, ...groups.flatMap(() => [12, 12, 8])];
 
     await downloadWorkbook(
         exportFileName("trend"),
         `Trend ${currentView().scopeLabel}`.slice(0, 31),
         sheet,
-        { merges, widths: [14, ...groups.flatMap(() => [12, 12, 8])] }
+        { merges, widths }
     );
 }
 
@@ -4762,7 +5112,14 @@ async function resetFilters() {
         }
     });
 
-    state.trendMaker = CONFIG.ALL;
+    state.trendMakers = [];
+
+    const trendCombo = combos.get(dom.trendMakerFilter);
+
+    if (trendCombo) {
+        trendCombo.values = [];
+    }
+
     state.trendClass = CONFIG.ALL;
 
     refreshAllCombos();
@@ -5167,9 +5524,7 @@ function setupFilterListeners() {
 
             element.addEventListener("change", async () => {
 
-                state.trendMaker = dom.trendMakerFilter
-                    ? dom.trendMakerFilter.value
-                    : CONFIG.ALL;
+                state.trendMakers = comboValues(dom.trendMakerFilter);
 
                 state.trendClass = dom.trendClassFilter
                     ? dom.trendClassFilter.value
