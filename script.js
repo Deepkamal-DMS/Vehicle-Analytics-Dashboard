@@ -4370,7 +4370,7 @@ function xlsxParts(sheetName, sheetXml) {
  * most of them a zero, which stores at about 4 MB and deflates to a
  * few hundred KB.
  */
-async function deflateRaw(bytes) {
+async function deflate(bytes, format) {
 
     if (typeof CompressionStream === "undefined") {
         return null;
@@ -4380,7 +4380,7 @@ async function deflateRaw(bytes) {
 
         const stream = new Blob([bytes])
             .stream()
-            .pipeThrough(new CompressionStream("deflate-raw"));
+            .pipeThrough(new CompressionStream(format));
 
         return new Uint8Array(await new Response(stream).arrayBuffer());
 
@@ -4390,6 +4390,27 @@ async function deflateRaw(bytes) {
 
         return null;
     }
+}
+
+
+/*
+ * ZIP method 8 is RAW deflate - RFC 1951, no wrapper.
+ */
+function deflateRaw(bytes) {
+
+    return deflate(bytes, "deflate-raw");
+}
+
+
+/*
+ * PDF's /FlateDecode is ZLIB deflate - RFC 1950, the two-byte
+ * header and trailing Adler-32 included. This is not the same
+ * thing as the ZIP above, and a reader handed raw deflate here
+ * silently renders a blank page rather than reporting an error.
+ */
+function deflateZlib(bytes) {
+
+    return deflate(bytes, "deflate");
 }
 
 
@@ -4711,32 +4732,77 @@ function pdfTruncate(text, size, limit) {
  * A page of content, built as a PDF content stream. Cells are
  * { text, align, bold }, columns carry their widths.
  */
-function pdfPage(lines) {
+/*
+ * A cell is a string, or { text, span, align } where span merges
+ * that many columns - which is how a month's name sits centred over
+ * its IND / VOL / MS triplet, the way it does in the spreadsheet.
+ */
+function pdfCell(cell) {
 
-    return lines.join("\n");
+    if (cell === null || cell === undefined) {
+        return { text: "", span: 1, align: null };
+    }
+
+    if (typeof cell === "object") {
+        return {
+            text: cell.text === undefined ? "" : String(cell.text),
+            span: cell.span || 1,
+            align: cell.align || null
+        };
+    }
+
+    return { text: String(cell), span: 1, align: null };
 }
 
 
-function pdfDrawRow(cells, columns, x0, y, size, bold) {
+function pdfDrawRow(cells, columns, x0, y, size, bold, lead = 1) {
 
     const parts = [`BT /${bold ? "F2" : "F1"} ${size} Tf`];
 
     let x = x0;
+    let column = 0;
 
-    cells.forEach((cell, index) => {
+    cells.forEach((raw, index) => {
 
-        const width = columns[index];
-        const text = pdfTruncate(cell === null ? "" : cell, size, width - 6);
+        const cell = pdfCell(raw);
 
-        /* Numbers right-align under their headings; names do not. */
-        const right = index > 0;
+        let width = 0;
 
-        const at = right
-            ? x + width - 3 - pdfTextWidth(text, size)
-            : x + 3;
+        for (let n = 0; n < cell.span && column + n < columns.length; n += 1) {
+            width += columns[column + n];
+        }
 
-        parts.push(`1 0 0 1 ${at.toFixed(2)} ${y.toFixed(2)} Tm`);
-        parts.push(`(${pdfEscape(text)}) Tj`);
+        column += cell.span;
+
+        if (cell.text !== "") {
+
+            const text = pdfTruncate(cell.text, size, width - 6);
+
+            /*
+             * Numbers right-align under their headings; the leading
+             * label columns do not. A span always centres, since the
+             * only spanning cell is a group heading.
+             */
+            /*
+             * Numbers right-align under their headings; the leading
+             * label columns - fiscal year, maker - read left. A span
+             * always centres, since the only spanning cell is a
+             * group heading.
+             */
+            const align = cell.align ||
+                (cell.span > 1 ? "center" : index < lead ? "left" : "right");
+
+            let at = x + 3;
+
+            if (align === "right") {
+                at = x + width - 3 - pdfTextWidth(text, size);
+            } else if (align === "center") {
+                at = x + (width - pdfTextWidth(text, size)) / 2;
+            }
+
+            parts.push(`1 0 0 1 ${at.toFixed(2)} ${y.toFixed(2)} Tm`);
+            parts.push(`(${pdfEscape(text)}) Tj`);
+        }
 
         x += width;
     });
@@ -4749,27 +4815,36 @@ function pdfDrawRow(cells, columns, x0, y, size, bold) {
 
 /*
  * Splits the columns into bands that each fit the printable width.
- * The first column - the maker, or the fiscal year - repeats on
- * every band so a page of numbers is never anonymous.
+ * The lead columns repeat on every band so a page of numbers is
+ * never anonymous, and a band never splits a group - the three
+ * cells under one month stay together.
  */
-function pdfBands(widths, available) {
+function pdfBands(widths, available, lead, groupSize) {
 
-    const lead = widths[0];
+    const leadWidth = widths.slice(0, lead).reduce((a, b) => a + b, 0);
     const bands = [];
 
     let current = [];
-    let used = lead;
+    let used = leadWidth;
 
-    for (let index = 1; index < widths.length; index += 1) {
+    for (let index = lead; index < widths.length; index += groupSize) {
 
-        if (used + widths[index] > available && current.length > 0) {
-            bands.push(current);
-            current = [];
-            used = lead;
+        const group = [];
+        let groupWidth = 0;
+
+        for (let n = 0; n < groupSize && index + n < widths.length; n += 1) {
+            group.push(index + n);
+            groupWidth += widths[index + n];
         }
 
-        current.push(index);
-        used += widths[index];
+        if (used + groupWidth > available && current.length > 0) {
+            bands.push(current);
+            current = [];
+            used = leadWidth;
+        }
+
+        current.push(...group);
+        used += groupWidth;
     }
 
     if (current.length > 0) {
@@ -4781,44 +4856,90 @@ function pdfBands(widths, available) {
 
 
 /*
- * rows[0] is the header. Every other row is body, except any listed
- * in options.footRows, which are drawn in bold with a rule above.
+ * rows[0 .. headerCount - 1] are the header, repeated on every
+ * page. Any row listed in options.footRows is drawn in bold under
+ * a rule.
  */
 async function buildPdf(title, subtitle, rows, widths, options = {}) {
 
+    const lead = options.lead || 1;
+    const groupSize = options.groupSize || 1;
+    const headerCount = options.headerCount || 1;
     const foot = new Set(options.footRows || []);
 
     const printWidth = PDF_PAGE.width - PDF_MARGIN.left - PDF_MARGIN.right;
-    const bands = pdfBands(widths, printWidth);
+    const bands = pdfBands(widths, printWidth, lead, groupSize);
 
     const bodyTop = PDF_PAGE.height - PDF_MARGIN.top - 26;
+
     const perPage = Math.floor(
-        (bodyTop - PDF_MARGIN.bottom - PDF_ROW_HEIGHT) / PDF_ROW_HEIGHT
+        (bodyTop - PDF_MARGIN.bottom - headerCount * PDF_ROW_HEIGHT) /
+        PDF_ROW_HEIGHT
     );
 
-    const header = rows[0];
-    const body = rows.slice(1);
+    const headers = rows.slice(0, headerCount);
+    const body = rows.slice(headerCount);
 
     const pages = [];
 
+    /*
+     * A header cell may span its group, so the cells for a band are
+     * picked by walking the row and keeping whatever covers a wanted
+     * column. Plain rows are one cell per column and fall out of the
+     * same walk.
+     */
+    const pickCells = (row, band) => {
+
+        const wanted = new Set(band);
+        const out = [];
+
+        let column = 0;
+
+        row.forEach(raw => {
+
+            const cell = pdfCell(raw);
+            const covers = [];
+
+            for (let n = 0; n < cell.span; n += 1) {
+                covers.push(column + n);
+            }
+
+            column += cell.span;
+
+            if (covers[0] < lead) {
+                out.push(raw);
+                return;
+            }
+
+            const kept = covers.filter(index => wanted.has(index));
+
+            if (kept.length > 0) {
+                out.push(cell.span > 1 ? { ...pdfCell(raw), span: kept.length } : raw);
+            }
+        });
+
+        return out;
+    };
+
     bands.forEach((band, bandIndex) => {
 
-        const columns = [widths[0], ...band.map(index => widths[index])];
-        const pick = row => [row[0], ...band.map(index => row[index])];
+        const columns = widths.slice(0, lead)
+            .concat(band.map(index => widths[index]));
+
+        const bandWidth = columns.reduce((a, b) => a + b, 0);
 
         for (let from = 0; from < body.length; from += perPage) {
 
             const slice = body.slice(from, from + perPage);
-            const lines = [];
+            const out = [];
 
-            /* Title, then the filters it was taken under. */
-            lines.push(
+            out.push(
                 `BT /F2 ${PDF_TITLE_SIZE} Tf 1 0 0 1 ${PDF_MARGIN.left} ` +
                 `${PDF_PAGE.height - PDF_MARGIN.top} Tm ` +
                 `(${pdfEscape(title)}) Tj ET`
             );
 
-            lines.push(
+            out.push(
                 `BT /F1 7 Tf 0.35 0.4 0.47 rg 1 0 0 1 ${PDF_MARGIN.left} ` +
                 `${PDF_PAGE.height - PDF_MARGIN.top - 13} Tm ` +
                 `(${pdfEscape(subtitle)}) Tj ET 0 0 0 rg`
@@ -4826,58 +4947,82 @@ async function buildPdf(title, subtitle, rows, widths, options = {}) {
 
             let y = bodyTop;
 
-            /* Header row, on a light band. */
-            lines.push("0.94 0.96 0.99 rg");
-            lines.push(
-                `${PDF_MARGIN.left} ${(y - 3.5).toFixed(2)} ` +
-                `${columns.reduce((a, b) => a + b, 0).toFixed(2)} ` +
-                `${PDF_ROW_HEIGHT.toFixed(2)} re f`
+            /* The header rows sit on one tinted band. */
+            out.push("0.93 0.95 0.98 rg");
+            out.push(
+                `${PDF_MARGIN.left} ` +
+                `${(y - 3.5 - (headerCount - 1) * PDF_ROW_HEIGHT).toFixed(2)} ` +
+                `${bandWidth.toFixed(2)} ` +
+                `${(PDF_ROW_HEIGHT * headerCount).toFixed(2)} re f`
             );
-            lines.push("0 0 0 rg");
+            out.push("0 0 0 rg");
 
-            lines.push(
-                pdfDrawRow(pick(header), columns, PDF_MARGIN.left, y,
-                    PDF_HEAD_SIZE, true)
+            headers.forEach(row => {
+                out.push(
+                    pdfDrawRow(pickCells(row, band), columns, PDF_MARGIN.left,
+                        y, PDF_HEAD_SIZE, true, lead)
+                );
+                y -= PDF_ROW_HEIGHT;
+            });
+
+            /* A rule under the header, and one above the footer row. */
+            out.push("0.78 0.82 0.88 RG 0.7 w");
+            out.push(
+                `${PDF_MARGIN.left} ${(y + PDF_ROW_HEIGHT - 3.5).toFixed(2)} m ` +
+                `${(PDF_MARGIN.left + bandWidth).toFixed(2)} ` +
+                `${(y + PDF_ROW_HEIGHT - 3.5).toFixed(2)} l S`
             );
-
-            y -= PDF_ROW_HEIGHT;
 
             slice.forEach((row, index) => {
 
-                const absolute = from + index + 1;
+                const absolute = from + index + headerCount;
                 const isFoot = foot.has(absolute);
 
+                /*
+                 * Every other row gets a whisper of tint. Enough to
+                 * follow a row across forty columns, not enough to
+                 * read as a highlight.
+                 */
+                if (!isFoot && index % 2 === 1) {
+                    out.push("0.975 0.98 0.988 rg");
+                    out.push(
+                        `${PDF_MARGIN.left} ${(y - 3.5).toFixed(2)} ` +
+                        `${bandWidth.toFixed(2)} ${PDF_ROW_HEIGHT.toFixed(2)} re f`
+                    );
+                    out.push("0 0 0 rg");
+                }
+
                 if (isFoot) {
-                    lines.push("0.8 0.84 0.9 RG 0.6 w");
-                    lines.push(
+                    out.push("0.78 0.82 0.88 RG 0.7 w");
+                    out.push(
                         `${PDF_MARGIN.left} ${(y + PDF_ROW_HEIGHT - 3.5).toFixed(2)} m ` +
-                        `${(PDF_MARGIN.left + columns.reduce((a, b) => a + b, 0)).toFixed(2)} ` +
+                        `${(PDF_MARGIN.left + bandWidth).toFixed(2)} ` +
                         `${(y + PDF_ROW_HEIGHT - 3.5).toFixed(2)} l S`
                     );
                 }
 
-                lines.push(
-                    pdfDrawRow(pick(row), columns, PDF_MARGIN.left, y,
-                        PDF_FONT_SIZE, isFoot)
+                out.push(
+                    pdfDrawRow(pickCells(row, band), columns, PDF_MARGIN.left,
+                        y, PDF_FONT_SIZE, isFoot, lead)
                 );
 
                 y -= PDF_ROW_HEIGHT;
             });
 
             const page = Math.floor(from / perPage) + 1;
-            const ofPages = Math.ceil(body.length / perPage);
+            const ofPages = Math.ceil(body.length / perPage) || 1;
 
-            lines.push(
+            out.push(
                 `BT /F1 6.5 Tf 0.55 0.58 0.63 rg 1 0 0 1 ${PDF_MARGIN.left} ` +
                 `${PDF_MARGIN.bottom - 12} Tm (` +
                 pdfEscape(
                     `Columns ${bandIndex + 1} of ${bands.length}` +
-                    `  ·  Rows page ${page} of ${ofPages}`
+                    `  \u00b7  Rows page ${page} of ${ofPages}`
                 ) +
                 ") Tj ET 0 0 0 rg"
             );
 
-            pages.push(pdfPage(lines));
+            pages.push(out.join("\n"));
         }
     });
 
@@ -4885,16 +5030,7 @@ async function buildPdf(title, subtitle, rows, widths, options = {}) {
 }
 
 
-/*
- * Objects 1..N, then the xref table. Assembled as bytes rather
- * than a string because the content streams are deflated and so
- * are not text at all - and because every offset in the xref is a
- * byte count. Get one wrong and no reader will open the file.
- *
- * Content streams are compressed for the same reason the xlsx
- * entries are: a full Details export is around 170,000 short text
- * runs, which is several megabytes written plainly.
- */
+
 async function assemblePdf(pages) {
 
     const encoder = new TextEncoder();
@@ -4952,7 +5088,7 @@ async function assemblePdf(pages) {
         );
 
         const raw = encoder.encode(pages[index]);
-        const packed = await deflateRaw(raw);
+        const packed = await deflateZlib(raw);
 
         const deflated = packed !== null && packed.length < raw.length;
         const data = deflated ? packed : raw;
@@ -5171,7 +5307,7 @@ async function exportDetailsPdf() {
         activeFilterSummary() + `  ·  ${rows.length} rows`,
         sheet,
         widths,
-        { footRows: [sheet.length - 1] }
+        { lead: 2, footRows: [sheet.length - 1] }
     );
 }
 
@@ -5193,36 +5329,56 @@ async function exportTrendPdf() {
         number => MONTH_TABLES.find(month => month.number === number)
     );
 
-    const head = pivot.multi
+    const groups = months.map(month => month.label).concat("Total");
+
+    const lead = pivot.multi ? 2 : 1;
+
+    /*
+     * Two header rows, as on screen and in the spreadsheet: the
+     * month spanning its triplet, then IND / VOL / MS beneath.
+     */
+    const groupRow = pivot.multi ? ["", ""] : [""];
+    const subRow = pivot.multi
         ? ["Fiscal Year", "Maker"]
         : ["Fiscal Year"];
 
-    const sheet = [
-        head.concat(months.map(month => month.label.slice(0, 3)), "Total")
-    ];
+    groups.forEach(label => {
+        groupRow.push({ text: label, span: 3 });
+        subRow.push("IND", "VOL", "MS");
+    });
 
-    const cellText = cell => {
+    const sheet = [groupRow, subRow];
+
+    const triplet = cell => {
 
         if (!cell) {
-            return "";
+            return ["", "", ""];
         }
 
         const share = cell.industry > 0
             ? (cell.selected / cell.industry) * 100
             : 0;
 
-        return `${formatIndianNumber(cell.industry)} / ` +
-            `${formatIndianNumber(cell.selected)} / ${share.toFixed(1)}%`;
+        return [
+            formatIndianNumber(cell.industry),
+            formatIndianNumber(cell.selected),
+            share.toFixed(1) + "%"
+        ];
     };
 
     pivot.rows.forEach(row => {
 
+        /*
+         * The screen prints the year once per block of makers; on
+         * paper a page break could separate them, so every row
+         * carries its own.
+         */
         const line = pivot.multi
             ? [fiscalYearLabel(row.start), row.maker]
             : [row.label];
 
-        row.months.forEach(cell => line.push(cellText(cell)));
-        line.push(cellText(row.total));
+        row.months.forEach(cell => line.push(...triplet(cell)));
+        line.push(...triplet(row.total));
 
         sheet.push(line);
     });
@@ -5231,23 +5387,26 @@ async function exportTrendPdf() {
         ? ["Total", `All ${pivot.makers.length} selected`]
         : ["Total"];
 
-    pivot.totals.forEach(cell => footer.push(cellText(cell)));
-    footer.push(cellText(pivot.grandTotal));
+    pivot.totals.forEach(cell => footer.push(...triplet(cell)));
+    footer.push(...triplet(pivot.grandTotal));
 
     sheet.push(footer);
 
-    const widths = pivot.multi
-        ? [56, 150, ...months.map(() => 108), 108]
-        : [64, ...months.map(() => 112), 112];
+    const widths = (pivot.multi ? [58, 172] : [66])
+        .concat(groups.flatMap(() => [46, 46, 34]));
 
     await downloadPdf(
         exportFileName("trend", "pdf"),
-        `Monthly Trend — ${currentView().scopeLabel}`,
-        activeFilterSummary({ trend: true }) +
-            "  ·  each cell is IND / VOL / MS",
+        `Monthly Trend \u2014 ${currentView().scopeLabel}`,
+        activeFilterSummary({ trend: true }),
         sheet,
         widths,
-        { footRows: [sheet.length - 1] }
+        {
+            lead,
+            groupSize: 3,
+            headerCount: 2,
+            footRows: [sheet.length - 1]
+        }
     );
 }
 

@@ -54,8 +54,16 @@
     --border-dark: #cbd5e1;
 
     /* Table */
-    --row-alt: #fbfcfe;
-    --row-hover: #f8fafc;
+    --row-alt: #f7f9fc;
+    --row-hover: #eef4ff;
+
+    /*
+     * Lighter than --border. Column rules have to separate without
+     * turning a wide table into graph paper, so they sit halfway
+     * between the row stripe and the border.
+     */
+    --grid-line: #eaeff5;
+    --head-bg: #f1f5fa;
 
     /* Sidebar */
     --sidebar: #0f172a;
@@ -1742,6 +1750,82 @@ so those repeat the row's own background.
     font-weight: 600;
 }
 
+
+/* =========================================================
+   TABLE LEGIBILITY
+
+   These tables are wide - up to 77 columns - and read as a
+   grey field without help. Three things do the work: a column
+   rule, a row stripe, and a header that is clearly a header.
+   All three are kept quiet; the numbers should be the loudest
+   thing on screen.
+   ========================================================= */
+
+/*
+ * Column rules on the Details table only. The trend already
+ * separates its month groups, and ruling every IND / VOL / MS
+ * cell there would be noise.
+ */
+.data-table:not(.monthly-trend__table) tbody td:not(:last-child),
+.data-table:not(.monthly-trend__table) thead th:not(:last-child),
+.data-table:not(.monthly-trend__table) tfoot td:not(:last-child),
+.data-table:not(.monthly-trend__table) tfoot th:not(:last-child) {
+    border-right: 1px solid var(--grid-line);
+}
+
+/*
+ * Row rules go the other way - lighter than the column rules,
+ * because the stripe is already carrying the row.
+ */
+.data-table tbody td,
+.data-table tbody th {
+    border-bottom-color: var(--grid-line);
+}
+
+/* A header should read as one band, not as more table rows. */
+.data-table thead th {
+    background: var(--head-bg);
+
+    padding-top: 9px;
+    padding-bottom: 9px;
+
+    box-shadow: inset 0 -2px 0 var(--border-dark);
+}
+
+.data-table thead th.sticky-left,
+.data-table thead th.sticky-right {
+    background: var(--head-bg);
+}
+
+/*
+ * Hover beats the stripe, and both beat the pinned columns
+ * repeating them - so the pinned cells are restated last.
+ */
+.data-table tbody tr:hover .sticky-left,
+.data-table tbody tr:hover .sticky-right {
+    background: var(--row-hover);
+}
+
+/* The entity name is what the eye tracks along a row. */
+.data-table tbody td.col-entity {
+    color: var(--text);
+
+    font-weight: 500;
+}
+
+/* Total closes the row, so it gets a rule and a tint of its own. */
+.data-table tbody td.col-total,
+.data-table thead th.col-total,
+.data-table tfoot td.col-total {
+    background: var(--surface-soft);
+
+    border-left: 1px solid var(--border);
+}
+
+.data-table tbody tr:hover td.col-total {
+    background: var(--row-hover);
+}
+
 /*
 The totals row pins to the bottom of the scroll area so it is
 readable without scrolling to the last page of rows.
@@ -2367,6 +2451,52 @@ rather than at the top of the scroll area.
 
 
 /* ---------------------------------------------------------------
+   Trend legibility
+
+   Forty columns of numbers in triplets. The month groups are
+   what the eye needs to find, so the rule between them is the
+   only strong line; inside a group the three cells are held
+   together by weight instead - IND plain, VOL solid, MS light.
+   --------------------------------------------------------------- */
+
+.monthly-trend__month-head:not(:first-of-type),
+.monthly-trend__sub:nth-child(3n + 1),
+.monthly-trend__table tbody td:nth-child(3n + 2),
+.monthly-trend__table tfoot td:nth-child(3n + 2) {
+    border-left: 1px solid var(--border-dark);
+}
+
+.monthly-trend__table--with-maker tbody td:nth-child(3n),
+.monthly-trend__table--with-maker tfoot td:nth-child(3n) {
+    border-left: 1px solid var(--border-dark);
+}
+
+/* The month name band, so the groups read as groups. */
+.monthly-trend__table thead th.monthly-trend__month-head {
+    background: var(--head-bg);
+
+    color: var(--text);
+
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+
+.monthly-trend__table thead th.monthly-trend__sub {
+    background: var(--surface-soft);
+}
+
+/* Row rules stay faint - the stripe already separates rows. */
+.monthly-trend__table tbody td,
+.monthly-trend__table tbody th {
+    border-bottom-color: var(--grid-line);
+}
+
+.monthly-trend__table tbody tr:nth-child(even) {
+    background: var(--row-alt);
+}
+
+
+/* ---------------------------------------------------------------
    Maker column
 
    Only present when the trend has more than one maker selected,
@@ -2578,8 +2708,20 @@ keeps them on one line well below the width where a fixed
     color: var(--text-muted);
 }
 
+/*
+ * No colour on hover. These two sit directly above the grid, and a
+ * border lighting up under the pointer read as though something had
+ * been selected. Focus still shows itself.
+ */
 .trend-filter .combo__input:hover:not(:disabled) {
-    border-color: var(--primary);
+    border-color: var(--border-dark);
+
+    /*
+     * The base rule is for the dark sidebar and sets a navy
+     * background. It out-specifies .trend-filter .combo__input, so
+     * these two - on a white card - turned dark under the pointer.
+     */
+    background-color: var(--surface);
 }
 
 .trend-filter .combo__input:focus {
