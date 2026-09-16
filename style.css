@@ -3,14 +3,12 @@
    File: /style.css
 
    VISUAL STYLE:
-   - Dark navy filter sidebar
-   - Clean white dashboard surface
+   - Deep navy header band, amber refresh stamp
+   - White filter rail with multi-select check lists
+   - Six-card KPI strip, one accent colour each
+   - Numbered white table cards on a cool grey page
+   - Navy table headings, blue totals, green growth
    - Poppins typography
-   - Professional blue accent system
-   - Rounded cards
-   - Compact enterprise dashboard spacing
-   - Searchable / polished filter controls
-   - Light and dark themes
    ========================================================= */
 
 
@@ -20,101 +18,74 @@
 
 :root {
 
-    /* Primary */
-    --primary: #2563eb;
-    --primary-dark: #1d4ed8;
-    --primary-soft: #eff6ff;
-    --primary-border: #bfdbfe;
+    /* Brand */
+    --navy: #0b2452;
+    --navy-deep: #081a3d;
+    --navy-mid: #143a7a;
+    --navy-soft: #1d4ea8;
+
+    --primary: #1e50d8;
+    --primary-dark: #1740b4;
+    --primary-soft: #eef3fe;
+    --primary-border: #c3d6fb;
+
+    /* Accents, one per KPI card */
+    --accent-blue: #1e50d8;
+    --accent-green: #0f9d58;
+    --accent-violet: #7c3aed;
+    --accent-amber: #d97706;
+    --accent-rose: #db2777;
+    --accent-indigo: #4338ca;
 
     /* Status */
-    --success: #16a34a;
-    --success-soft: #f0fdf4;
-
-    --danger: #dc2626;
-    --danger-soft: #fef2f2;
-    --danger-border: #fecaca;
-
-    --warning: #d97706;
-    --warning-soft: #fffbeb;
+    --success: #0f9d58;
+    --danger: #d92d20;
+    --danger-soft: #fef3f2;
+    --danger-border: #fecdca;
+    --warning-soft: #fffaeb;
 
     /* Page */
-    --page: #f5f7fb;
+    --page: #eef2f9;
     --surface: #ffffff;
-    --surface-soft: #f8fafc;
-    --surface-muted: #f1f5f9;
+    --surface-soft: #f7f9fd;
+    --surface-muted: #eef2f8;
 
     /* Text */
-    --text: #111827;
+    --text: #0f172a;
     --text-secondary: #475569;
-    --text-muted: #94a3b8;
-    --text-light: #cbd5e1;
+    --text-muted: #8a97ab;
 
     /* Borders */
-    --border: #e2e8f0;
-    --border-dark: #cbd5e1;
+    --border: #dbe3ef;
+    --border-soft: #e8edf6;
+    --border-strong: #c6d2e4;
 
     /* Table */
-    --row-alt: #f6f8fc;
-    --row-hover: #e8f0fe;
-
-    /*
-     * The pinned columns and the Total column carry a tint of their
-     * own so they read as anchors rather than as more data. Kept in
-     * the blue-grey family the rest of the page uses.
-     */
-    --col-pinned: #f4f7fb;
-    --col-pinned-alt: #eef2f8;
-    --col-accent: #f2f6fd;
-
-    /*
-     * Lighter than --border. Column rules have to separate without
-     * turning a wide table into graph paper, so they sit halfway
-     * between the row stripe and the border.
-     */
-    --grid-line: #e6ebf2;
-
-    /* Two header tones: the group band above, the labels below. */
-    --head-bg: #e9eff7;
-    --head-bg-soft: #f2f6fb;
-
-    /* Sidebar */
-    --sidebar: #0f172a;
-    --sidebar-soft: #172033;
-    --sidebar-hover: #1d293b;
-    --sidebar-border: #334155;
-    --sidebar-edge: #0b1220;
-
-    --sidebar-text: #f8fafc;
-    --sidebar-secondary: #cbd5e1;
-    --sidebar-muted: #94a3b8;
-    --sidebar-accent: #60a5fa;
+    --head-bg: #143a7a;
+    --head-text: #ffffff;
+    --row-alt: #f7f9fd;
+    --row-hover: #e9f0fd;
+    --total-row: #e6eefc;
+    --col-accent: #f2f6fe;
 
     /* Radius */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 18px;
-    --radius-xl: 20px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
 
     /* Shadows */
-    --shadow-xs:
-        0 1px 2px rgba(15, 23, 42, 0.04);
-
-    --shadow-sm:
-        0 2px 8px rgba(15, 23, 42, 0.05);
-
-    --shadow-md:
-        0 8px 24px rgba(15, 23, 42, 0.07);
-
-    --shadow-lg:
-        0 16px 40px rgba(15, 23, 42, 0.10);
+    --shadow-xs: 0 1px 2px rgba(11, 36, 82, 0.05);
+    --shadow-sm: 0 2px 8px rgba(11, 36, 82, 0.06);
+    --shadow-md: 0 6px 20px rgba(11, 36, 82, 0.09);
+    --shadow-lg: 0 18px 44px rgba(11, 36, 82, 0.18);
 
     /* Layout */
-    --sidebar-width: 300px;
-    --header-height: 76px;
-    --content-max-width: 1600px;
+    --rail-width: 252px;
+    --summary-width: 268px;
+    --gap: 14px;
 
     /* Animation */
-    --transition-fast: 150ms ease;
+    --transition-fast: 140ms ease;
     --transition-base: 220ms ease;
 }
 
@@ -131,152 +102,109 @@
 
 html {
     min-height: 100%;
-    scroll-behavior: smooth;
 }
 
 body {
+    margin: 0;
     min-width: 320px;
     min-height: 100vh;
-
-    margin: 0;
 
     background: var(--page);
     color: var(--text);
 
-    font-family:
-        "Poppins",
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
-
+    font-family: "Poppins", "Segoe UI", system-ui, -apple-system, sans-serif;
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.45;
 
     -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
 }
 
-button,
-input,
-select {
-    font: inherit;
+h1, h2, h3, p, ol, ul, figure {
+    margin: 0;
+}
+
+ol, ul {
+    padding: 0;
+    list-style: none;
 }
 
 button {
+    font: inherit;
+    color: inherit;
     cursor: pointer;
 }
 
-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-}
-
-select,
-input {
-    width: 100%;
-}
-
-a {
+input,
+select {
+    font: inherit;
     color: inherit;
 }
 
-h1,
-h2,
-h3,
-h4,
-p {
-    margin-top: 0;
+svg {
+    display: block;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 [hidden] {
     display: none !important;
 }
 
-.visually-hidden {
-    position: absolute !important;
-
-    width: 1px !important;
-    height: 1px !important;
-
-    padding: 0 !important;
-    margin: -1px !important;
-
-    overflow: hidden !important;
-
-    clip: rect(0, 0, 0, 0) !important;
-
-    white-space: nowrap !important;
-
-    border: 0 !important;
-}
-
 
 /* =========================================================
-   3. GLOBAL LOADING OVERLAY
+   3. LOADING OVERLAY
    ========================================================= */
 
 .loading-overlay {
     position: fixed;
     inset: 0;
-
-    z-index: 9999;
+    z-index: 200;
 
     display: grid;
     place-items: center;
 
-    padding: 24px;
-
-    background: rgba(245, 247, 251, 0.82);
-
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
+    background: rgba(238, 242, 249, 0.86);
+    backdrop-filter: blur(2px);
 }
 
 .loading-overlay__content {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 12px;
 
-    min-width: 210px;
+    padding: 18px 26px;
 
-    padding: 16px 19px;
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
 
-    color: var(--primary-dark);
-
-    background: rgba(255, 255, 255, 0.98);
-
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-
-    box-shadow: var(--shadow-lg);
-
-    font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .loading-spinner {
-    display: inline-block;
-
     width: 20px;
     height: 20px;
 
-    flex: 0 0 20px;
-
-    border: 2px solid var(--primary-border);
+    border: 2.5px solid var(--primary-border);
     border-top-color: var(--primary);
-
     border-radius: 50%;
 
-    animation: spin 0.75s linear infinite;
+    animation: spin 720ms linear infinite;
 }
 
 .loading-spinner--small {
-    width: 17px;
-    height: 17px;
-
-    flex-basis: 17px;
-
+    width: 15px;
+    height: 15px;
     border-width: 2px;
 }
 
@@ -291,33 +219,34 @@ p {
    4. HEADER
    ========================================================= */
 
-.dashboard-header {
-    position: relative;
-    z-index: 20;
-
-    min-height: var(--header-height);
+.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 60;
 
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 20px;
 
-    gap: 25px;
+    padding: 11px 20px;
 
-    padding: 14px 28px;
+    background:
+        linear-gradient(
+            100deg,
+            var(--navy-deep) 0%,
+            var(--navy) 42%,
+            #16418c 100%
+        );
 
-    background: var(--surface);
-
-    border-bottom: 1px solid var(--border);
-
-    box-shadow: var(--shadow-xs);
+    color: #ffffff;
+    box-shadow: 0 2px 14px rgba(8, 26, 61, 0.28);
 }
 
-.dashboard-header__brand {
+.app-header__brand {
     display: flex;
     align-items: center;
-
-    gap: 13px;
-
+    gap: 14px;
     min-width: 0;
 }
 
@@ -327,639 +256,602 @@ p {
 
     width: 42px;
     height: 42px;
+    flex: none;
 
-    flex: 0 0 42px;
-
-    color: #ffffff;
-
-    background: var(--primary);
-
-    border-radius: 12px;
-
-    box-shadow:
-        0 5px 14px rgba(37, 99, 235, 0.20);
-
-    font-size: 13px;
-    font-weight: 700;
-}
-
-#dashboard-title {
-    margin: 0;
-
-    color: var(--text);
-
-    font-size: clamp(19px, 2vw, 25px);
-    font-weight: 700;
-
-    line-height: 1.2;
-
-    letter-spacing: -0.025em;
-}
-
-.dashboard-header__subtitle {
-    margin: 4px 0 0;
-
-    color: var(--text-secondary);
-
-    font-size: 11px;
-}
-
-.dashboard-header__meta {
-    display: flex;
-    align-items: center;
-
-    gap: 18px;
-
-    flex-shrink: 0;
-}
-
-.data-period {
-    display: flex;
-    flex-direction: column;
-
-    gap: 1px;
-}
-
-.data-period__label {
-    color: var(--text-muted);
-
-    font-size: 9px;
-    font-weight: 600;
-
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-}
-
-#data-year-range {
-    color: var(--text);
-
-    font-size: 14px;
-    font-weight: 700;
-}
-
-.data-period__divider {
-    width: 1px;
-    height: 31px;
-
-    background: var(--border);
-}
-
-.unit-label {
-    color: var(--text-muted);
-
-    font-size: 10px;
-    font-weight: 500;
-
-    white-space: nowrap;
-}
-
-
-/* =========================================================
-   5. MAIN LAYOUT
-   ========================================================= */
-
-.dashboard-layout {
-    display: grid;
-
-    grid-template-columns:
-        var(--sidebar-width)
-        minmax(0, 1fr);
-
-    min-height:
-        calc(100vh - var(--header-height));
-}
-
-.filter-sidebar {
-    position: relative;
-
-    min-width: 0;
-
-    padding: 24px 18px;
-
-    background: var(--sidebar);
-
-    color: var(--sidebar-text);
-
-    border-right: 1px solid var(--sidebar-edge);
-
-    overflow: visible;
-}
-
-.dashboard-content {
-    min-width: 0;
-
-    width: 100%;
-    max-width: var(--content-max-width);
-
-    padding: 28px 30px 40px;
-
-    margin: 0 auto;
-
-    overflow-x: hidden;
-}
-
-.content-section {
-    margin-bottom: 22px;
-}
-
-
-/* =========================================================
-   6. SIDEBAR
-   ========================================================= */
-
-.filter-sidebar__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    gap: 12px;
-
-    margin-bottom: 22px;
-    padding: 2px 3px 17px;
-
-    border-bottom:
-        1px solid rgba(255, 255, 255, 0.08);
-}
-
-.filter-sidebar__header h2 {
-    margin: 3px 0 0;
+    background: rgba(255, 255, 255, 0.13);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 50%;
 
     color: #ffffff;
-
-    font-size: 17px;
-    font-weight: 600;
-
-    line-height: 1.2;
 }
 
-.filter-sidebar__icon {
-    display: grid;
-    place-items: center;
-
-    width: 34px;
-    height: 34px;
-
-    color: var(--sidebar-accent);
-
-    background: rgba(37, 99, 235, 0.14);
-
-    border:
-        1px solid rgba(96, 165, 250, 0.16);
-
-    border-radius: 9px;
+.app-header__titles {
+    min-width: 0;
 }
 
-.section-eyebrow {
-    display: block;
-
-    color: var(--sidebar-accent);
-
-    font-size: 9px;
+.app-header h1 {
+    font-size: 19px;
     font-weight: 700;
-
+    letter-spacing: 0.02em;
     line-height: 1.2;
-
-    text-transform: uppercase;
-    letter-spacing: 0.13em;
-}
-
-
-/* =========================================================
-   FILTER FORM
-
-   Layout is driven by classes, not :nth-child, so adding or
-   removing a filter cannot silently break the grid.
-   ========================================================= */
-
-.filter-form {
-    display: grid;
-
-    grid-template-columns:
-        minmax(0, 1fr)
-        minmax(0, 1fr);
-
-    column-gap: 10px;
-    row-gap: 16px;
-}
-
-.filter-form > .filter-group,
-.filter-form > .year-range-filters,
-.filter-form > .year-range-error,
-.filter-form > .filter-notice,
-.filter-form > .clear-filters-button {
-    grid-column: 1 / -1;
-}
-
-
-/*
-From Year and To Year sit side by side, and stay side by side
-at every breakpoint.
-*/
-
-.year-range-filters {
-    display: grid;
-
-    grid-template-columns:
-        minmax(0, 1fr)
-        minmax(0, 1fr);
-
-    column-gap: 10px;
-}
-
-.year-range-error {
-    margin: -6px 0 0;
-
-    color: #fca5a5;
-
-    font-size: 10px;
-    font-weight: 600;
-
-    line-height: 1.45;
-}
-
-.filter-group {
-    display: flex;
-    flex-direction: column;
-
-    gap: 7px;
-
-    min-width: 0;
-}
-
-.filter-group label {
-    color: var(--sidebar-secondary);
-
-    font-size: 11px;
-    font-weight: 600;
-}
-
-
-/* =========================================================
-   FILTER NOTICE
-   ========================================================= */
-
-.filter-notice {
-    margin: 0;
-
-    padding: 9px 11px;
-
-    color: var(--sidebar-secondary);
-
-    background: rgba(96, 165, 250, 0.08);
-
-    border: 1px solid rgba(96, 165, 250, 0.18);
-    border-left: 3px solid var(--sidebar-accent);
-
-    border-radius: var(--radius-sm);
-
-    font-size: 10px;
-    line-height: 1.55;
-}
-
-
-/* =========================================================
-   SIDEBAR SELECTS
-   ========================================================= */
-
-.filter-group select {
-    min-height: 43px;
-
-    padding: 9px 34px 9px 12px;
-
-    color: #e2e8f0;
-
-    background-color: var(--sidebar-soft);
-
-    border: 1px solid var(--sidebar-border);
-
-    border-radius: var(--radius-sm);
-
-    outline: none;
-
-    appearance: none;
-
-    background-image:
-        linear-gradient(
-            45deg,
-            transparent 50%,
-            #94a3b8 50%
-        ),
-        linear-gradient(
-            135deg,
-            #94a3b8 50%,
-            transparent 50%
-        );
-
-    background-position:
-        calc(100% - 14px) 18px,
-        calc(100% - 9px) 18px;
-
-    background-size:
-        5px 5px,
-        5px 5px;
-
-    background-repeat: no-repeat;
-
-    transition:
-        border-color var(--transition-fast),
-        box-shadow var(--transition-fast),
-        background-color var(--transition-fast);
-}
-
-.filter-group select:hover:not(:disabled) {
-    border-color: #475569;
-
-    background-color: var(--sidebar-hover);
-}
-
-.filter-group select:focus {
-    border-color: var(--sidebar-accent);
-
-    background-color: var(--sidebar-hover);
-
-    box-shadow:
-        0 0 0 3px rgba(96, 165, 250, 0.12);
-}
-
-.filter-group select:disabled {
-    color: #64748b;
-
-    background-color: #111827;
-
-    cursor: not-allowed;
-}
-
-.filter-group select option {
-    color: #e2e8f0;
-
-    background: var(--sidebar);
-}
-
-
-/* =========================================================
-   SEARCHABLE FILTER DROPDOWN
-
-   The combobox stands in for the native select, which stays
-   in the DOM holding the value.
-   ========================================================= */
-
-.combo {
-    position: relative;
-
-    min-width: 0;
-}
-
-/*
-The real <select>: still present and still the source of
-truth, just not visible or focusable.
-*/
-
-.combo__native {
-    position: absolute !important;
-
-    width: 1px !important;
-    height: 1px !important;
-
-    padding: 0 !important;
-    margin: -1px !important;
-
-    overflow: hidden !important;
-
-    clip: rect(0, 0, 0, 0) !important;
-
-    border: 0 !important;
-
-    pointer-events: none;
-}
-
-.combo__input {
-    width: 100%;
-
-    min-height: 43px;
-
-    padding: 9px 34px 9px 12px;
-
-    color: #e2e8f0;
-
-    background-color: var(--sidebar-soft);
-
-    border: 1px solid var(--sidebar-border);
-    border-radius: var(--radius-sm);
-
-    outline: none;
-
-    text-overflow: ellipsis;
-
-    /* Matches the arrow drawn on the native selects. */
-    background-image:
-        linear-gradient(
-            45deg,
-            transparent 50%,
-            #94a3b8 50%
-        ),
-        linear-gradient(
-            135deg,
-            #94a3b8 50%,
-            transparent 50%
-        );
-
-    background-position:
-        calc(100% - 14px) 18px,
-        calc(100% - 9px) 18px;
-
-    background-size:
-        5px 5px,
-        5px 5px;
-
-    background-repeat: no-repeat;
-
-    transition:
-        border-color var(--transition-fast),
-        box-shadow var(--transition-fast),
-        background-color var(--transition-fast);
-}
-
-.combo__input::placeholder {
-    color: #94a3b8;
-
-    opacity: 1;
-}
-
-.combo__input:hover:not(:disabled) {
-    border-color: #475569;
-
-    background-color: var(--sidebar-hover);
-}
-
-.combo__input:focus {
-    border-color: var(--sidebar-accent);
-
-    background-color: var(--sidebar-hover);
-
-    box-shadow:
-        0 0 0 3px rgba(96, 165, 250, 0.12);
-}
-
-.combo__input:disabled {
-    color: #64748b;
-
-    background-color: #111827;
-
-    cursor: not-allowed;
-}
-
-.combo__list {
-    position: absolute;
-    z-index: 40;
-
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-
-    max-height: 260px;
-
-    margin: 0;
-    padding: 4px;
-
-    overflow-y: auto;
-
-    list-style: none;
-
-    background: var(--sidebar);
-
-    border: 1px solid var(--sidebar-border);
-    border-radius: var(--radius-sm);
-
-    box-shadow:
-        0 12px 28px rgba(2, 6, 23, 0.55);
-}
-
-.combo__option {
-    padding: 8px 10px;
-
-    color: #cbd5e1;
-
-    border-radius: 6px;
-
-    font-size: 11px;
-
-    cursor: pointer;
 
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.combo__option--active {
-    color: #ffffff;
+.app-header__crumbs {
+    margin-top: 2px;
 
-    background: var(--sidebar-hover);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.055em;
+
+    color: rgba(255, 255, 255, 0.72);
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.combo__option--selected {
-    color: var(--sidebar-accent);
+.app-header__crumbs span {
+    margin: 0 2px;
+    color: rgba(255, 255, 255, 0.4);
+}
 
+.app-header__meta {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex: none;
+}
+
+.refreshed {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.refreshed__icon {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.refreshed__label {
+    display: block;
+
+    font-size: 9.5px;
     font-weight: 600;
+    letter-spacing: 0.07em;
+
+    color: rgba(255, 255, 255, 0.68);
 }
 
-.combo__empty,
-.combo__more {
-    padding: 9px 10px;
+.refreshed__value {
+    display: block;
 
-    color: var(--sidebar-muted);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
 
-    font-size: 10px;
-
-    cursor: default;
-}
-
-.combo__more {
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
-
-    margin-top: 3px;
+    color: #fbbf24;
 }
 
 
-/* =========================================================
-   CLEAR FILTERS
-   ========================================================= */
+/* ---- Export menu ---- */
 
-.clear-filters-button {
+.export-menu {
+    position: relative;
+}
+
+.export-button {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-
     gap: 8px;
 
-    width: 100%;
+    padding: 8px 14px;
 
-    min-height: 42px;
-
-    margin-top: 5px;
-
-    padding: 9px 12px;
-
-    color: var(--sidebar-secondary);
-
-    background: transparent;
-
-    border:
-        1px solid var(--sidebar-border);
-
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: var(--radius-sm);
 
-    font-size: 11px;
+    color: #ffffff;
+    font-size: 12.5px;
     font-weight: 600;
 
     transition:
-        background-color var(--transition-fast),
-        border-color var(--transition-fast),
-        color var(--transition-fast),
-        transform var(--transition-fast);
+        background var(--transition-fast),
+        border-color var(--transition-fast);
 }
 
-.clear-filters-button:hover {
-    color: #ffffff;
-
-    background: var(--sidebar-soft);
-
-    border-color: #475569;
+.export-button:hover {
+    background: rgba(255, 255, 255, 0.17);
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
-.clear-filters-button:active {
-    transform: translateY(1px);
+.export-button__caret {
+    width: 0;
+    height: 0;
+
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
 }
 
-.clear-filters-button:focus-visible {
-    outline: 2px solid var(--sidebar-accent);
-    outline-offset: 2px;
+.export-menu__list {
+    position: absolute;
+    top: calc(100% + 7px);
+    right: 0;
+    z-index: 70;
+
+    min-width: 224px;
+    padding: 6px;
+
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+}
+
+.export-menu__list button {
+    display: block;
+    width: 100%;
+
+    padding: 8px 11px;
+
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+
+    color: var(--text);
+    font-size: 12.5px;
+    text-align: left;
+}
+
+.export-menu__list button:hover {
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+}
+
+.export-menu__separator {
+    height: 1px;
+    margin: 5px 8px;
+    background: var(--border-soft);
 }
 
 
 /* =========================================================
-   7. ERROR BANNER
+   5. SHELL
    ========================================================= */
+
+.app-shell {
+    display: grid;
+    grid-template-columns:
+        var(--rail-width)
+        minmax(0, 1fr)
+        var(--summary-width);
+
+    align-items: start;
+    gap: var(--gap);
+
+    padding: var(--gap);
+}
+
+.app-shell.is-collapsed {
+    grid-template-columns:
+        46px
+        minmax(0, 1fr)
+        var(--summary-width);
+}
+
+
+/* =========================================================
+   6. FILTER RAIL
+   ========================================================= */
+
+.filters {
+    position: sticky;
+    top: calc(64px + var(--gap));
+
+    max-height: calc(100vh - 64px - var(--gap) * 2);
+    overflow: hidden auto;
+
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+}
+
+.filters__head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 12px 12px 10px;
+
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.filters__icon {
+    color: var(--primary);
+}
+
+.filters__head h2 {
+    flex: 1;
+
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+
+    color: var(--text);
+}
+
+.filters__collapse {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    padding: 3px 6px;
+
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.filters__collapse:hover {
+    background: var(--surface-muted);
+    color: var(--primary);
+}
+
+.filters__form {
+    padding: 12px;
+}
+
+
+/* ---- Collapsed rail ---- */
+
+.is-collapsed .filters__head {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 6px;
+}
+
+.is-collapsed .filters__head h2,
+.is-collapsed .filters__collapse-text,
+.is-collapsed .filters__form {
+    display: none;
+}
+
+.is-collapsed .filters__collapse span[aria-hidden] {
+    transform: rotate(180deg);
+}
+
+
+/* ---- Filter block ---- */
+
+.filter-block {
+    margin-bottom: 14px;
+}
+
+.filter-block__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    margin-bottom: 6px;
+}
+
+.filter-block__icon {
+    color: var(--primary);
+}
+
+.filter-block__title {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+
+    color: var(--text);
+}
+
+.filter-block__hint {
+    font-size: 10px;
+    font-weight: 500;
+
+    color: var(--text-muted);
+}
+
+.filter-block__note {
+    margin-top: 5px;
+
+    font-size: 10.5px;
+    line-height: 1.4;
+
+    color: var(--text-muted);
+}
+
+
+/* ---- Scope select ---- */
+
+.filter-select {
+    width: 100%;
+
+    padding: 8px 28px 8px 10px;
+
+    background:
+        var(--surface)
+        url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238a97ab' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+        no-repeat right 10px center / 11px;
+
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+
+    font-size: 12.5px;
+
+    appearance: none;
+}
+
+.filter-select:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+}
+
+
+/* ---- Check list summary bar ---- */
+
+.filter-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+
+    width: 100%;
+    padding: 8px 10px;
+
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+
+    font-size: 12.5px;
+    text-align: left;
+}
+
+.filter-summary:hover {
+    border-color: var(--primary-border);
+}
+
+.filter-summary__caret {
+    flex: none;
+
+    width: 0;
+    height: 0;
+
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--text-muted);
+
+    transition: transform var(--transition-fast);
+}
+
+.filter-summary[aria-expanded="false"] .filter-summary__caret {
+    transform: rotate(-90deg);
+}
+
+.filter-summary[aria-expanded="false"] + .filter-panel {
+    display: none;
+}
+
+
+/* ---- Check list ---- */
+
+.filter-panel {
+    margin-top: 6px;
+}
+
+.filter-search {
+    width: 100%;
+    margin-bottom: 5px;
+    padding: 6px 9px;
+
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+
+    font-size: 12px;
+}
+
+.filter-search:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -1px;
+}
+
+.checklist {
+    display: grid;
+    gap: 1px;
+}
+
+.checklist--grid {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 6px;
+}
+
+.checklist--scroll {
+    max-height: 132px;
+    padding-right: 4px;
+
+    overflow-y: auto;
+
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    padding: 4px;
+}
+
+.checklist::-webkit-scrollbar,
+.filters::-webkit-scrollbar,
+.table-wrapper::-webkit-scrollbar,
+.modal__body::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.checklist::-webkit-scrollbar-thumb,
+.filters::-webkit-scrollbar-thumb,
+.table-wrapper::-webkit-scrollbar-thumb,
+.modal__body::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 4px;
+}
+
+.checklist__item label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+
+    padding: 3px 4px;
+
+    border-radius: 4px;
+
+    font-size: 12px;
+    line-height: 1.3;
+
+    cursor: pointer;
+}
+
+.checklist__item label:hover {
+    background: var(--primary-soft);
+}
+
+.checklist__item input {
+    flex: none;
+
+    width: 13px;
+    height: 13px;
+
+    accent-color: var(--primary);
+
+    cursor: pointer;
+}
+
+.checklist__item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.checklist__empty,
+.checklist__more {
+    padding: 6px 4px;
+
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+
+/* ---- Notice + actions ---- */
+
+.filter-notice {
+    margin-bottom: 12px;
+    padding: 8px 10px;
+
+    background: var(--warning-soft);
+    border: 1px solid #fde68a;
+    border-radius: var(--radius-sm);
+
+    font-size: 10.5px;
+    line-height: 1.45;
+
+    color: #92400e;
+}
+
+.filters__actions {
+    display: grid;
+    gap: 7px;
+
+    position: sticky;
+    bottom: 0;
+
+    padding-top: 4px;
+    background: var(--surface);
+}
+
+.apply-button,
+.reset-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+
+    padding: 9px 12px;
+
+    border-radius: var(--radius-sm);
+
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+
+    transition:
+        background var(--transition-fast),
+        border-color var(--transition-fast),
+        color var(--transition-fast);
+}
+
+.apply-button {
+    background: var(--primary);
+    border: 1px solid var(--primary);
+    color: #ffffff;
+}
+
+.apply-button:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+}
+
+.apply-button.is-dirty {
+    box-shadow: 0 0 0 3px rgba(30, 80, 216, 0.18);
+}
+
+.reset-button {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text-secondary);
+}
+
+.reset-button:hover {
+    border-color: var(--primary-border);
+    color: var(--primary);
+}
+
+
+/* =========================================================
+   7. CONTENT COLUMN
+   ========================================================= */
+
+.app-content {
+    display: grid;
+    gap: var(--gap);
+    min-width: 0;
+}
 
 .error-banner {
     display: flex;
     align-items: center;
-
     gap: 10px;
 
-    margin-bottom: 16px;
-
-    padding: 12px 14px;
-
-    color: var(--danger);
+    padding: 11px 14px;
 
     background: var(--danger-soft);
-
     border: 1px solid var(--danger-border);
-
     border-radius: var(--radius-md);
 
-    font-size: 11px;
-    font-weight: 500;
+    color: #912018;
+    font-size: 12.5px;
 }
 
 .error-banner__icon {
@@ -968,583 +860,306 @@ truth, just not visible or focusable.
 
     width: 20px;
     height: 20px;
-
-    flex: 0 0 20px;
-
-    color: #ffffff;
+    flex: none;
 
     background: var(--danger);
-
     border-radius: 50%;
 
-    font-size: 12px;
+    color: #ffffff;
     font-weight: 700;
 }
 
 .error-banner__retry {
     margin-left: auto;
-
-    padding: 6px 13px;
-
-    color: var(--danger);
+    padding: 5px 12px;
 
     background: var(--surface);
-
     border: 1px solid var(--danger-border);
-
     border-radius: var(--radius-sm);
 
-    font-size: 10px;
+    color: var(--danger);
+    font-size: 12px;
     font-weight: 600;
-
-    white-space: nowrap;
-
-    transition:
-        background-color var(--transition-fast),
-        color var(--transition-fast);
-}
-
-.error-banner__retry:hover {
-    color: #ffffff;
-
-    background: var(--danger);
 }
 
 
 /* =========================================================
-   9. SECTION HEADINGS
-   ========================================================= */
-
-.section-heading {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-
-    gap: 15px;
-
-    margin-bottom: 13px;
-}
-
-.section-heading h2 {
-    margin: 3px 0 0;
-
-    color: var(--text);
-
-    font-size: 18px;
-    font-weight: 700;
-
-    line-height: 1.3;
-
-    letter-spacing: -0.018em;
-}
-
-.section-heading--table {
-    padding: 0 0 13px;
-}
-
-
-/* =========================================================
-   10. KPI GRID
+   8. KPI STRIP
    ========================================================= */
 
 .kpi-grid {
     display: grid;
-
-    grid-template-columns:
-        repeat(4, minmax(0, 1fr));
-
-    gap: 15px;
-
-    margin-bottom: 22px;
-}
-
-.kpi-card {
-    position: relative;
-
-    display: flex;
-    align-items: center;
-
-    gap: 15px;
-
-    min-width: 0;
-    min-height: 125px;
-
-    padding: 19px;
-
-    overflow: hidden;
-
-    background: var(--surface);
-
-    border:
-        1px solid var(--border);
-
-    border-radius: var(--radius-lg);
-
-    box-shadow: var(--shadow-sm);
-
-    transition:
-        transform var(--transition-base),
-        box-shadow var(--transition-base),
-        border-color var(--transition-base);
-}
-
-.kpi-card:hover {
-    transform: translateY(-2px);
-
-    border-color: #d2dbe7;
-
-    box-shadow: var(--shadow-md);
-}
-
-.kpi-card::after {
-    position: absolute;
-
-    right: -25px;
-    bottom: -30px;
-
-    width: 95px;
-    height: 95px;
-
-    border-radius: 50%;
-
-    background: var(--primary-soft);
-
-    content: "";
-
-    opacity: 0.8;
-}
-
-.kpi-card__icon {
-    position: relative;
-    z-index: 1;
-
-    display: grid;
-    place-items: center;
-
-    flex: 0 0 45px;
-
-    width: 45px;
-    height: 45px;
-
-    color: var(--primary);
-
-    background: var(--primary-soft);
-
-    border-radius: 12px;
-
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.kpi-card__content {
-    position: relative;
-    z-index: 1;
-
-    min-width: 0;
-
-    display: flex;
-    flex-direction: column;
-}
-
-.kpi-card__label {
-    color: var(--text-muted);
-
-    font-size: 10px;
-    font-weight: 600;
-
-    line-height: 1.25;
-}
-
-.kpi-card__value {
-    display: block;
-
-    margin-top: 3px;
-
-    color: var(--text);
-
-    font-size: clamp(20px, 2vw, 25px);
-    font-weight: 700;
-
-    line-height: 1.15;
-
-    white-space: nowrap;
-
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.kpi-card__meta {
-    margin-top: 4px;
-
-    color: var(--success);
-
-    font-size: 9px;
-    font-weight: 600;
-}
-
-
-/* =========================================================
-   11. TABLE CARD
-   ========================================================= */
-
-.table-card {
-    overflow: hidden;
-
-    background: var(--surface);
-
-    border:
-        1px solid var(--border);
-
-    border-radius: var(--radius-lg);
-
-    box-shadow: var(--shadow-sm);
-}
-
-.table-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    gap: 12px;
-
-    padding: 13px 18px;
-
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-
-    background: var(--surface-soft);
-}
-
-.table-toolbar__left {
-    width: min(390px, 100%);
-}
-
-.table-toolbar__right {
-    flex-shrink: 0;
-
-    display: flex;
-    align-items: center;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 10px;
 }
 
-.result-count {
-    color: var(--text-muted);
+.kpi-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
 
-    font-size: 10px;
-    font-weight: 600;
-
-    white-space: nowrap;
-}
-
-
-/* =========================================================
-   DOWNLOAD BUTTON
-
-   One per table. Quiet by default - it sits beside the row
-   count, not competing with the data - and only picks up
-   colour on hover.
-   ========================================================= */
-
-.download-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-
-    padding: 6px 11px;
-
-    border: 1px solid var(--border);
-    border-radius: 7px;
+    padding: 12px;
 
     background: var(--surface);
-    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
 
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-
-    white-space: nowrap;
-    cursor: pointer;
-
-    transition:
-        background 0.15s ease,
-        border-color 0.15s ease,
-        color 0.15s ease;
-}
-
-.download-button:hover:not(:disabled) {
-    border-color: var(--primary);
-    background: var(--surface-soft);
-    color: var(--text);
-}
-
-.download-button:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
-/* Disabled while a table has nothing to write. */
-.download-button:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-}
-
-.download-button svg {
-    flex-shrink: 0;
-}
-
-
-/* =========================================================
-   SEARCH BOX
-   ========================================================= */
-
-/*
-Stack of maker search bars. The first row carries the "+"
-button, every added row carries a "-" button in the same slot,
-so the controls stay in one column.
-*/
-
-.search-list {
-    display: flex;
-    flex-direction: column;
-
-    gap: 8px;
-}
-
-.search-row {
-    display: flex;
-    align-items: center;
-
-    gap: 8px;
-}
-
-.search-row .search-box {
     min-width: 0;
-
-    flex: 1 1 auto;
 }
 
-.search-row__button {
+.kpi-card__icon {
     display: grid;
     place-items: center;
 
     width: 38px;
     height: 38px;
+    flex: none;
 
-    flex: 0 0 38px;
+    border-radius: 9px;
+}
 
-    padding: 0;
+.kpi-card__body {
+    min-width: 0;
+}
 
-    color: var(--text-secondary);
+.kpi-card__label {
+    display: block;
+    min-height: 2.4em;
 
-    background: var(--surface);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+}
 
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+.kpi-card__value {
+    display: block;
+    margin: 1px 0 3px;
 
-    font-size: 17px;
+    /* Six across, so the figure has to give a little as it narrows. */
+    font-size: clamp(15px, 1.25vw, 21px);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+
+    color: var(--text);
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kpi-card__delta {
+    display: block;
+
+    font-size: 10px;
+    color: var(--text-muted);
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kpi-card__delta strong {
     font-weight: 600;
-    line-height: 1;
-
-    transition:
-        background-color var(--transition-fast),
-        border-color var(--transition-fast),
-        color var(--transition-fast);
 }
 
-.search-row__button--add:hover:not(:disabled) {
-    color: var(--primary);
-
-    background: var(--primary-soft);
-
-    border-color: var(--primary-border);
+.kpi-card__delta .is-up {
+    color: var(--success);
 }
 
-.search-row__button--remove:hover {
+.kpi-card__delta .is-down {
     color: var(--danger);
-
-    background: var(--danger-soft);
-
-    border-color: var(--danger-border);
 }
 
-.search-row__button:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
+/* One accent per card, applied to the icon tile and the label. */
+.kpi-card--blue   .kpi-card__icon { background: #eaf0fe; color: var(--accent-blue); }
+.kpi-card--green  .kpi-card__icon { background: #e6f6ee; color: var(--accent-green); }
+.kpi-card--violet .kpi-card__icon { background: #f1eafe; color: var(--accent-violet); }
+.kpi-card--amber  .kpi-card__icon { background: #fdf1e0; color: var(--accent-amber); }
+.kpi-card--rose   .kpi-card__icon { background: #fdeaf3; color: var(--accent-rose); }
+.kpi-card--indigo .kpi-card__icon { background: #eaebfb; color: var(--accent-indigo); }
+
+/* A year range is the one value that is text rather than a figure,
+   and "2025 - 2026" does not fit the others' size. */
+.kpi-card--indigo .kpi-card__value {
+    font-size: clamp(13px, 1vw, 17px);
 }
 
-.search-box {
-    position: relative;
-
-    display: flex;
-    align-items: center;
-
-    width: 100%;
-}
-
-.search-box > svg {
-    position: absolute;
-
-    left: 11px;
-
-    color: var(--text-muted);
-
-    pointer-events: none;
-}
-
-.maker-search {
-    min-height: 38px;
-
-    padding: 9px 34px 9px 35px;
-
-    color: var(--text);
-
-    background: var(--surface);
-
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-
-    outline: none;
-
-    transition:
-        border-color var(--transition-fast),
-        box-shadow var(--transition-fast);
-}
-
-.maker-search::-webkit-search-cancel-button {
-    display: none;
-}
-
-.maker-search:hover {
-    border-color: var(--border-dark);
-}
-
-.maker-search:focus {
-    border-color: #93c5fd;
-
-    box-shadow:
-        0 0 0 3px rgba(37, 99, 235, 0.08);
-}
-
-.search-box__clear {
-    position: absolute;
-
-    right: 8px;
-
-    display: grid;
-    place-items: center;
-
-    width: 20px;
-    height: 20px;
-
-    padding: 0;
-
-    color: var(--text-muted);
-
-    background: transparent;
-
-    border: 0;
-    border-radius: 50%;
-
-    font-size: 15px;
-    line-height: 1;
-
-    transition:
-        background-color var(--transition-fast),
-        color var(--transition-fast);
-}
-
-.search-box__clear:hover {
-    color: var(--text);
-
-    background: var(--surface-muted);
-}
+.kpi-card--blue   .kpi-card__label { color: var(--accent-blue); }
+.kpi-card--green  .kpi-card__label { color: var(--accent-green); }
+.kpi-card--violet .kpi-card__label { color: var(--accent-violet); }
+.kpi-card--amber  .kpi-card__label { color: var(--accent-amber); }
+.kpi-card--rose   .kpi-card__label { color: var(--accent-rose); }
+.kpi-card--indigo .kpi-card__label { color: var(--accent-indigo); }
 
 
 /* =========================================================
-   12. TABLE STATES
+   9. TABLE CARDS
    ========================================================= */
+
+.table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
+
+    overflow: hidden;
+}
+
+.table-card__head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+
+    padding: 11px 13px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.table-card__badge {
+    display: grid;
+    place-items: center;
+
+    width: 21px;
+    height: 21px;
+    flex: none;
+
+    background: var(--primary);
+    border-radius: 50%;
+
+    color: #ffffff;
+    font-size: 11.5px;
+    font-weight: 700;
+}
+
+.table-card__head h2 {
+    flex: 1;
+    min-width: 0;
+
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.045em;
+
+    color: var(--navy-mid);
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.table-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: none;
+}
+
+.table-card__meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.download-button {
+    padding: 5px 11px;
+
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+
+    transition:
+        border-color var(--transition-fast),
+        color var(--transition-fast),
+        background var(--transition-fast);
+}
+
+.download-button:hover:not(:disabled) {
+    background: var(--primary-soft);
+    border-color: var(--primary-border);
+    color: var(--primary-dark);
+}
+
+.download-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.table-card__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.table-search {
+    width: 280px;
+    max-width: 100%;
+    padding: 6px 10px;
+
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+
+    font-size: 12px;
+}
+
+.table-search:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -1px;
+}
+
+.table-notice {
+    margin: 0;
+    padding: 8px 13px;
+
+    background: var(--warning-soft);
+    border-bottom: 1px solid #fde68a;
+
+    font-size: 11px;
+    color: #92400e;
+}
+
+.table-notice--inline {
+    flex: 1;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--text-muted);
+}
+
+
+/* ---- States ---- */
 
 .table-state {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 10px;
 
-    gap: 9px;
-
-    min-height: 210px;
-
-    padding: 30px;
-
-    text-align: center;
+    padding: 34px 16px;
 
     color: var(--text-muted);
-
-    font-size: 11px;
-}
-
-.table-state p {
-    margin: 0;
-}
-
-.table-state__icon {
-    display: grid;
-    place-items: center;
-
-    width: 48px;
-    height: 48px;
-
-    margin-bottom: 4px;
-
-    color: var(--text-muted);
-
-    background: var(--surface-soft);
-
-    border-radius: 50%;
-}
-
-.table-state--empty {
-    flex-direction: column;
+    font-size: 12.5px;
 }
 
 .table-state--error {
-    flex-direction: column;
-
     color: var(--danger);
-}
-
-.table-state--error .table-state__icon {
-    color: var(--danger);
-
-    background: var(--danger-soft);
-
-    font-size: 20px;
-    font-weight: 700;
-}
-
-.table-state--loading {
-    color: var(--text-muted);
 }
 
 
 /* =========================================================
-   13. DATA TABLE
+   10. DATA TABLES
    ========================================================= */
 
-/*
-Both axes scroll inside the wrapper, which is what lets the
-header, the totals row and the pinned columns stay put.
-*/
-
 .table-wrapper {
-    width: 100%;
-
-    max-height: min(66vh, 620px);
-
-    overflow: auto;
-
-    /* Establishes the containing block for sticky cells. */
-    position: relative;
+    overflow-x: auto;
 }
 
 .data-table {
@@ -1553,22 +1168,17 @@ header, the totals row and the pinned columns stay put.
     border-collapse: separate;
     border-spacing: 0;
 
-    table-layout: auto;
-
-    font-size: 11px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
 }
 
 .data-table th,
 .data-table td {
-    padding: 11px 14px;
+    padding: 8px 11px;
 
-    border-bottom:
-        1px solid var(--border);
+    border-bottom: 1px solid var(--border-soft);
 
     text-align: left;
-
-    vertical-align: middle;
-
     white-space: nowrap;
 }
 
@@ -1577,175 +1187,19 @@ header, the totals row and the pinned columns stay put.
     top: 0;
     z-index: 3;
 
-    color: var(--text-secondary);
+    background: var(--head-bg);
+    border-bottom: 0;
 
-    background: var(--surface-soft);
-
-    font-size: 9px;
-    font-weight: 700;
-
+    color: var(--head-text);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-
-    /*
-    Collapsed borders do not paint on sticky cells, so the
-    header rule is drawn with a shadow instead.
-    */
-    box-shadow: inset 0 -1px 0 var(--border);
 }
 
-
-/* =========================================================
-   FROZEN COLUMNS
-
-   Sr No. and the entity name pin left; Total pins right.
-   Widths are explicit so the left offset of the second
-   column is known.
-   ========================================================= */
-
-.col-index {
-    width: 62px;
-    min-width: 62px;
-
-    color: var(--text-muted);
-
+.data-table thead th.numeric,
+.data-table td.numeric {
     text-align: right;
-}
-
-.col-entity {
-    width: 250px;
-    min-width: 250px;
-    max-width: 250px;
-
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.col-value {
-    min-width: 152px;
-}
-
-.col-total {
-    width: 180px;
-    min-width: 180px;
-}
-
-.numeric-column {
-    text-align: right;
-
-    font-variant-numeric: tabular-nums;
-}
-
-/*
-Each numeric cell holds a count and its market share. Pushing
-them to opposite edges gives the column two readable rails - all
-counts down the left, all shares down the right - without
-doubling the number of columns.
-*/
-
-.data-table .cell-split {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.data-table .cell-amount {
-    text-align: left;
-}
-
-.data-table .cell-share {
-    color: var(--text-secondary);
-
-    /* Slightly recessed, so the count stays the primary figure. */
-    opacity: 0.95;
-
-    font-size: 10px;
-    font-weight: 500;
-
-    font-variant-numeric: tabular-nums;
-
-    text-align: right;
-}
-
-.sticky-left,
-.sticky-right {
-    position: sticky;
-    z-index: 2;
-
-    background: var(--surface);
-}
-
-.sticky-left--index {
-    left: 0;
-}
-
-.sticky-left--entity {
-    left: 62px;
-
-    /* Separates the frozen block from the scrolling columns. */
-    box-shadow: 1px 0 0 var(--border);
-}
-
-.sticky-right {
-    right: 0;
-
-    box-shadow: -1px 0 0 var(--border);
-}
-
-/*
-Header and footer corners overlap both a sticky row and a
-sticky column, so they need to win on both axes.
-*/
-
-.data-table thead th.sticky-left,
-.data-table thead th.sticky-right,
-.data-table tfoot th.sticky-left,
-.data-table tfoot td.sticky-left,
-.data-table tfoot td.sticky-right {
-    z-index: 5;
-}
-
-.data-table thead th.sticky-left,
-.data-table thead th.sticky-right {
-    background: var(--surface-soft);
-}
-
-/*
-Striped rows would otherwise show through the pinned cells,
-so those repeat the row's own background.
-*/
-
-.data-table tbody tr:nth-child(odd) .sticky-left,
-.data-table tbody tr:nth-child(odd) .sticky-right {
-    background: var(--surface);
-}
-
-.data-table tbody tr:nth-child(even) .sticky-left,
-.data-table tbody tr:nth-child(even) .sticky-right {
-    background: var(--row-alt);
-}
-
-.data-table tbody tr:hover .sticky-left,
-.data-table tbody tr:hover .sticky-right {
-    background: var(--row-hover);
-}
-
-.data-table tbody td.col-total {
-    color: var(--text);
-
-    font-weight: 700;
-}
-
-.data-table tbody td {
-    color: var(--text-secondary);
-
-    font-size: 11px;
-}
-
-.data-table tbody tr {
-    transition:
-        background-color var(--transition-fast);
 }
 
 .data-table tbody tr:nth-child(even) {
@@ -1756,1173 +1210,553 @@ so those repeat the row's own background.
     background: var(--row-hover);
 }
 
-.data-table tbody td:first-child {
-    color: var(--text);
+.data-table tbody td {
+    color: var(--text-secondary);
+}
 
+.data-table td.col-label {
+    color: var(--text);
+    font-weight: 500;
+
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.data-table .col-emphasis {
+    background: var(--col-accent);
+
+    color: var(--primary-dark);
+    font-weight: 700;
+}
+
+.data-table tbody tr:hover .col-emphasis {
+    background: #e3ecfc;
+}
+
+/*
+ * Scoped to the cell rather than left bare: `.data-table tbody td`
+ * sets a colour of its own and is the more specific selector, so an
+ * unscoped .is-up would never win.
+ */
+.data-table td.col-growth {
     font-weight: 600;
 }
 
-
-/* =========================================================
-   TABLE LEGIBILITY
-
-   These tables are wide - up to 77 columns - and read as a
-   grey field without help. Three things do the work: a column
-   rule, a row stripe, and a header that is clearly a header.
-   All three are kept quiet; the numbers should be the loudest
-   thing on screen.
-   ========================================================= */
-
-/*
- * Column rules on the Details table only. The trend already
- * separates its month groups, and ruling every IND / VOL / MS
- * cell there would be noise.
- */
-.data-table:not(.monthly-trend__table) tbody td:not(:last-child),
-.data-table:not(.monthly-trend__table) thead th:not(:last-child),
-.data-table:not(.monthly-trend__table) tfoot td:not(:last-child),
-.data-table:not(.monthly-trend__table) tfoot th:not(:last-child) {
-    border-right: 1px solid var(--grid-line);
+.data-table td.is-up,
+.data-table tfoot td.is-up,
+.is-up {
+    color: var(--success);
 }
 
-/*
- * Row rules go the other way - lighter than the column rules,
- * because the stripe is already carrying the row.
- */
-.data-table tbody td,
-.data-table tbody th {
-    border-bottom-color: var(--grid-line);
+.data-table td.is-down,
+.data-table tfoot td.is-down,
+.is-down {
+    color: var(--danger);
 }
 
-/* A header should read as one band, not as more table rows. */
-.data-table thead th {
-    background: var(--head-bg);
-
-    padding-top: 9px;
-    padding-bottom: 9px;
-
-    box-shadow: inset 0 -2px 0 var(--border-dark);
-}
-
-.data-table thead th.sticky-left,
-.data-table thead th.sticky-right {
-    background: var(--head-bg);
-}
-
-/*
- * Hover beats the stripe, and both beat the pinned columns
- * repeating them - so the pinned cells are restated last.
- */
-.data-table tbody tr:hover .sticky-left,
-.data-table tbody tr:hover .sticky-right {
-    background: var(--row-hover);
-}
-
-/* The entity name is what the eye tracks along a row. */
-.data-table tbody td.col-entity {
-    color: var(--text);
-
-    font-weight: 500;
-}
-
-/* Total closes the row, so it gets a rule and a tint of its own. */
-.data-table tbody td.col-total,
-.data-table thead th.col-total,
-.data-table tfoot td.col-total {
-    background: var(--col-accent);
-
-    border-left: 2px solid var(--border-dark);
-}
-
-.data-table tbody tr:nth-child(even) td.col-total {
-    background: var(--col-pinned-alt);
-}
-
-.data-table tbody tr:hover td.col-total {
-    background: var(--row-hover);
-}
-
-/*
- * The pinned Sr No. and Maker columns are furniture, not figures,
- * so they take the same quiet tint - which also stops the striped
- * rows showing through them as they scroll.
- */
-.data-table tbody tr:nth-child(odd) .sticky-left,
-.data-table tbody tr:nth-child(odd) td.col-index,
-.data-table tbody tr:nth-child(odd) td.col-entity {
-    background: var(--col-pinned);
-}
-
-.data-table tbody tr:nth-child(even) .sticky-left,
-.data-table tbody tr:nth-child(even) td.col-index,
-.data-table tbody tr:nth-child(even) td.col-entity {
-    background: var(--col-pinned-alt);
-}
-
-.data-table tbody tr:hover .sticky-left,
-.data-table tbody tr:hover td.col-index,
-.data-table tbody tr:hover td.col-entity {
-    background: var(--row-hover);
-}
-
-/* The rule that closes the pinned pair off from the figures. */
-.data-table td.col-entity,
-.data-table th.col-entity {
-    border-right: 2px solid var(--border-dark);
-}
-
-/* Zero reads as absence, not as a figure worth the same ink. */
-.data-table tbody td.is-zero {
-    color: var(--text-light);
-}
-
-/*
-The totals row pins to the bottom of the scroll area so it is
-readable without scrolling to the last page of rows.
-*/
-
-.data-table tfoot th,
-.data-table tfoot td {
-    position: sticky;
-    bottom: 0;
-    z-index: 4;
-
-    color: var(--text);
-
-    background: var(--surface-soft);
-
-    border-bottom: 0;
-
-    font-size: 11px;
-    font-weight: 700;
-
-    box-shadow: inset 0 1px 0 var(--border);
-}
-
-.data-table tfoot td:not(.col-index) {
-    text-align: right;
-}
-
-.data-table tfoot th.col-entity {
-    text-align: left;
-
-    color: var(--text);
-}
-
-.table-placeholder-row td {
-    padding: 45px 18px;
-
-    color: var(--text-light);
-
-    text-align: center !important;
+.data-table td.is-zero,
+.is-zero {
+    color: var(--text-muted);
 }
 
 
-/* =========================================================
-   TABLE SORTING
-   ========================================================= */
+/* ---- Sortable headings ---- */
 
 .table-sort-button {
     display: inline-flex;
     align-items: center;
-
     gap: 5px;
 
     padding: 0;
 
-    color: inherit;
-
-    background: transparent;
-
+    background: none;
     border: 0;
 
+    color: inherit;
     font: inherit;
-    font-weight: inherit;
-
-    text-align: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
 }
 
-.table-sort-button:hover {
-    color: var(--primary);
-}
-
-.table-sort-button:focus-visible {
-    outline: 2px solid var(--primary);
-
-    outline-offset: 3px;
-
-    border-radius: 3px;
+.data-table thead th.numeric .table-sort-button {
+    flex-direction: row-reverse;
 }
 
 .sort-icon {
-    color: var(--text-muted);
-
-    font-size: 12px;
-
-    transition:
-        color var(--transition-fast);
+    opacity: 0.55;
+    font-size: 9px;
 }
 
-.table-sort-button:hover .sort-icon {
-    color: var(--primary);
+
+/* ---- Frozen first column ---- */
+
+.data-table .sticky-left {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+
+    background: var(--surface);
 }
 
-th[aria-sort="ascending"] .sort-icon,
-th[aria-sort="descending"] .sort-icon {
-    color: var(--primary);
+.data-table thead th.sticky-left {
+    z-index: 4;
+    background: var(--head-bg);
+}
+
+.data-table tbody tr:nth-child(even) .sticky-left {
+    background: var(--row-alt);
+}
+
+.data-table tbody tr:hover .sticky-left {
+    background: var(--row-hover);
+}
+
+.data-table tfoot .sticky-left {
+    background: var(--total-row);
+}
+
+
+/* ---- Totals row ---- */
+
+.data-table tfoot td,
+.data-table tfoot th {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+
+    background: var(--total-row);
+    border-top: 2px solid var(--primary-border);
+    border-bottom: 0;
+
+    color: var(--navy-mid);
+    font-weight: 700;
+}
+
+.data-table tfoot .col-emphasis {
+    background: #dbe7fb;
 }
 
 
 /* =========================================================
-   14. PAGINATION
+   11. PAGINATION
    ========================================================= */
 
 .pagination {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
 
-    gap: 15px;
-
-    padding: 15px 18px;
-
-    border-top:
-        1px solid var(--border);
-
-    background: var(--surface-soft);
+    padding: 9px 13px;
+    border-top: 1px solid var(--border-soft);
 }
 
 .pagination__left,
 .pagination__right {
     display: flex;
     align-items: center;
-
     gap: 8px;
 }
 
-.pagination label {
+.pagination__left label {
+    font-size: 11px;
     color: var(--text-muted);
-
-    font-size: 10px;
-    font-weight: 500;
-
-    white-space: nowrap;
 }
 
-#pageSizeSelect {
-    width: 76px;
-
-    min-height: 34px;
-
-    padding: 6px 26px 6px 9px;
-
-    color: var(--text);
+.pagination__left select {
+    padding: 4px 7px;
 
     background: var(--surface);
-
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
 
-    outline: none;
-
-    transition:
-        border-color var(--transition-fast),
-        box-shadow var(--transition-fast);
-
-    font-size: 10px;
-}
-
-#pageSizeSelect:hover {
-    border-color: var(--border-dark);
-}
-
-#pageSizeSelect:focus {
-    border-color: #93c5fd;
-
-    box-shadow:
-        0 0 0 3px rgba(37, 99, 235, 0.08);
+    font-size: 11.5px;
 }
 
 .pagination-button {
-    min-height: 34px;
-
-    padding: 6px 12px;
-
-    color: var(--text-secondary);
+    padding: 5px 12px;
 
     background: var(--surface);
-
-    border:
-        1px solid var(--border);
-
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
 
-    font-size: 10px;
-    font-weight: 600;
-
-    transition:
-        background-color var(--transition-fast),
-        border-color var(--transition-fast),
-        color var(--transition-fast);
+    font-size: 11.5px;
+    font-weight: 500;
 }
 
 .pagination-button:hover:not(:disabled) {
-    color: var(--primary);
-
-    background: var(--primary-soft);
-
     border-color: var(--primary-border);
+    color: var(--primary);
 }
 
 .pagination-button:disabled {
-    color: var(--text-light);
-
-    background: var(--surface-muted);
-
-    border-color: var(--border);
-
-    opacity: 0.7;
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .page-indicator {
-    min-width: 90px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+}
 
-    color: var(--text-muted);
+
+/* =========================================================
+   12. QUICK SUMMARY RAIL
+   ========================================================= */
+
+.summary-rail {
+    position: sticky;
+    top: calc(64px + var(--gap));
+
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    align-content: start;
+    min-width: 0;
+
+    max-height: calc(100vh - 64px - var(--gap) * 2);
+    overflow: hidden auto;
+
+    padding-right: 2px;
+}
+
+.summary-rail__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 11px 12px;
+
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
+}
+
+.summary-rail__icon {
+    color: var(--primary);
+}
+
+.summary-rail__head h2 {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.summary-panel {
+    padding: 11px 12px;
+
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
+}
+
+.summary-panel__title {
+    margin-bottom: 8px;
 
     font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
 
-    text-align: center;
+.summary-panel__title--blue   { color: var(--accent-blue); }
+.summary-panel__title--violet { color: var(--accent-violet); }
+.summary-panel__title--green  { color: var(--accent-green); }
+.summary-panel__title--amber  { color: var(--accent-amber); }
+
+.summary-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+
+    counter-reset: rank;
+}
+
+.summary-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+
+    font-size: 11.5px;
+}
+
+.summary-list li::before {
+    counter-increment: rank;
+    content: counter(rank) ".";
+
+    flex: none;
+    min-width: 15px;
+
+    color: var(--text-muted);
+    font-size: 10.5px;
+}
+
+.summary-list__name {
+    flex: 1;
+    min-width: 0;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.summary-list__value {
+    flex: none;
+
+    font-weight: 600;
+    color: var(--text);
+}
+
+.summary-list--modal li {
+    padding: 5px 2px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.summary-list__empty {
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+
+.view-all-button {
+    width: 100%;
+    margin-top: 9px;
+    padding: 5px 10px;
+
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.view-all-button:hover {
+    border-color: var(--primary-border);
+    color: var(--primary);
+}
+
+.summary-facts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+}
+
+.summary-facts li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+
+    font-size: 11.5px;
+    color: var(--text-secondary);
+}
+
+.summary-facts li span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.summary-facts strong {
+    flex: none;
+
+    color: var(--text);
+    font-weight: 600;
 }
 
 
 /* =========================================================
-   15. RESPONSIVE
+   13. VIEW ALL DIALOG
    ========================================================= */
 
-@media (max-width: 1200px) {
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
 
-    :root {
-        --sidebar-width: 280px;
-    }
+    display: grid;
+    place-items: center;
 
-    .dashboard-content {
-        padding-left: 25px;
-        padding-right: 25px;
-    }
+    padding: 20px;
+
+    background: rgba(8, 26, 61, 0.42);
+}
+
+.modal {
+    display: flex;
+    flex-direction: column;
+
+    width: min(460px, 100%);
+    max-height: min(560px, 82vh);
+
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+
+    overflow: hidden;
+}
+
+.modal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.modal__head h2 {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.modal__close {
+    display: grid;
+    place-items: center;
+
+    width: 26px;
+    height: 26px;
+
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+
+    color: var(--text-muted);
+    font-size: 19px;
+    line-height: 1;
+}
+
+.modal__close:hover {
+    background: var(--surface-muted);
+    color: var(--text);
+}
+
+.modal__body {
+    padding: 12px 16px 16px;
+    overflow-y: auto;
+}
+
+
+/* =========================================================
+   14. RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 1500px) {
 
     .kpi-grid {
-        grid-template-columns:
-            repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
 
-/* =========================================================
-   TABLET
-   ========================================================= */
+@media (max-width: 1280px) {
+
+    .app-shell {
+        grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    }
+
+    .app-shell.is-collapsed {
+        grid-template-columns: 46px minmax(0, 1fr);
+    }
+
+    /* The rail drops under the content rather than off the page. */
+    .summary-rail {
+        position: static;
+        grid-column: 1 / -1;
+        max-height: none;
+
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    }
+
+    .summary-rail__head {
+        grid-column: 1 / -1;
+    }
+}
+
 
 @media (max-width: 900px) {
 
-    :root {
-        --sidebar-width: 270px;
-    }
-
-    .dashboard-header {
-        padding-left: 22px;
-        padding-right: 22px;
-    }
-
-    .dashboard-content {
-        padding: 24px 20px 32px;
-    }
-
-    .filter-sidebar {
-        padding-left: 16px;
-        padding-right: 16px;
-    }
-}
-
-
-/* =========================================================
-   MOBILE LAYOUT
-   ========================================================= */
-
-@media (max-width: 800px) {
-
-    .dashboard-header {
-        align-items: flex-start;
-
-        flex-direction: column;
-
+    .app-header {
+        flex-wrap: wrap;
         gap: 10px;
-
-        padding-top: 16px;
-        padding-bottom: 16px;
     }
 
-    .dashboard-header__meta {
-        width: 100%;
-
-        justify-content: flex-start;
-    }
-
-    .dashboard-layout {
-        display: block;
-    }
-
-    /*
-    Sidebar becomes a normal top filter panel.
-    */
-
-    .filter-sidebar {
-        padding: 18px 16px 20px;
-
-        border-right: 0;
-
-        border-bottom:
-            1px solid var(--sidebar-edge);
-    }
-
-    .filter-sidebar__header {
-        margin-bottom: 15px;
-    }
-
-    .filter-form {
-        grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-
-        gap: 12px;
-    }
-
-    /*
-    Year stays full width; the dimension filters pair up.
-    */
-
-    .filter-form > .filter-group--maker,
-    .filter-form > .filter-group--state,
-    .filter-form > .filter-group--month,
-    .filter-form > .filter-group--region,
-    .filter-form > .filter-group--category,
-    .filter-form > .filter-group--subcategory {
-        grid-column: auto;
-    }
-
-    .filter-form > .clear-filters-button {
-        align-self: end;
-    }
-
-    .dashboard-content {
-        padding: 20px 16px 30px;
-    }
-}
-
-
-/* =========================================================
-   SMALL TABLET / MOBILE
-   ========================================================= */
-
-@media (max-width: 600px) {
-
-    #dashboard-title {
-        font-size: 21px;
-    }
-
-    .dashboard-header__subtitle {
-        font-size: 10px;
-    }
-
-    .dashboard-header__meta {
-        gap: 11px;
-    }
-
-    .unit-label {
+    .app-header__crumbs {
         white-space: normal;
     }
 
-    .filter-form {
-        grid-template-columns: 1fr;
+    .app-shell,
+    .app-shell.is-collapsed {
+        grid-template-columns: minmax(0, 1fr);
     }
 
-    .filter-form > .filter-group--maker,
-    .filter-form > .filter-group--state,
-    .filter-form > .filter-group--month,
-    .filter-form > .filter-group--region,
-    .filter-form > .filter-group--category,
-    .filter-form > .filter-group--subcategory {
-        grid-column: 1 / -1;
+    .filters {
+        position: static;
+        max-height: none;
     }
 
     .kpi-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .section-heading h2 {
-        font-size: 16px;
-    }
-
-    .table-toolbar {
-        align-items: stretch;
-
-        flex-direction: column;
-    }
-
-    .table-toolbar__left {
-        width: 100%;
-    }
-
-    .table-toolbar__right {
-        text-align: right;
-    }
-
-    .pagination {
-        align-items: stretch;
-
-        flex-direction: column;
-    }
-
-    .pagination__left,
-    .pagination__right {
-        justify-content: center;
-    }
-
-    .pagination__left {
-        width: 100%;
-    }
-
-    #pageSizeSelect {
-        width: 100px;
-    }
-
-    .error-banner {
-        align-items: flex-start;
-
+    .table-card__head {
         flex-wrap: wrap;
     }
 
-    .error-banner__retry {
-        margin-left: 30px;
+    .table-card__actions {
+        width: 100%;
+        justify-content: flex-end;
     }
 }
 
 
-/* =========================================================
-   VERY SMALL SCREENS
-   ========================================================= */
+@media (max-width: 560px) {
 
-@media (max-width: 480px) {
-
-    .dashboard-header {
-        padding-left: 16px;
-        padding-right: 16px;
+    :root {
+        --gap: 10px;
     }
 
-    .dashboard-content {
-        padding-left: 14px;
-        padding-right: 14px;
+    .app-header {
+        padding: 10px 12px;
     }
 
-    .brand-mark {
-        width: 40px;
-        height: 40px;
-
-        flex-basis: 40px;
+    .app-header h1 {
+        font-size: 15px;
+        white-space: normal;
     }
 
-    .dashboard-header__meta {
-        flex-wrap: wrap;
+    .app-header__meta {
+        width: 100%;
+        justify-content: space-between;
+        gap: 10px;
     }
 
-    .data-period__divider {
-        display: none;
+    .kpi-grid {
+        grid-template-columns: minmax(0, 1fr);
     }
 
-    .kpi-card {
-        min-height: 115px;
-
-        padding: 17px;
-    }
-
-    .table-card {
-        border-radius: var(--radius-md);
-    }
-
-    .data-table {
-        min-width: 580px;
+    .table-search {
+        width: 100%;
     }
 
     .pagination {
-        padding: 13px 15px;
+        flex-wrap: wrap;
     }
 }
 
-
-/* =========================================================
-   16. REDUCED MOTION
-   ========================================================= */
 
 @media (prefers-reduced-motion: reduce) {
 
     *,
     *::before,
     *::after {
-        scroll-behavior: auto !important;
-
         animation-duration: 0.01ms !important;
-
-        animation-iteration-count: 1 !important;
-
         transition-duration: 0.01ms !important;
     }
-}
-
-/* =========================================================
-   MONTHLY TREND
-
-   Same visual language as the maker table below it: shared
-   .data-table base, sticky header, striped and hoverable rows,
-   a recessed share figure and a light totals row. The only
-   additions are the month grouping across the top and the
-   pinned fiscal-year column.
-   ========================================================= */
-
-.monthly-trend__note {
-    margin: 0;
-
-    color: var(--text-secondary);
-
-    font-size: 11px;
-    line-height: 1.6;
-}
-
-.monthly-trend__note strong {
-    color: var(--text);
-
-    font-weight: 600;
-}
-
-.monthly-trend__table {
-    min-width: max-content;
-}
-
-/*
-Two header rows, so the second one has to sit below the first
-rather than at the top of the scroll area.
-*/
-.monthly-trend__table thead tr:first-child th {
-    top: 0;
-    z-index: 4;
-}
-
-.monthly-trend__table thead tr:last-child th {
-    top: 33px;
-    z-index: 3;
-}
-
-.monthly-trend__month-head {
-    text-align: center;
-}
-
-.monthly-trend__sub {
-    color: var(--text-muted);
-
-    font-size: 9px;
-
-    text-align: right;
-}
-
-/* A hairline opens each month group so the triplets read apart. */
-.monthly-trend__month-head:not(:first-of-type),
-.monthly-trend__sub:nth-child(3n + 1),
-.monthly-trend__table tbody td:nth-child(3n + 2),
-.monthly-trend__table tfoot td:nth-child(3n + 2) {
-    border-left: 1px solid var(--border);
-}
-
-.monthly-trend__table th.monthly-trend__year-head,
-.monthly-trend__table th.monthly-trend__year {
-    position: sticky;
-    left: 0;
-    z-index: 5;
-
-    min-width: 108px;
-
-    color: var(--text);
-
-    background: var(--surface);
-
-    font-weight: 600;
-
-    text-align: left;
-}
-
-.monthly-trend__table thead th.monthly-trend__year-head {
-    z-index: 6;
-
-    background: var(--surface-soft);
-}
-
-.monthly-trend__table tbody tr:nth-child(even) th.monthly-trend__year {
-    background: var(--row-alt);
-}
-
-.monthly-trend__table tbody tr:hover th.monthly-trend__year {
-    background: var(--row-hover);
-}
-
-.monthly-trend__table tfoot th.monthly-trend__year {
-    z-index: 6;
-
-    background: var(--surface-soft);
-}
-
-.monthly-trend__table tbody td,
-.monthly-trend__table tfoot td {
-    text-align: right;
-
-    font-variant-numeric: tabular-nums;
-}
-
-/* The selected figure is the one being read, so it leads. */
-.monthly-trend__vol {
-    color: var(--text);
-
-    font-weight: 600;
-}
-
-/* Recessed the same way the maker table recesses its shares. */
-.monthly-trend__ms {
-    color: var(--text-secondary);
-
-    opacity: 0.95;
-
-    font-size: 10px;
-    font-weight: 500;
-}
-
-
-/* ---------------------------------------------------------------
-   Sticky stacking order
-
-   Two sticky axes cross here - the header sticks down, the first
-   one or two columns stick left - and the cells where they meet
-   have to sit above both.
-
-   The order was wrong in both directions. "thead tr:first-child th"
-   is (0,2,3) and out-specified the corner rules at (0,2,2), so the
-   corners fell back to the same layer as the month headings and
-   lost to them on DOM order - scrolling right slid the months over
-   Fiscal Year. The body's sticky column sat higher still, at 5,
-   and covered the header on a vertical scroll.
-
-   Stated once, in one place, with enough specificity to hold:
-
-       9  header corners      8  footer corners
-       7  header, row 1       6  header, row 2
-       5  footer cells        4  body sticky columns
-   --------------------------------------------------------------- */
-
-.monthly-trend__table thead tr:first-child th.monthly-trend__year-head,
-.monthly-trend__table thead tr:first-child th.monthly-trend__maker-head {
-    z-index: 9;
-}
-
-.monthly-trend__table thead tr:first-child th {
-    z-index: 7;
-}
-
-.monthly-trend__table thead tr:last-child th {
-    z-index: 6;
-}
-
-.monthly-trend__table tfoot th.monthly-trend__year,
-.monthly-trend__table tfoot td.monthly-trend__maker {
-    z-index: 8;
-}
-
-.monthly-trend__table tfoot th,
-.monthly-trend__table tfoot td {
-    z-index: 5;
-}
-
-.monthly-trend__table tbody th.monthly-trend__year,
-.monthly-trend__table tbody td.monthly-trend__maker {
-    z-index: 4;
-}
-
-/*
- * A sticky column needs an edge, or the numbers sliding under it
- * appear to touch it.
- */
-.monthly-trend__table th.monthly-trend__year-head,
-.monthly-trend__table th.monthly-trend__year {
-    box-shadow: inset -1px 0 0 var(--border);
-}
-
-.monthly-trend__table--with-maker th.monthly-trend__year-head,
-.monthly-trend__table--with-maker th.monthly-trend__year {
-    box-shadow: none;
-}
-
-
-/* ---------------------------------------------------------------
-   Trend legibility
-
-   Forty columns of numbers in triplets. The month groups are
-   what the eye needs to find, so the rule between them is the
-   only strong line; inside a group the three cells are held
-   together by weight instead - IND plain, VOL solid, MS light.
-   --------------------------------------------------------------- */
-
-.monthly-trend__month-head:not(:first-of-type),
-.monthly-trend__sub:nth-child(3n + 1),
-.monthly-trend__table tbody td:nth-child(3n + 2),
-.monthly-trend__table tfoot td:nth-child(3n + 2) {
-    border-left: 1px solid var(--border-dark);
-}
-
-.monthly-trend__table--with-maker tbody td:nth-child(3n),
-.monthly-trend__table--with-maker tfoot td:nth-child(3n) {
-    border-left: 1px solid var(--border-dark);
-}
-
-/* The month name band, so the groups read as groups. */
-.monthly-trend__table thead th.monthly-trend__month-head {
-    background: var(--head-bg);
-
-    color: var(--text);
-
-    font-size: 10px;
-    letter-spacing: 0.04em;
-}
-
-.monthly-trend__table thead th.monthly-trend__sub {
-    background: var(--surface-soft);
-}
-
-/* Row rules stay faint - the stripe already separates rows. */
-.monthly-trend__table tbody td,
-.monthly-trend__table tbody th {
-    border-bottom-color: var(--grid-line);
-}
-
-.monthly-trend__table tbody tr:nth-child(even) {
-    background: var(--row-alt);
-}
-
-
-/* ---------------------------------------------------------------
-   Maker column
-
-   Only present when the trend has more than one maker selected,
-   which is also when the month hairlines shift by one cell.
-   --------------------------------------------------------------- */
-
-.monthly-trend__table th.monthly-trend__maker-head,
-.monthly-trend__table .monthly-trend__maker {
-    position: sticky;
-    left: 108px;
-    z-index: 4;
-
-    max-width: 190px;
-
-    text-align: left;
-
-    background: var(--surface);
-
-    border-right: 1px solid var(--border);
-
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.monthly-trend__table thead th.monthly-trend__maker-head {
-    z-index: 7;
-
-    background: var(--surface-soft);
-}
-
-.monthly-trend__table tfoot .monthly-trend__maker {
-    background: var(--surface-soft);
-
-    font-weight: 600;
-}
-
-.monthly-trend__table tbody tr:nth-child(even) .monthly-trend__maker {
-    background: var(--row-alt);
-}
-
-.monthly-trend__table tbody tr:hover .monthly-trend__maker {
-    background: var(--row-hover);
-}
-
-/* A rule where each fiscal year's block of makers begins. */
-.monthly-trend__table tbody tr.monthly-trend__group-start > * {
-    border-top: 2px solid var(--border);
-}
-
-/*
- * With the Maker column in place every row carries one more leading
- * cell, so the triplet hairlines land on 3n rather than 3n + 2.
- */
-.monthly-trend__table--with-maker tbody td:nth-child(3n + 2),
-.monthly-trend__table--with-maker tfoot td:nth-child(3n + 2) {
-    border-left: 0;
-}
-
-.monthly-trend__table--with-maker tbody td:nth-child(3n),
-.monthly-trend__table--with-maker tfoot td:nth-child(3n) {
-    border-left: 1px solid var(--border);
-}
-
-
-/* ---------------------------------------------------------------
-   Total column
-
-   The row's twelve months summed, sitting after them. It is a
-   summary of the row rather than another month, so it gets the
-   footer's tint and a heavier rule to break it off the last month
-   group - the same treatment the Total ROW already carries.
-   --------------------------------------------------------------- */
-
-.monthly-trend__table .monthly-trend__total-cell,
-.monthly-trend__table th.monthly-trend__total-head {
-    background: var(--surface-soft);
-}
-
-/*
- * The third-from-last cell is the Total group's IND in every row -
- * header, body and footer alike - which is where the rule goes.
- */
-.monthly-trend__table th.monthly-trend__total-head,
-.monthly-trend__table thead th.monthly-trend__total-cell:nth-last-child(3),
-.monthly-trend__table tbody td.monthly-trend__total-cell:nth-last-child(3),
-.monthly-trend__table tfoot td.monthly-trend__total-cell:nth-last-child(3) {
-    border-left: 2px solid var(--border);
-}
-
-.monthly-trend__table th.monthly-trend__total-head {
-    color: var(--text);
-
-    font-weight: 700;
-}
-
-/* IND and VOL both matter here, so neither is recessed. */
-.monthly-trend__table td.monthly-trend__total-cell {
-    color: var(--text);
-
-    font-weight: 600;
-}
-
-.monthly-trend__empty {
-    color: var(--text-light);
-}
-
-/* Content-area twin of .filter-notice, which is sidebar-toned. */
-.table-notice {
-    margin: 0 22px 14px;
-
-    padding: 9px 12px;
-
-    color: var(--text-secondary);
-
-    background: var(--primary-soft);
-
-    border: 1px solid var(--primary-border);
-    border-left: 3px solid var(--primary);
-
-    border-radius: var(--radius-sm);
-
-    font-size: 10px;
-    line-height: 1.55;
-}
-
-/* =========================================================
-   TREND FILTERS
-
-   The combo markup is shared with the sidebar, which is dark.
-   These rules retone it for the light content area; scoping by
-   ancestor means createCombo needs no knowledge of where it
-   was mounted.
-   ========================================================= */
-
-/*
-The default toolbar caps its left column at 390px, which suits the
-Details search box but forces these two onto separate lines.
-*/
-.table-toolbar--trend .table-toolbar__left {
-    width: auto;
-    flex: 1 1 auto;
-
-    min-width: 0;
-}
-
-/*
-Never wrap: at a narrow window the two shrink instead, which
-keeps them on one line well below the width where a fixed
-236px pair would have dropped Class onto its own row.
-*/
-.trend-filters {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-
-    gap: 16px;
-
-    width: 100%;
-
-    margin-bottom: 10px;
-}
-
-.trend-filter {
-    display: flex;
-    align-items: center;
-
-    flex: 1 1 0;
-    min-width: 0;
-
-    gap: 8px;
-}
-
-.trend-filter label {
-    color: var(--text-muted);
-
-    font-size: 9px;
-    font-weight: 700;
-
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-
-    white-space: nowrap;
-}
-
-.trend-filter .combo {
-    flex: 1 1 auto;
-
-    width: auto;
-    min-width: 0;
-    max-width: 260px;
-}
-
-.trend-filter .combo__input {
-    min-height: 34px;
-
-    padding: 7px 30px 7px 11px;
-
-    color: var(--text);
-
-    background-color: var(--surface);
-
-    border: 1px solid var(--border-dark);
-
-    font-size: 11px;
-}
-
-.trend-filter .combo__input::placeholder {
-    color: var(--text-muted);
-}
-
-/*
- * No colour on hover. These two sit directly above the grid, and a
- * border lighting up under the pointer read as though something had
- * been selected. Focus still shows itself.
- */
-.trend-filter .combo__input:hover:not(:disabled) {
-    border-color: var(--border-dark);
-
-    /*
-     * The base rule is for the dark sidebar and sets a navy
-     * background. It out-specifies .trend-filter .combo__input, so
-     * these two - on a white card - turned dark under the pointer.
-     */
-    background-color: var(--surface);
-}
-
-.trend-filter .combo__input:focus {
-    border-color: var(--primary);
-
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-}
-
-.trend-filter .combo__list {
-    background: var(--surface);
-
-    border-color: var(--border-dark);
-
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-}
-
-.trend-filter .combo__option {
-    color: var(--text-secondary);
-}
-
-.trend-filter .combo__option--active {
-    color: var(--text);
-
-    background: var(--surface-muted);
-}
-
-
-/*
- * A multi-select combo ticks its chosen options and stays open, so
- * the selected state has to read at a glance rather than being the
- * one highlighted row. The trend's list is the only one of these.
- */
-.combo--multiple .combo__option {
-    position: relative;
-
-    padding-left: 27px;
-}
-
-.combo--multiple .combo__option::before {
-    content: "";
-
-    position: absolute;
-    left: 8px;
-    top: 50%;
-
-    width: 12px;
-    height: 12px;
-
-    margin-top: -6px;
-
-    border: 1px solid var(--border-dark);
-    border-radius: 3px;
-
-    background: var(--surface);
-}
-
-.combo--multiple .combo__option--selected::before {
-    border-color: var(--primary);
-
-    background: var(--primary);
-}
-
-.combo--multiple .combo__option--selected::after {
-    content: "";
-
-    position: absolute;
-    left: 11.5px;
-    top: 50%;
-
-    width: 3px;
-    height: 7px;
-
-    margin-top: -5px;
-
-    border: solid #ffffff;
-    border-width: 0 2px 2px 0;
-
-    transform: rotate(45deg);
-}
-
-.trend-filter .combo__option--selected {
-    color: var(--primary-dark);
-
-    background: var(--primary-soft);
-}
-
-.trend-filter .combo__empty,
-.trend-filter .combo__more {
-    color: var(--text-muted);
 }

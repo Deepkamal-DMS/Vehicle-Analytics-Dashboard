@@ -7,8 +7,7 @@
    ------------------------------------------------------------
    SCHEMA (Supabase project ytgoonducepylslknkag)
 
-   YEAR GRAIN - the Details card. All WIDE, Maker x Vehicle Class:
-   year | Maker | <vehicle classes> | Total
+   YEAR GRAIN - all WIDE, Maker x Vehicle Class, year a column:
 
        MAKER_WISE                 3,994 rows   74 classes
        Gujarat_Class_Wise           862 rows   61 classes
@@ -18,50 +17,45 @@
        Maker_Class_Wise_GJ27        275 rows   38 classes
        Maker_Class_Wise_GJ38        292 rows   31 classes
 
-   Scope picks the table; year is a column within it. Each holds
-   2025 and 2026, and a new year adds rows rather than tables.
-   Ahmedabad is a view: GJ01 + GJ27 + GJ38 summed PER MAKER, since
-   the three share most of their makers.
+   Each holds 2025 and 2026. Ahmedabad is GJ01 + GJ27 + GJ38
+   summed PER MAKER.
 
-   MONTH GRAIN - the trend. Three families of twelve tables, one
-   per calendar month, same wide shape with the month in the name:
+   MONTH GRAIN - one view over 36 month tables:
 
-       Maker_Class_Wise_<Mon>      37,074 rows   75 classes
-       Gujarat_Class_Wise_<Mon>     6,334 rows   64 classes
-       Ahmedabad_Class_Wise_<Mon>   7,152 rows   53 classes + rto
+       trend_by_maker   54,019 rows
+       scope | year | month (1-12) | Maker | <75 classes> | Total
 
-   Only the Ahmedabad family carries an "rto" column, which is what
-   lets one set of twelve serve GJ01, GJ27, GJ38 and their rollup.
-
-   The trend reads three views over all of it, each carrying a
-   "scope" column that MUST be filtered on - they hold every scope
-   at once, so an unfiltered read sums six scopes together:
-
-       trend_totals      192 rows, classes summed across makers
-       trend_by_maker    54,019 rows
-       trend_makers      distinct makers per scope
-
-   The older monthly_* views are still on the project. They are
-   All-India-only and have no scope column, and exist purely so a
-   cached copy of an earlier script.js keeps working. Nothing here
-   reads them.
+   Its six scopes are all_india, gujarat, ahmedabad, gj01, gj27
+   and gj38. EVERY read must filter on scope, or six scopes sum
+   together. It carries 2024 as well as 2025 and 2026.
 
    ------------------------------------------------------------
    WHAT THE DATA CAN AND CANNOT DO
 
-   maker x class   yes, per scope, filtered by year
-   maker x month   yes, per scope - except GJ13, which has no
-                   month tables (SCOPES_WITHOUT_TREND)
-   state x class   NO TABLE EXISTS
-   maker x rto     only within Ahmedabad's three RTOs
+   maker x class          yes, per scope, per year
+   maker x class x month  yes, per scope - except GJ13, which has
+                          no month tables at all
+   maker x rto            only GJ01, GJ13, GJ27, GJ38 exist. There
+                          is no table for the other 48 Gujarat
+                          RTOs, and none for RTOs outside Gujarat
+   state x class          NO TABLE EXISTS
+   years before 2025      NO TABLE EXISTS at year grain; the month
+                          view reaches back to 2024 and no further
 
-   Vahan drops classes with no entries, so the column set
-   differs between tables - note the class counts above. The
-   schema is therefore re-read from a sample row on every
-   scope or year switch rather than assumed once.
+   ------------------------------------------------------------
+   GRAIN SWITCH
 
-   Reads page with .range() in 1,000-row chunks; the largest
-   table is two round trips.
+   One rule decides which of the two sources every card reads:
+
+       Month filter on "all"  ->  year grain (the scope tables)
+       Month filter narrowed  ->  month grain (trend_by_maker)
+
+   The two disagree on 2026 by about 5 lakh units at All India -
+   the scope tables are a mid-August snapshot, the month tables
+   close on 31 August - so the switch is stated on screen rather
+   than left to be discovered. 2025 reconciles to single digits.
+
+   Reads page with .range() in 1,000-row chunks.
    ============================================================ */
 
 
@@ -70,10 +64,6 @@
    ============================================================ */
 
 /*
- * Supabase's PostgREST, same wire protocol the local one spoke,
- * so the client below is unchanged apart from the two headers
- * every request now has to carry.
- *
  * The publishable key is safe in client-side source: it grants
  * the anon role, and each table has row level security on with
  * a SELECT-only policy. Writes are refused by the database.
@@ -92,17 +82,6 @@ const API_HEADERS = {
    2. TABLE CONFIGURATION
    ============================================================ */
 
-/*
- * Every table is Maker x Vehicle Class, one per scope. The year
- * used to be part of the table name - MAKER_WISE_2025 next to
- * MAKER_WISE_2026 - which meant a new year needed six new tables
- * and nothing could span years. It is now a column, so a scope is
- * one table and the year is an ordinary filter.
- *
- * Class columns still differ per scope - Vahan drops classes with
- * no entries - so the schema is read from the table rather than
- * assumed.
- */
 const SCOPE_TABLES = {
     all_india: "MAKER_WISE",
     gujarat:   "Gujarat_Class_Wise",
@@ -114,23 +93,100 @@ const SCOPE_TABLES = {
 };
 
 
-const AVAILABLE_YEARS = ["2026", "2025"];
+/*
+ * The scopes the sidebar offers as a universe. The four RTOs are
+ * not here - they are the RTO filter's job, and selecting one
+ * there overrides whichever of these is set.
+ */
+const SCOPES = [
+    { id: "all_india", label: "All India" },
+    { id: "gujarat",   label: "Gujarat" },
+    { id: "ahmedabad", label: "Ahmedabad" }
+];
+
+
+/*
+ * Every RTO the database holds. Four, not the fifty-two a full
+ * Gujarat listing would have: Vahan was pulled for these codes
+ * only. Names follow the published Gujarat RTO register; the
+ * workbooks carry the code alone, so they are set here and are
+ * the one thing on this screen not read from the data.
+ *
+ * GJ13 has a year-grain table but no month tables, so it drops
+ * out whenever the Month filter is narrowed. Known and accepted.
+ */
+const RTOS = [
+    { code: "GJ01", name: "AHMEDABAD", scope: "gj01", months: true },
+    { code: "GJ13", name: "SURENDRANAGAR", scope: "gj13", months: false },
+    { code: "GJ27", name: "AHMEDABAD (EAST)", scope: "gj27", months: true },
+    { code: "GJ38", name: "AHMEDABAD (RURAL) BAVLA", scope: "gj38", months: true }
+];
+
+
+function rtoByCode(code) {
+
+    return RTOS.find(rto => rto.code === code) || null;
+}
+
+
+/*
+ * The month-grain view and the column that must narrow every
+ * read of it. Without the scope filter a single request sums six
+ * scopes together and inflates every figure by about a tenth.
+ */
+const MONTH_VIEW = "trend_by_maker";
+
+const SCOPE_COLUMN = "scope";
+const MONTH_COLUMN = "month";
+
+
+/* Only three of the six month scopes are an RTO. */
+const MONTH_SCOPES = new Set([
+    "all_india", "gujarat", "ahmedabad", "gj01", "gj27", "gj38"
+]);
+
+
+const MONTHS = [
+    { number: 1,  key: "Jan", label: "January" },
+    { number: 2,  key: "Feb", label: "February" },
+    { number: 3,  key: "Mar", label: "March" },
+    { number: 4,  key: "Apr", label: "April" },
+    { number: 5,  key: "May", label: "May" },
+    { number: 6,  key: "Jun", label: "June" },
+    { number: 7,  key: "Jul", label: "July" },
+    { number: 8,  key: "Aug", label: "August" },
+    { number: 9,  key: "Sep", label: "September" },
+    { number: 10, key: "Oct", label: "October" },
+    { number: 11, key: "Nov", label: "November" },
+    { number: 12, key: "Dec", label: "December" }
+];
+
+
+/*
+ * Year grain holds two; the month view reaches back one further.
+ * Which of these the Year filter offers depends on the grain, so
+ * both lists are kept rather than one merged one.
+ */
+const YEARS_YEAR_GRAIN = ["2025", "2026"];
+
+const YEARS_MONTH_GRAIN = ["2024", "2025", "2026"];
 
 
 /*
  * When the six scope tables were last pulled from Vahan. Only the
- * part-year matters: 2025 and earlier are closed and reconcile with
- * the month tables to within single digits, but 2026 is a snapshot
- * taken part-way through August and runs about 5 lakh units behind
- * the trend at All India. Update both fields on a re-pull.
+ * part-year matters: 2025 and earlier are closed, but 2026 is a
+ * snapshot taken part-way through August.
  */
-const DATA_AS_OF = { year: "2026", label: "20 August 2026" };
+const DATA_AS_OF = { year: "2026", label: "20-Aug-2026" };
 
 
 function tableFor(scope) {
 
-    return SCOPE_TABLES[scope] || SCOPE_TABLES[DEFAULT_VIEW];
+    return SCOPE_TABLES[scope] || SCOPE_TABLES[DEFAULT_SCOPE];
 }
+
+
+const DEFAULT_SCOPE = "all_india";
 
 
 /* ============================================================
@@ -143,73 +199,67 @@ const CONFIG = {
 
     PAGE_SIZE: 25,
 
-    PAGE_SIZES: [25, 50, 100],
-
-    SEARCH_DELAY: 150,
-
-    MAX_SEARCH_ROWS: 5,
+    SEARCH_DELAY: 180,
 
     /*
-     * Reads page in these chunks. The largest table is ~2,000
-     * rows, so this is two round trips at worst.
+     * Reads page in these chunks. Supabase caps a response at
+     * 1,000 rows on this project, so asking for more gains
+     * nothing.
      */
     FETCH_PAGE_SIZE: 1000,
 
-    MAX_FETCH_PAGES: 200
+    MAX_FETCH_PAGES: 200,
+
+    /*
+     * Pages after the first are fetched this many at a time. The
+     * month view narrowed to one month is three or four pages;
+     * narrowed to six months it is closer to twenty, and fetching
+     * those one after another is the difference between one
+     * second and five.
+     */
+    FETCH_CONCURRENCY: 6,
+
+    /* A 2,000-entry check list is built lazily past this point. */
+    CHECKLIST_RENDER_LIMIT: 300,
+
+    /* Columns in the RTO comparison before the Others rollup. */
+    RTO_MAKER_COLUMNS: 5,
+
+    /* Rows in each Quick Summary panel. */
+    SUMMARY_ROWS: 5,
+
+    /*
+     * A maker needs at least this many registrations in the base
+     * year before its growth is worth ranking - without it the
+     * Highest Growth panel fills with makers that went from two
+     * units to nine.
+     */
+    GROWTH_MIN_BASE: 100,
+
+    /*
+     * The detailed table unpivots maker x class, so a wide
+     * selection can reach six figures of rows. Rendering is
+     * paged, but the array itself is capped so the browser is
+     * never asked to hold an unbounded one.
+     */
+    MAX_DETAIL_ROWS: 50000
 };
-
-
-/*
- * Each view is one physical table, rendered with its own
- * columns. The default is MAKER_WISE.
- */
-/*
- * One entry per scope. All are Maker x Class, so they differ
- * only in label - the shape of the view model is unchanged.
- */
-function makeScope(id, label) {
-
-    return {
-        id,
-        schemaKey: "makerClass",
-        entityKind: "maker",
-        entity: "Maker",
-        entityPlural: "Makers",
-        columnKind: "class",
-        title: `${label} — Maker × Vehicle Class`,
-        scopeLabel: label,
-        searchPlaceholder: "Search maker..."
-    };
-}
-
-
-const VIEWS = {
-    all_india: makeScope("all_india", "All India"),
-    gujarat:   makeScope("gujarat", "Gujarat"),
-    ahmedabad: makeScope("ahmedabad", "Ahmedabad"),
-    gj01:      makeScope("gj01", "GJ01"),
-    gj13:      makeScope("gj13", "GJ13"),
-    gj27:      makeScope("gj27", "GJ27"),
-    gj38:      makeScope("gj38", "GJ38")
-};
-
-
-/*
- * GJ13 is the one scope with no month tables behind it, so its trend
- * has nothing to draw. Everything else about the scope works.
- */
-const SCOPES_WITHOUT_TREND = new Set(["gj13"]);
-
-
-const DEFAULT_VIEW = "all_india";
 
 
 const METADATA_COLUMNS = [
     "id", "sr no", "sr_no", "srno",
     "maker", "maker name", "maker_name",
     "state", "state name", "state_name",
+    "rto", "scope", "month",
     "total", "grand total", "year"
 ];
+
+
+/*
+ * Group choices are prefixed so one flat list can offer both a
+ * group and a class without either being mistaken for the other.
+ */
+const GROUP_PREFIX = "group:";
 
 
 const CLASS_GROUPS = [
@@ -258,6 +308,14 @@ const CLASS_GROUPS = [
         test: () => true
     }
 ];
+
+
+function classGroupIdFor(column) {
+
+    const group = CLASS_GROUPS.find(candidate => candidate.test(column));
+
+    return group ? group.id : "OTHER";
+}
 
 
 /* ============================================================
@@ -435,7 +493,43 @@ function createRestClient(baseUrl, authHeaders) {
 
 /* ============================================================
    5. APPLICATION STATE
+
+   Two copies of the filters. `pending` is what the sidebar
+   shows; `filters` is what the figures on screen answer to.
+   Apply copies one into the other. Nothing reads `pending`
+   except the sidebar, so a half-made selection can never be
+   mistaken for the selection a number was computed from.
    ============================================================ */
+
+function emptyFilters() {
+
+    return {
+        scope: DEFAULT_SCOPE,
+
+        /* Empty means every one of them, for all five. */
+        years: [],
+        months: [],
+        rtos: [],
+        makers: [],
+        classes: []
+    };
+}
+
+
+function emptyKpis() {
+
+    return {
+        registrations: null,
+        makers: null,
+        rtos: null,
+        classes: null,
+        share: null,
+        yearsLabel: "—",
+        yearsMeta: "",
+        deltas: {}
+    };
+}
+
 
 const state = {
 
@@ -443,168 +537,77 @@ const state = {
     wired: false,
     retryWired: false,
 
-    loading: false,
-
     requestId: 0,
-
     activeController: null,
 
-    view: DEFAULT_VIEW,
+    filters: emptyFilters(),
+    pending: emptyFilters(),
 
-    year: AVAILABLE_YEARS[0],
+    /* "year" or "month". See the GRAIN SWITCH note at the top. */
+    grain: "year",
 
-    /*
-     * Rendered column set: index, entity, one per value column,
-     * then total. Rebuilt whenever the table or its column
-     * filters change.
-     */
-    columns: [],
-
-    filters: {
-        fromYear: CONFIG.ALL,
-        toYear: CONFIG.ALL,
+    /* Which options each check list offers, rebuilt as scope moves. */
+    options: {
+        years: [],
+        months: MONTHS.map(month => ({
+            value: String(month.number),
+            label: month.label
+        })),
+        rtos: RTOS.map(rto => ({
+            value: rto.code,
+            label: `${rto.code} — ${rto.name}`
+        })),
         makers: [],
-        state: CONFIG.ALL,
-        region: CONFIG.ALL,
-        month: CONFIG.ALL,
-        category: CONFIG.ALL,
-        subcategory: CONFIG.ALL
+        classes: []
     },
 
     /*
-     * Resolved at startup from one sample row per table.
+     * The class columns the active source actually carries. Vahan
+     * drops classes with no entries, so this differs by scope and
+     * is re-read rather than assumed.
      */
-    schema: {
-        makerMonth: null,
-        makerRto: null,
-        makerClass: null,
-        stateMonth: null,
-        stateClass: null
-    },
-
-    /*
-     * Class taxonomy, rebuilt whenever the active class source
-     * changes (33 EV classes vs 76 national ones).
-     */
-    classSource: null,
     classColumns: [],
-    classToGroup: new Map(),
-    groupToClasses: new Map(),
-
-    availableYears: [],
-    months: [],
-    makers: [],
-    states: [],
 
     /*
-     * RTO list is ~95 paged requests, so it loads in the
-     * background after first paint.
+     * Loaded records. `main` answers the Scope / RTO selection and
+     * feeds cards 1 and 3; `rto` is always the four RTO sources and
+     * feeds card 2, whatever Scope says.
+     *
+     * A record is { rto, year, month, maker, raw } where raw is the
+     * API row - the class figures are read out of it on demand
+     * rather than copied into a second object per row.
      */
-    regions: [],
-    regionsLoading: false,
-    regionsLoaded: false,
+    main: { records: [], classColumns: [] },
+    rto: { records: [], classColumns: [] },
 
-    /*
-     * Cached wide tables, keyed by table name.
-     */
+    /* Whole tables, keyed by name. */
     tableCache: new Map(),
 
-    /*
-     * Month tables are read independently of the scope tables:
-     * one cached read per column set, reused as filters change.
-     */
-    monthly: {
-        schema: null,
-        describing: null,
-        makers: null,
-        /* Which scope `makers` was built for; see resetTrendForScope. */
-        scope: null,
-        /* The last rendered grid, kept so the export can write it. */
-        pivot: null,
-        cache: new Map(),
-        makerCache: new Map()
+    /* Built from the records above on every render. */
+    makerTable: { rows: [], years: [], totals: null },
+    rtoTable: { rows: [], makerColumns: [], totals: null },
+    detailTable: { rows: [], truncated: false, totals: null },
+
+    kpis: emptyKpis(),
+    summary: { makers: [], rtos: [], growth: [], facts: [] },
+
+    /* Per-card view state. */
+    view: {
+        maker: { page: 1, pageSize: 25, sortKey: "__total", sortDir: "desc" },
+        detail: {
+            page: 1,
+            pageSize: 25,
+            sortKey: "registration",
+            sortDir: "desc",
+            search: ""
+        }
     },
-
-    /*
-     * The trend carries its own maker choice, independent of the
-     * sidebar's, so the two tables can be read against different
-     * makers at the same time.
-     */
-    /*
-     * The trend's maker choice takes several at once. Empty means
-     * every maker, so VOL repeats IND; one behaves as it always
-     * has; two or more split each fiscal year into a row per maker.
-     */
-    trendMakers: [],
-    trendClass: CONFIG.ALL,
-    trendOptionsLoaded: false,
-
-    rows: [],
-    filteredRows: [],
-    dimensionTotal: 0,
-
-    searchTerms: [""],
-
-    /*
-     * Opens in source-row order so the table mirrors the
-     * originating workbook. Any header re-sorts it.
-     */
-    sortKey: "__index",
-    sortDirection: "asc",
-
-    currentPage: 1,
-    pageSize: CONFIG.PAGE_SIZE,
 
     searchTimer: null,
 
-    kpis: emptyKPIs()
+    /* Notes the loader raises for the cards to print. */
+    notices: { rto: "", detail: "" }
 };
-
-
-function emptyKPIs() {
-
-    return {
-        totalRegistrations: 0,
-        totalEntities: 0,
-        twoWRegistrations: null,
-        threeWRegistrations: null,
-        twoWPercentage: null,
-        threeWPercentage: null,
-        classNote: ""
-    };
-}
-
-
-function currentView() {
-
-    return VIEWS[state.view] || VIEWS[DEFAULT_VIEW];
-}
-
-
-function currentSchema() {
-
-    return state.schema[currentView().schemaKey] || null;
-}
-
-
-function isStateView() {
-
-    return currentView().entityKind === "state";
-}
-
-
-/*
- * Region overrides the table entirely - RTO data lives in a
- * long table, so it renders as a single value column.
- */
-function regionIsActive() {
-
-    return (
-        !isStateView() &&
-        Boolean(state.schema.makerRto) &&
-        !isAll(state.filters.region)
-    );
-}
 
 
 /* ============================================================
@@ -618,86 +621,59 @@ function cacheDOM() {
 
     const ids = [
 
-        /* Filters */
-        "breakdownFilter",
-        "yearFilter",
-        "fromYearFilter",
-        "toYearFilter",
-        "yearRangeError",
-        "makerFilter",
-        "stateFilter",
-        "monthFilter",
-        "regionFilter",
-        "categoryFilter",
-        "subcategoryFilter",
-        "clearFiltersButton",
-        "stateFilterGroup",
-        "monthFilterGroup",
-        "regionFilterGroup",
-        "categoryFilterGroup",
-        "subcategoryFilterGroup",
+        /* Shell */
+        "appShell",
+        "filterSidebar",
+        "collapseFiltersButton",
+        "dashboardFilters",
+        "scopeFilter",
         "filterNotice",
-
-        /* Table */
-        "makerSummaryTable",
-        "makerSummaryTableHead",
-        "makerSummaryTableBody",
-        "makerSummaryTableFoot",
-        "makerSearchList",
-        "searchRowTemplate",
-        "resultCount",
-        "detailsDownloadButton",
-        "detailsPdfButton",
-        "trendDownloadButton",
-        "trendPdfButton",
-        "tableContent",
-        "maker-summary-title",
-
-        /* Pagination */
-        "previousPageButton",
-        "nextPageButton",
-        "pageIndicator",
-        "pageSizeSelect",
-
-        /* KPIs */
-        "totalRegistrations",
-        "totalMakers",
-        "entityCountLabel",
-        "entityCountMeta",
-        "twoWRegistrations",
-        "threeWRegistrations",
-        "twoWPercentage",
-        "threeWPercentage",
+        "applyFiltersButton",
+        "resetFiltersButton",
 
         /* Header */
-        "data-year-range",
+        "dashboardTitle",
+        "dataRefreshedOn",
+        "exportMenuButton",
+        "exportMenuList",
 
-        /* Monthly trend */
-        "monthlyTrendHead",
-        "monthlyTrendBody",
-        "monthlyTrendFoot",
-        "monthlyTrendMeta",
-        "trendMakerFilter",
-        "trendClassFilter",
-        "monthlyTrendHint",
-        "monthlyTrendLoading",
-        "monthlyTrendError",
-        "monthlyTrendErrorText",
-        "monthlyTrendContent",
-        "monthlyTrendTable",
+        /* KPIs */
+        "kpiRegistrations", "kpiRegistrationsDelta",
+        "kpiMakers", "kpiMakersDelta",
+        "kpiRtos", "kpiRtosDelta",
+        "kpiClasses", "kpiClassesDelta",
+        "kpiShare", "kpiShareDelta",
+        "kpiYears", "kpiYearsDelta",
 
-        /* Loading */
+        /* Card 1 */
+        "makerTable", "makerTableHead", "makerTableBody", "makerTableFoot",
+        "makerCardMeta", "makerCardState",
+        "makerPageSize", "makerPageIndicator",
+
+        /* Card 2 */
+        "rtoTable", "rtoTableHead", "rtoTableBody", "rtoTableFoot",
+        "rtoCardMeta", "rtoCardState", "rtoCardNote",
+
+        /* Card 3 */
+        "detailTable", "detailTableHead", "detailTableBody", "detailTableFoot",
+        "detailCardMeta", "detailCardState", "detailCardNote",
+        "detailSearch", "detailPageSize", "detailPageIndicator",
+
+        /* Quick summary */
+        "topMakersList",
+        "topRtosList",
+        "topGrowthList",
+        "growthPanelTitle",
+        "dataSummaryList",
+
+        /* Dialog */
+        "viewAllOverlay", "viewAllTitle", "viewAllList", "viewAllClose",
+
+        /* States */
         "globalLoading",
-        "tableLoading",
-
-        /* Error / empty */
         "errorMessage",
         "errorMessageText",
-        "retryButton",
-        "tableEmpty",
-        "tableEmptyText",
-        "tableError",
-        "tableErrorText"
+        "retryButton"
     ];
 
     ids.forEach(id => {
@@ -818,15 +794,6 @@ function uniqueSorted(values) {
 function quoteColumn(name) {
 
     return `"${String(name).replace(/"/g, '""')}"`;
-}
-
-
-/*
- * RTO values are stored as slugs: abu_road_dto -> ABU ROAD DTO.
- */
-function prettifyRegion(slug) {
-
-    return normalizeString(slug).replace(/_/g, " ").toUpperCase();
 }
 
 
@@ -1021,11 +988,23 @@ async function fetchSampleRow(table) {
 }
 
 
-async function fetchRowCount(table) {
+async function fetchRowCount(table, options = {}) {
 
-    const { count, error } = await restClient
+    const { filters = [], signal = null } = options;
+
+    let query = restClient
         .from(table)
         .select("*", { count: "exact", head: true });
+
+    filters.forEach(filter => {
+        query = query.in(filter.column, filter.values);
+    });
+
+    if (signal) {
+        query = query.abortSignal(signal);
+    }
+
+    const { count, error } = await query;
 
     if (error) {
         throw apiError(table, error);
@@ -1039,17 +1018,18 @@ async function fetchRowCount(table) {
  * Whole small/medium tables are cached - the dashboard reads
  * the same ones repeatedly as filters change.
  */
-async function getCachedTable(table, columns, signal) {
+function getCachedTable(table, columns, signal) {
 
     if (state.tableCache.has(table)) {
         return state.tableCache.get(table);
     }
 
-    const rows = await fetchAllRows(table, columns, { signal });
+    const pending = fetchAllRows(table, columns, { signal });
 
-    state.tableCache.set(table, rows);
+    state.tableCache.set(table, pending);
+    pending.catch(() => state.tableCache.delete(table));
 
-    return rows;
+    return pending;
 }
 
 
@@ -1103,1056 +1083,792 @@ async function describeWideTable(table, entityKind) {
 }
 
 
+/* ============================================================
+   12. SOURCE RESOLUTION
+
+   Two questions decide every read: which grain, and which
+   scopes. Everything downstream asks these rather than looking
+   at the filters itself.
+   ============================================================ */
+
 /*
- * One cached fetch per table now covers every year, so the year
- * selector narrows the cached rows instead of triggering a reload.
+ * Month grain only once the Month filter actually narrows. All
+ * twelve ticked is the same selection as none, and reading a
+ * whole year out of the month view would be twelve times the
+ * work for a figure the scope table already holds.
  */
-function rowsForSelectedYear(schema, rows) {
+function grainFor(filters) {
 
-    if (!schema || !schema.yearColumn) {
-        return rows;
-    }
+    const months = filters.months;
 
-    const wanted = String(state.year);
+    return months.length > 0 && months.length < MONTHS.length
+        ? "month"
+        : "year";
+}
 
-    return rows.filter(
-        row => String(row[schema.yearColumn]) === wanted
-    );
+
+function availableYears(grain) {
+
+    return grain === "month" ? YEARS_MONTH_GRAIN : YEARS_YEAR_GRAIN;
 }
 
 
 /*
- * Only the selected scope+year table is described. Class columns
- * vary between tables, so this re-runs on every switch rather
- * than caching one shape for the whole session.
+ * The RTO filter overrides Scope when anything is ticked: an RTO
+ * is a narrower universe than any scope on the list, so applying
+ * both would either contradict or double-count.
  */
-async function discoverSchema() {
+function rtoOverrideActive(filters) {
 
-    const table = tableFor(state.view);
+    return filters.rtos.length > 0;
+}
 
-    const makerClass = await describeWideTable(table, "maker");
 
-    if (!makerClass) {
-        throw new Error(
-            `${table} is unavailable, so maker totals cannot be loaded.`
-        );
+/*
+ * What the main cards read, as a list of sources. One entry per
+ * table at year grain, one per scope at month grain; `rto` is the
+ * code a row belongs to, or null when the source is not an RTO.
+ */
+function mainSources(filters, grain) {
+
+    if (rtoOverrideActive(filters)) {
+        return rtoSources(filters.rtos, grain);
     }
 
-    state.schema.makerClass = makerClass;
+    return [{ scope: filters.scope, rto: null }];
+}
 
-    /* No month, state or RTO tables in this database. */
-    state.schema.makerMonth = null;
-    state.schema.stateMonth = null;
-    state.schema.stateClass = null;
-    state.schema.makerRto = null;
 
-    state.availableYears = AVAILABLE_YEARS.slice();
+function rtoSources(codes, grain) {
+
+    const wanted = codes.length > 0
+        ? codes
+        : RTOS.map(rto => rto.code);
+
+    return wanted
+        .map(rtoByCode)
+        .filter(Boolean)
+        .filter(rto => grain !== "month" || rto.months)
+        .map(rto => ({ scope: rto.scope, rto: rto.code }));
+}
+
+
+/*
+ * Codes asked for that the chosen grain cannot serve. Only GJ13
+ * is ever in here, and only at month grain.
+ */
+function rtosWithoutGrain(codes, grain) {
+
+    if (grain !== "month") {
+        return [];
+    }
+
+    const wanted = codes.length > 0 ? codes : RTOS.map(rto => rto.code);
+
+    return wanted
+        .map(rtoByCode)
+        .filter(rto => rto && !rto.months)
+        .map(rto => rto.code);
+}
+
+
+function scopeLabel(filters) {
+
+    if (rtoOverrideActive(filters)) {
+        return filters.rtos.join(" + ");
+    }
+
+    const scope = SCOPES.find(entry => entry.id === filters.scope);
+
+    return scope ? scope.label : filters.scope;
 }
 
 
 /* ============================================================
-   12. CLASS TAXONOMY
+   13. PARALLEL PAGING
+
+   fetchAllRows walks a table one page at a time, which is right
+   for a few thousand rows. The month view narrowed to half a
+   year is twenty pages, and twenty round trips in a row is a
+   visible wait, so the count is asked for once and the pages
+   after the first go out together.
    ============================================================ */
 
-/*
- * The class list depends on the view: 33 electric-only classes
- * from MAKER_WISE, or 76 national ones from the state table.
- */
-function getClassSchema() {
+async function fetchAllRowsFast(table, columns, options = {}) {
+
+    const select = buildSelect(columns);
+
+    const first = await fetchPage(
+        table,
+        select,
+        0,
+        CONFIG.FETCH_PAGE_SIZE - 1,
+        options
+    );
+
+    if (first.length < CONFIG.FETCH_PAGE_SIZE) {
+        return first;
+    }
 
     /*
-     * When the displayed table already carries classes it IS the
-     * class schema; otherwise pair the view with the class table
-     * for the same entity kind.
+     * A HEAD request with count=exact, so the remaining ranges can
+     * be worked out rather than discovered one empty page at a
+     * time. If it fails - an older PostgREST, a proxy that eats
+     * the header - the sequential walk still finishes the job.
      */
-    if (currentView().columnKind === "class") {
-        return currentSchema();
+    let total = 0;
+
+    try {
+        total = await fetchRowCount(table, options);
+    } catch (error) {
+        console.warn(`${table}: row count unavailable`, error.message);
     }
 
-    return isStateView() ? state.schema.stateClass : state.schema.makerClass;
-}
-
-
-function buildClassGroups() {
-
-    const schema = getClassSchema();
-
-    state.classSource = schema ? schema.table : null;
-    state.classColumns = schema ? schema.classColumns : [];
-
-    state.classToGroup = new Map();
-    state.groupToClasses = new Map();
-
-    state.classColumns.forEach(className => {
-
-        const group =
-            CLASS_GROUPS.find(candidate => candidate.test(className)) ||
-            CLASS_GROUPS[CLASS_GROUPS.length - 1];
-
-        state.classToGroup.set(className, group.id);
-
-        if (!state.groupToClasses.has(group.id)) {
-            state.groupToClasses.set(group.id, []);
-        }
-
-        state.groupToClasses.get(group.id).push(className);
-    });
-}
-
-
-function getClassesForGroupLabel(label) {
-
-    const group = CLASS_GROUPS.find(
-        candidate => normalizeKey(candidate.label) === normalizeKey(label)
-    );
-
-    if (!group) {
-        return [];
+    if (!total) {
+        return fetchAllRows(table, columns, options);
     }
 
-    return state.groupToClasses.get(group.id) || [];
-}
+    const ranges = [];
 
-
-/*
- * True when the active class source is the electric-only table.
- */
-function classSourceIsElectricOnly() {
-
-    return false;
-}
-
-
-/*
- * Resolves a class group against a SPECIFIC schema's columns.
- *
- * The KPI cards and the table can legitimately read different
- * class tables - 33 electric classes vs 76 national ones - and
- * the two use different column names, so a group must always be
- * expanded against the schema whose rows are being summed.
- */
-function groupColumnsFor(schema, groupId) {
-
-    if (!schema) {
-        return [];
+    for (
+        let from = CONFIG.FETCH_PAGE_SIZE;
+        from < total && ranges.length < CONFIG.MAX_FETCH_PAGES;
+        from += CONFIG.FETCH_PAGE_SIZE
+    ) {
+        ranges.push(from);
     }
 
-    const group = CLASS_GROUPS.find(candidate => candidate.id === groupId);
+    const rows = first;
 
-    if (!group) {
-        return [];
+    for (let at = 0; at < ranges.length; at += CONFIG.FETCH_CONCURRENCY) {
+
+        const batch = ranges.slice(at, at + CONFIG.FETCH_CONCURRENCY);
+
+        const pages = await Promise.all(batch.map(from =>
+            fetchPage(
+                table,
+                select,
+                from,
+                from + CONFIG.FETCH_PAGE_SIZE - 1,
+                options
+            )
+        ));
+
+        pages.forEach(page => rows.push(...page));
     }
 
-    return schema.classColumns.filter(column => {
-
-        const matched =
-            CLASS_GROUPS.find(candidate => candidate.test(column)) ||
-            CLASS_GROUPS[CLASS_GROUPS.length - 1];
-
-        return matched.id === groupId;
-    });
+    return rows;
 }
 
 
 /* ============================================================
-   12b. SEARCHABLE FILTER DROPDOWNS
-
-   A native <select> cannot filter as you type, so each of these
-   filters gets a combobox layered over it. The <select> itself
-   stays in the DOM as the single source of truth - it still
-   holds the value and still emits "change" - so every existing
-   filter path keeps working untouched.
+   14. SCHEMA + CLASS TAXONOMY
    ============================================================ */
 
-const SEARCHABLE_FILTERS = [
-    "makerFilter",
-    "trendMakerFilter",
-    "trendClassFilter",
-    "stateFilter",
-    "monthFilter",
-    "regionFilter",
-    "categoryFilter",
-    "subcategoryFilter"
-];
+const schemaCache = new Map();
+
 
 /*
- * Combos that take more than one value at a time. The list stays
- * open as options are ticked, and the native <select> underneath
- * holds "all" rather than any one of them - nothing reads its
- * value for these, comboValues() is the source of truth.
+ * One sample row per table tells us its class columns. Cached
+ * for the session: a table's shape does not change between
+ * filter applications.
  */
-const MULTI_COMBOS = new Set(["trendMakerFilter"]);
+async function describeSource(table) {
+
+    if (schemaCache.has(table)) {
+        return schemaCache.get(table);
+    }
+
+    const pending = describeWideTable(table, "maker").then(schema => {
+
+        if (!schema) {
+            throw new Error(
+                `${table} is unavailable, so its figures cannot be loaded.`
+            );
+        }
+
+        return schema;
+    });
+
+    schemaCache.set(table, pending);
+    pending.catch(() => schemaCache.delete(table));
+
+    return pending;
+}
+
 
 /*
- * Long lists are capped so opening a 1,900-entry dropdown does
- * not build 1,900 nodes.
+ * At year grain each source is its own table with its own column
+ * set, so the class list is the union of them. At month grain
+ * every scope shares the one view's columns.
  */
-const COMBO_RENDER_LIMIT = 200;
+async function describeSources(sources, grain) {
 
-const combos = new Map();
+    if (grain === "month") {
+
+        const schema = await describeSource(MONTH_VIEW);
+
+        return {
+            classColumns: schema.classColumns.slice(),
+            byScope: new Map(
+                sources.map(source => [source.scope, schema])
+            )
+        };
+    }
+
+    const schemas = await Promise.all(
+        sources.map(source => describeSource(tableFor(source.scope)))
+    );
+
+    const columns = new Set();
+
+    schemas.forEach(schema => {
+        schema.classColumns.forEach(column => columns.add(column));
+    });
+
+    return {
+        classColumns: uniqueSorted([...columns]),
+        byScope: new Map(
+            sources.map((source, at) => [source.scope, schemas[at]])
+        )
+    };
+}
 
 
-function enhanceFilterSelects() {
+/*
+ * The class options: the groups that this column set actually
+ * has members for, then every individual class.
+ */
+function classOptionsFor(classColumns) {
 
-    SEARCHABLE_FILTERS.forEach(id => {
+    const present = new Set(classColumns.map(classGroupIdFor));
 
-        const select = dom[id];
+    const groups = CLASS_GROUPS
+        .filter(group => present.has(group.id))
+        .map(group => ({
+            value: `${GROUP_PREFIX}${group.id}`,
+            label: `All ${group.label}`
+        }));
 
-        if (!select || combos.has(select)) {
+    const classes = classColumns.map(column => ({
+        value: column,
+        label: column
+    }));
+
+    return [...groups, ...classes];
+}
+
+
+/*
+ * Resolves the class selection against one source's columns.
+ * Nothing selected means every column it has.
+ */
+function resolveClassColumns(selection, classColumns) {
+
+    if (selection.length === 0) {
+        return classColumns.slice();
+    }
+
+    const groups = new Set(
+        selection
+            .filter(value => value.startsWith(GROUP_PREFIX))
+            .map(value => value.slice(GROUP_PREFIX.length))
+    );
+
+    const exact = new Set(
+        selection.filter(value => !value.startsWith(GROUP_PREFIX))
+    );
+
+    return classColumns.filter(column =>
+        exact.has(column) || groups.has(classGroupIdFor(column))
+    );
+}
+
+
+/* ============================================================
+   15. CHECK LISTS
+
+   Five of the six filters take several values at once. Each is
+   a header, a summary bar that collapses the list, an optional
+   search box and a list of checkboxes. The selection lives in
+   state.pending; the DOM is only ever a picture of it.
+   ============================================================ */
+
+const checklists = new Map();
+
+
+function buildChecklists() {
+
+    document.querySelectorAll("[data-checklist]").forEach(root => {
+
+        const name = root.getAttribute("data-checklist");
+
+        const checklist = {
+            name,
+            root,
+            toggle: root.querySelector("[data-checklist-toggle]"),
+            label: root.querySelector("[data-checklist-label]"),
+            panel: root.querySelector("[data-checklist-panel]"),
+            search: root.querySelector("[data-checklist-search]"),
+            list: root.querySelector("[data-checklist-options]"),
+            query: ""
+        };
+
+        checklists.set(name, checklist);
+
+        wireChecklist(checklist);
+    });
+}
+
+
+function wireChecklist(checklist) {
+
+    if (checklist.toggle) {
+
+        checklist.toggle.addEventListener("click", () => {
+
+            const open = checklist.toggle.getAttribute("aria-expanded") === "true";
+
+            checklist.toggle.setAttribute("aria-expanded", String(!open));
+        });
+    }
+
+    if (checklist.search) {
+
+        checklist.search.addEventListener("input", () => {
+            checklist.query = checklist.search.value;
+            renderChecklist(checklist.name);
+        });
+    }
+
+    if (!checklist.list) {
+        return;
+    }
+
+    checklist.list.addEventListener("change", event => {
+
+        const input = event.target.closest("input[type=checkbox]");
+
+        if (!input) {
             return;
         }
 
-        combos.set(select, createCombo(select));
+        const value = input.value;
+        const selected = state.pending[checklist.name];
+
+        if (input.checked) {
+
+            if (!selected.includes(value)) {
+                selected.push(value);
+            }
+
+        } else {
+
+            const at = selected.indexOf(value);
+
+            if (at !== -1) {
+                selected.splice(at, 1);
+            }
+        }
+
+        /*
+         * The list that was clicked is deliberately not rebuilt.
+         * Ticked entries sort to the top, so redrawing it here
+         * would move the row out from under the pointer between
+         * one tick and the next.
+         */
+        onPendingChanged(checklist.name, { origin: checklist.name });
     });
-}
-
-
-function createCombo(select) {
-
-    const wrapper = document.createElement("div");
-    wrapper.className = "combo";
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "combo__input";
-    input.id = `${select.id}Combo`;
-    input.autocomplete = "off";
-    input.setAttribute("role", "combobox");
-    input.setAttribute("aria-expanded", "false");
-    input.setAttribute("aria-autocomplete", "list");
-    input.setAttribute("aria-controls", `${select.id}List`);
-
-    const list = document.createElement("ul");
-    list.className = "combo__list";
-    list.id = `${select.id}List`;
-    list.setAttribute("role", "listbox");
-    list.hidden = true;
-
-    /*
-     * The select stays put and keeps its id; it is simply taken
-     * out of the tab order and hidden from assistive tech, with
-     * the combobox standing in for it.
-     */
-    select.classList.add("combo__native");
-    select.setAttribute("tabindex", "-1");
-    select.setAttribute("aria-hidden", "true");
-
-    const parent = select.parentNode;
-
-    if (parent) {
-        parent.insertBefore(wrapper, select);
-        wrapper.appendChild(select);
-    }
-
-    wrapper.appendChild(input);
-    wrapper.appendChild(list);
-
-    /*
-     * Point the existing label at the combobox so clicking it
-     * still focuses the control the user actually types into.
-     */
-    const label = parent?.querySelector(`label[for="${select.id}"]`);
-
-    if (label) {
-        label.setAttribute("for", input.id);
-    }
-
-    const combo = {
-        select,
-        wrapper,
-        input,
-        list,
-        options: [],
-        matches: [],
-        activeIndex: -1,
-        open: false,
-        multiple: MULTI_COMBOS.has(select.id),
-        /* Only meaningful when multiple; empty means "all". */
-        values: []
-    };
-
-    if (combo.multiple) {
-        wrapper.classList.add("combo--multiple");
-        input.setAttribute("aria-multiselectable", "true");
-    }
-
-    wireCombo(combo);
-    refreshCombo(select);
-
-    return combo;
-}
-
-
-function comboLabelForValue(combo, value) {
-
-    const match = combo.options.find(option => option.value === value);
-
-    return match ? match.label : "";
 }
 
 
 /*
- * Mirrors the <select> into the combobox: option list, current
- * label and disabled state.
+ * The wording the summary bar carries. "All X" when nothing is
+ * ticked, the one name when one is, a count after that.
  */
-function refreshCombo(select) {
+const CHECKLIST_WORDING = {
+    years: { all: "All Years", one: value => value, many: "Years" },
+    months: {
+        all: "All Months",
+        one: value => monthLabel(value),
+        many: "Months"
+    },
+    rtos: { all: "All RTOs Selected", one: value => value, many: "RTOs" },
+    makers: {
+        all: "All Makers Selected",
+        one: value => value,
+        many: "Makers"
+    },
+    classes: {
+        all: "All Classes Selected",
+        one: value => classOptionLabel(value),
+        many: "Classes"
+    }
+};
 
-    const combo = combos.get(select);
 
-    if (!combo) {
+function monthLabel(number) {
+
+    const month = MONTHS.find(entry => String(entry.number) === String(number));
+
+    return month ? month.label : String(number);
+}
+
+
+function classOptionLabel(value) {
+
+    if (!String(value).startsWith(GROUP_PREFIX)) {
+        return value;
+    }
+
+    const id = String(value).slice(GROUP_PREFIX.length);
+    const group = CLASS_GROUPS.find(entry => entry.id === id);
+
+    return group ? `All ${group.label}` : value;
+}
+
+
+function checklistSummary(name) {
+
+    const selected = state.pending[name];
+    const wording = CHECKLIST_WORDING[name];
+    const options = state.options[name] || [];
+
+    if (selected.length === 0 || selected.length === options.length) {
+        return options.length === 0
+            ? wording.all
+            : `${wording.all} (${options.length})`;
+    }
+
+    if (selected.length === 1) {
+        return wording.one(selected[0]);
+    }
+
+    return `${selected.length} ${wording.many} Selected`;
+}
+
+
+function renderChecklist(name) {
+
+    const checklist = checklists.get(name);
+
+    if (!checklist || !checklist.list) {
         return;
     }
 
-    combo.options = [...select.options].map(option => ({
-        value: option.value,
-        label: option.textContent.trim()
-    }));
+    const options = state.options[name] || [];
+    const selected = new Set(state.pending[name]);
+    const query = normalizeKey(checklist.query);
 
-    if (combo.multiple) {
+    const matches = query === ""
+        ? options
+        : options.filter(option =>
+            normalizeKey(option.label).includes(query) ||
+            normalizeKey(option.value).includes(query));
 
-        /* Drop anything the new option list no longer offers. */
-        const offered = new Set(combo.options.map(option => option.value));
+    checklist.list.innerHTML = "";
 
-        combo.values = combo.values.filter(value => offered.has(value));
-
-        combo.input.value = multiComboLabel(combo);
-
-    } else {
-        combo.input.value = comboLabelForValue(combo, select.value);
-    }
-
-    combo.input.placeholder = comboLabelForValue(combo, CONFIG.ALL) || "Search...";
-
-    combo.input.disabled = select.disabled;
-    combo.wrapper.classList.toggle("combo--disabled", select.disabled);
-
-    if (select.disabled) {
-        closeCombo(combo);
-    }
-}
-
-
-function refreshAllCombos() {
-
-    combos.forEach(combo => refreshCombo(combo.select));
-}
-
-
-function filterComboOptions(combo, query) {
-
-    const term = normalizeKey(query);
-
-    if (!term) {
-        return combo.options;
-    }
-
-    const prefix = [];
-    const contains = [];
-
-    combo.options.forEach(option => {
-
-        const label = normalizeKey(option.label);
-        const index = label.indexOf(term);
-
-        if (index === 0) {
-            prefix.push(option);
-        } else if (index > 0) {
-            contains.push(option);
-        }
-    });
-
-    /*
-     * Prefix matches first, each group keeping the original
-     * (alphabetical) order.
-     */
-    return [...prefix, ...contains];
-}
-
-
-function renderComboList(combo, query) {
-
-    combo.matches = filterComboOptions(combo, query);
-
-    /*
-     * Ticked options come first. The list renders only its first
-     * 200 entries, and with 2,552 makers a selection halfway down
-     * the alphabet would otherwise be invisible - the user could
-     * not see, or untick, what they had already chosen.
-     */
-    if (combo.multiple && combo.values.length > 0) {
-
-        const chosen = [];
-        const rest = [];
-
-        combo.matches.forEach(option => {
-            (combo.values.includes(option.value) ? chosen : rest).push(option);
-        });
-
-        combo.matches = chosen.concat(rest);
-    }
-
-    combo.list.innerHTML = "";
-
-    if (combo.matches.length === 0) {
+    if (matches.length === 0) {
 
         const empty = document.createElement("li");
-        empty.className = "combo__empty";
-        empty.textContent = "No matches";
-        combo.list.appendChild(empty);
 
-        combo.activeIndex = -1;
-        combo.input.removeAttribute("aria-activedescendant");
+        empty.className = "checklist__empty";
+        empty.textContent = options.length === 0
+            ? "Nothing to select yet."
+            : "No matches";
+
+        checklist.list.appendChild(empty);
+
+        syncChecklistLabel(name);
 
         return;
     }
 
-    const visible = combo.matches.slice(0, COMBO_RENDER_LIMIT);
+    /*
+     * Ticked entries come first, because the list is capped: with
+     * 2,000 makers a selection halfway down the alphabet would
+     * otherwise be off the end of the rendered slice, and the
+     * reader could neither see it nor untick it.
+     */
+    const ordered = [
+        ...matches.filter(option => selected.has(option.value)),
+        ...matches.filter(option => !selected.has(option.value))
+    ];
+
+    const visible = ordered.slice(0, CONFIG.CHECKLIST_RENDER_LIMIT);
 
     const fragment = document.createDocumentFragment();
 
     visible.forEach((option, index) => {
 
         const item = document.createElement("li");
+        item.className = "checklist__item";
 
-        item.className = "combo__option";
-        item.id = `${combo.select.id}Option${index}`;
-        item.setAttribute("role", "option");
-        item.setAttribute("data-value", option.value);
-        item.textContent = option.label;
+        const label = document.createElement("label");
 
-        const chosen = combo.multiple
-            ? (isAll(option.value)
-                ? combo.values.length === 0
-                : combo.values.includes(option.value))
-            : option.value === combo.select.value;
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = option.value;
+        input.checked = selected.has(option.value);
+        input.id = `${name}Option${index}`;
 
-        if (chosen) {
-            item.classList.add("combo__option--selected");
-            item.setAttribute("aria-selected", "true");
-        } else {
-            item.setAttribute("aria-selected", "false");
-        }
+        const text = document.createElement("span");
+        text.textContent = option.label;
+        text.title = option.label;
 
-        if (index === combo.activeIndex) {
-            item.classList.add("combo__option--active");
-        }
+        label.appendChild(input);
+        label.appendChild(text);
+        item.appendChild(label);
 
         fragment.appendChild(item);
     });
 
-    combo.list.appendChild(fragment);
+    checklist.list.appendChild(fragment);
 
-    if (combo.matches.length > visible.length) {
+    if (ordered.length > visible.length) {
 
         const more = document.createElement("li");
-        more.className = "combo__more";
+
+        more.className = "checklist__more";
 
         more.textContent =
             `Showing ${formatIndianNumber(visible.length)} of ` +
-            `${formatIndianNumber(combo.matches.length)} — keep typing`;
+            `${formatIndianNumber(ordered.length)} — keep typing`;
 
-        combo.list.appendChild(more);
+        checklist.list.appendChild(more);
+    }
+
+    syncChecklistLabel(name);
+}
+
+
+function syncChecklistLabel(name) {
+
+    const checklist = checklists.get(name);
+
+    if (checklist && checklist.label) {
+        checklist.label.textContent = checklistSummary(name);
     }
 }
 
 
-function openCombo(combo) {
+function renderAllChecklists({ origin = null } = {}) {
 
-    if (combo.select.disabled || combo.open) {
-        return;
-    }
+    checklists.forEach(checklist => {
 
-    combo.open = true;
-    combo.list.hidden = false;
-    combo.input.setAttribute("aria-expanded", "true");
-
-    /*
-     * Start from the current selection so arrow keys continue
-     * from where the user already is. For a multi combo that is
-     * the first thing ticked, or the top of the list if nothing is.
-     */
-    const from = combo.multiple
-        ? combo.values[0]
-        : combo.select.value;
-
-    combo.activeIndex = combo.matches.findIndex(
-        option => option.value === from
-    );
-
-    renderComboList(combo, "");
-}
-
-
-function closeCombo(combo) {
-
-    if (!combo.open) {
-        return;
-    }
-
-    combo.open = false;
-    combo.list.hidden = true;
-    combo.activeIndex = -1;
-
-    combo.input.setAttribute("aria-expanded", "false");
-    combo.input.removeAttribute("aria-activedescendant");
-
-    /*
-     * Restore the label - a half-typed query should not look
-     * like a selection. A multi combo has no single value to read
-     * it from; its native select stays on "all" throughout.
-     */
-    combo.input.value = combo.multiple
-        ? multiComboLabel(combo)
-        : comboLabelForValue(combo, combo.select.value);
-}
-
-
-function setActiveComboOption(combo, index) {
-
-    const rendered = [
-        ...combo.list.querySelectorAll(".combo__option")
-    ];
-
-    if (rendered.length === 0) {
-        return;
-    }
-
-    const clamped = Math.max(0, Math.min(index, rendered.length - 1));
-
-    combo.activeIndex = clamped;
-
-    rendered.forEach((item, position) => {
-        item.classList.toggle("combo__option--active", position === clamped);
-    });
-
-    const active = rendered[clamped];
-
-    combo.input.setAttribute("aria-activedescendant", active.id);
-
-    if (typeof active.scrollIntoView === "function") {
-        active.scrollIntoView({ block: "nearest" });
-    }
-}
-
-
-/*
- * The values a combo currently holds, always as an array. Empty
- * means "all", for single and multiple alike, so callers do not
- * have to know which kind they were handed.
- */
-function comboValues(select) {
-
-    const combo = combos.get(select);
-
-    if (combo && combo.multiple) {
-        return combo.values.slice();
-    }
-
-    const value = select ? normalizeString(select.value) : "";
-
-    return value && !isAll(value) ? [value] : [];
-}
-
-
-/*
- * What the input shows when the list is closed. One name reads as
- * itself; several would not fit, so they are counted.
- */
-function multiComboLabel(combo) {
-
-    if (combo.values.length === 0) {
-        return "";
-    }
-
-    if (combo.values.length === 1) {
-        return comboLabelForValue(combo, combo.values[0]);
-    }
-
-    return `${combo.values.length} makers`;
-}
-
-
-function commitComboValue(combo, value) {
-
-    if (combo.multiple) {
-
-        /* "All" is the absence of a selection, not one more of them. */
-        if (isAll(value)) {
-            combo.values = [];
-        } else {
-
-            const at = combo.values.indexOf(value);
-
-            if (at === -1) {
-                combo.values.push(value);
-            } else {
-                combo.values.splice(at, 1);
-            }
-        }
-
-        combo.input.value = multiComboLabel(combo);
-
-        /*
-         * Left open: picking several in a row should not mean
-         * reopening the list between each one. The query is
-         * cleared so the full list comes back.
-         */
-        renderComboList(combo, "");
-
-        combo.select.dispatchEvent(new Event("change", { bubbles: true }));
-
-        return;
-    }
-
-    if (combo.select.value === value) {
-        closeCombo(combo);
-        return;
-    }
-
-    combo.select.value = value;
-
-    closeCombo(combo);
-
-    combo.input.value = comboLabelForValue(combo, value);
-
-    /*
-     * Drives the existing change listeners, so the dashboard
-     * reloads exactly as it does for a native select.
-     */
-    combo.select.dispatchEvent(new Event("change", { bubbles: true }));
-}
-
-
-function wireCombo(combo) {
-
-    const { input, list } = combo;
-
-    input.addEventListener("focus", () => {
-        openCombo(combo);
-        input.select();
-    });
-
-    input.addEventListener("click", () => {
-        openCombo(combo);
-    });
-
-    input.addEventListener("input", () => {
-        if (!combo.open) {
-            combo.open = true;
-            combo.list.hidden = false;
-            combo.input.setAttribute("aria-expanded", "true");
-        }
-        combo.activeIndex = 0;
-        renderComboList(combo, input.value);
-        setActiveComboOption(combo, 0);
-    });
-
-    input.addEventListener("keydown", event => {
-
-        if (event.key === "ArrowDown") {
-            event.preventDefault();
-            if (!combo.open) {
-                openCombo(combo);
-            }
-            setActiveComboOption(combo, combo.activeIndex + 1);
+        if (checklist.name === origin) {
+            syncChecklistLabel(checklist.name);
             return;
         }
 
-        if (event.key === "ArrowUp") {
-            event.preventDefault();
-            setActiveComboOption(combo, combo.activeIndex - 1);
-            return;
-        }
-
-        if (event.key === "Home" && combo.open) {
-            event.preventDefault();
-            setActiveComboOption(combo, 0);
-            return;
-        }
-
-        if (event.key === "End" && combo.open) {
-            event.preventDefault();
-            setActiveComboOption(combo, combo.matches.length - 1);
-            return;
-        }
-
-        if (event.key === "Enter") {
-
-            if (!combo.open) {
-                return;
-            }
-
-            event.preventDefault();
-
-            const active = combo.list.querySelector(".combo__option--active") ||
-                combo.list.querySelector(".combo__option");
-
-            if (active) {
-                commitComboValue(combo, active.getAttribute("data-value"));
-            }
-
-            return;
-        }
-
-        if (event.key === "Escape") {
-            event.preventDefault();
-            closeCombo(combo);
-            return;
-        }
-
-        if (event.key === "Tab") {
-            closeCombo(combo);
-        }
-    });
-
-    list.addEventListener("mousedown", event => {
-
-        /*
-         * mousedown, not click - otherwise the input blurs and
-         * closes the list before the click lands.
-         */
-        const option = event.target.closest(".combo__option");
-
-        if (!option) {
-            return;
-        }
-
-        event.preventDefault();
-
-        commitComboValue(combo, option.getAttribute("data-value"));
-    });
-
-    input.addEventListener("blur", () => {
-        window.setTimeout(() => closeCombo(combo), 0);
-    });
-}
-
-
-function setupComboDismiss() {
-
-    document.addEventListener("mousedown", event => {
-
-        combos.forEach(combo => {
-
-            if (combo.open && !combo.wrapper.contains(event.target)) {
-                closeCombo(combo);
-            }
-        });
+        renderChecklist(checklist.name);
     });
 }
 
 
 /* ============================================================
-   13. FILTER OPTIONS
+   16. PENDING FILTERS
+
+   Everything the sidebar changes lands here. Nothing is fetched
+   until Apply, except the option lists themselves - changing
+   Scope has to re-read which makers and classes exist before
+   the reader can pick one.
    ============================================================ */
 
-function populateSelect(select, values, allLabel, selectedValue = CONFIG.ALL) {
+function filtersEqual(a, b) {
 
-    if (!select) {
-        return;
-    }
+    const same = (x, y) =>
+        x.length === y.length && x.every((value, at) => value === y[at]);
 
-    select.innerHTML = "";
-
-    const allOption = document.createElement("option");
-    allOption.value = CONFIG.ALL;
-    allOption.textContent = allLabel;
-    select.appendChild(allOption);
-
-    values.forEach(entry => {
-
-        const value = typeof entry === "string" ? entry : entry.value;
-        const label = typeof entry === "string" ? entry : entry.label;
-
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label;
-        select.appendChild(option);
-    });
-
-    const values2 = values.map(
-        entry => (typeof entry === "string" ? entry : entry.value)
+    return (
+        a.scope === b.scope &&
+        same(a.years, b.years) &&
+        same(a.months, b.months) &&
+        same(a.rtos, b.rtos) &&
+        same(a.makers, b.makers) &&
+        same(a.classes, b.classes)
     );
-
-    select.value =
-        !isAll(selectedValue) && values2.includes(selectedValue)
-            ? selectedValue
-            : CONFIG.ALL;
-
-    refreshCombo(select);
 }
 
 
-function setGroupVisible(group, visible) {
+function markDirty() {
 
-    if (group) {
-        group.hidden = !visible;
+    if (!dom.applyFiltersButton) {
+        return;
     }
+
+    dom.applyFiltersButton.classList.toggle(
+        "is-dirty",
+        !filtersEqual(state.pending, state.filters)
+    );
 }
 
 
 /*
- * The entity list is read from the table CURRENTLY on screen,
- * not from a fixed table. Offering makers that the displayed
- * table does not contain would silently return no rows - the
- * EV table has 904 makers where the month table has 1,931.
+ * Called after any sidebar change. Month and RTO and Scope all
+ * move which options the other lists can offer, so those are
+ * rebuilt before the labels are redrawn.
  */
-async function loadEntityOptions(signal) {
+async function onPendingChanged(name, { origin = null } = {}) {
 
-    const schema = currentSchema();
+    /*
+     * Scope, RTO and Month all move which makers, classes and
+     * years exist, so those lists are rebuilt before anything is
+     * redrawn. Maker and Class narrow nothing but themselves.
+     */
+    let rebuilt = false;
 
-    if (!schema) {
-        return;
+    if (name === "months" || name === "rtos" || name === "scope") {
+
+        try {
+            await loadFilterOptions();
+            rebuilt = true;
+        } catch (error) {
+            console.warn("Filter options unavailable:", error.message);
+        }
     }
 
-    const columns = [schema.entityColumn, schema.totalColumn];
+    renderAllChecklists({ origin: rebuilt ? null : origin });
+    updateFilterNotice();
+    markDirty();
+}
 
-    if (schema.srNoColumn) {
-        columns.unshift(schema.srNoColumn);
-    }
 
-    if (schema.yearColumn) {
-        columns.unshift(schema.yearColumn);
-    }
+/*
+ * Drops selections the new source cannot offer - a maker that
+ * only trades in Gujarat, a class the RTO table has no column
+ * for - so an invisible filter can never narrow the figures.
+ */
+function pruneSelection(name) {
 
-    const cached = await getCachedTable(
-        schema.table,
-        [...columns, ...schema.valueColumns],
-        signal
+    const allowed = new Set(
+        (state.options[name] || []).map(option => option.value)
     );
 
-    /* Makers come and go between years, so list only this year's. */
-    const rows = rowsForSelectedYear(schema, cached);
-
-    const names = uniqueSorted(rows.map(row => row[schema.entityColumn]));
-
-    if (isStateView()) {
-
-        state.states = names;
-
-        populateSelect(
-            dom.stateFilter,
-            names,
-            "All States",
-            dom.stateFilter?.value
-        );
-
-    } else {
-
-        state.makers = names;
-
-        populateSelect(
-            dom.makerFilter,
-            names,
-            "All Makers",
-            dom.makerFilter?.value
-        );
-    }
-}
-
-
-function loadMonths() {
-
-    const schema = currentSchema();
-
-    state.months =
-        schema && currentView().columnKind === "month"
-            ? schema.monthColumns
-            : [];
-
-    populateSelect(dom.monthFilter, state.months, "All Months");
-
-    setGroupVisible(dom.monthFilterGroup, state.months.length > 0);
-}
-
-
-function loadClassFilters() {
-
-    buildClassGroups();
-
-    const categories = CLASS_GROUPS
-        .filter(group => (state.groupToClasses.get(group.id) || []).length > 0)
-        .map(group => group.label);
-
-    populateSelect(dom.categoryFilter, categories, "All Categories");
-    setGroupVisible(dom.categoryFilterGroup, categories.length > 0);
-
-    const classes = uniqueSorted(state.classColumns);
-
-    populateSelect(dom.subcategoryFilter, classes, "All Subcategories");
-    setGroupVisible(dom.subcategoryFilterGroup, classes.length > 0);
+    state.pending[name] = state.pending[name].filter(
+        value => allowed.has(value)
+    );
 }
 
 
 async function loadFilterOptions(signal) {
 
-    await loadEntityOptions(signal);
+    const pending = state.pending;
+    const grain = grainFor(pending);
 
-    loadYears();
-    loadMonths();
-    loadClassFilters();
+    state.options.years = availableYears(grain).map(year => ({
+        value: year,
+        label: year
+    }));
 
-    applyViewVisibility();
-    updateFilterNotice();
-}
+    pruneSelection("years");
 
+    const sources = mainSources(pending, grain);
 
-function loadYears() {
-
-    updateYearRangeHeader();
-}
-
-
-/* ============================================================
-   14. READ FILTERS
-   ============================================================ */
-
-function getSelectedMakersFromUI() {
-
-    const values = [];
-
-    if (dom.makerFilter) {
-
-        const value = normalizeString(dom.makerFilter.value);
-
-        if (value && !isAll(value)) {
-            values.push(value);
-        }
-    }
-
-    document.querySelectorAll("[data-maker-filter]").forEach(control => {
-
-        const value = normalizeString(control.value);
-
-        if (value && !isAll(value)) {
-            values.push(value);
-        }
-    });
-
-    return uniqueSorted(values);
-}
-
-
-function readFiltersFromUI() {
-
-    state.view =
-        dom.breakdownFilter && VIEWS[dom.breakdownFilter.value]
-            ? dom.breakdownFilter.value
-            : DEFAULT_VIEW;
-
-    state.year =
-        dom.yearFilter && AVAILABLE_YEARS.includes(dom.yearFilter.value)
-            ? dom.yearFilter.value
-            : AVAILABLE_YEARS[0];
-
-    state.filters = {
-
-        fromYear: CONFIG.ALL,
-        toYear: CONFIG.ALL,
-
-        makers: getSelectedMakersFromUI(),
-
-        state: CONFIG.ALL,
-
-        region: CONFIG.ALL,
-
-        month: normalizeFilter(dom.monthFilter?.value),
-
-        category: normalizeFilter(dom.categoryFilter?.value),
-
-        subcategory: normalizeFilter(dom.subcategoryFilter?.value)
-    };
-
-    return state.filters;
-}
-
-
-function displayYearError(message) {
-
-    if (!dom.yearRangeError) {
-        displayError(message);
+    if (sources.length === 0) {
+        state.options.makers = [];
+        state.options.classes = [];
         return;
     }
 
-    dom.yearRangeError.textContent = message;
-    dom.yearRangeError.hidden = false;
+    const schema = await describeSources(sources, grain);
+
+    state.classColumns = schema.classColumns;
+    state.options.classes = classOptionsFor(schema.classColumns);
+
+    pruneSelection("classes");
+
+    state.options.makers = (await loadMakerOptions(sources, grain, signal))
+        .map(maker => ({ value: maker, label: maker }));
+
+    pruneSelection("makers");
 }
 
 
-function clearYearError() {
+/*
+ * The maker list is read from whichever source is on screen. At
+ * year grain that is the scope table itself, already cached; at
+ * month grain it is the dedicated distinct-maker view, which is
+ * a few hundred rows against the month view's tens of thousands.
+ */
+const makerListCache = new Map();
 
-    if (dom.yearRangeError) {
-        dom.yearRangeError.textContent = "";
-        dom.yearRangeError.hidden = true;
+
+async function loadMakerOptions(sources, grain, signal) {
+
+    const key = grain + " " + sources.map(source => source.scope).join(",");
+
+    if (makerListCache.has(key)) {
+        return makerListCache.get(key);
     }
+
+    const pending = (async () => {
+
+        if (grain === "month") {
+
+            const rows = await fetchAllRows(
+                "trend_makers",
+                ["Maker"],
+                {
+                    signal,
+                    filters: [{
+                        column: SCOPE_COLUMN,
+                        values: sources.map(source => source.scope)
+                    }]
+                }
+            );
+
+            return uniqueSorted(rows.map(row => row.Maker));
+        }
+
+        const lists = await Promise.all(sources.map(async source => {
+
+            const table = tableFor(source.scope);
+            const schema = await describeSource(table);
+
+            const rows = await getCachedTable(
+                table,
+                sourceColumns(schema),
+                signal
+            );
+
+            return rows.map(row => row[schema.entityColumn]);
+        }));
+
+        return uniqueSorted(lists.flat());
+    })();
+
+    makerListCache.set(key, pending);
+    pending.catch(() => makerListCache.delete(key));
+
+    return pending;
+}
+
+
+/*
+ * Everything a year-grain read needs: the maker, the year, the
+ * total and every class column. One select covers both the
+ * option list and the figures, so the table is cached once.
+ */
+function sourceColumns(schema) {
+
+    const columns = [schema.entityColumn, schema.totalColumn];
+
+    if (schema.yearColumn) {
+        columns.unshift(schema.yearColumn);
+    }
+
+    return columns.concat(schema.classColumns);
 }
 
 
 /* ============================================================
-   15. VIEW + FILTER COMPATIBILITY
+   17. FILTER NOTICE
+
+   Says the two things a reader cannot see for themselves: which
+   grain the figures came from, and which selections the data
+   could not honour.
    ============================================================ */
-
-/*
- * State, region and month have no backing table in this
- * database, so their controls stay hidden. The year-range pair
- * is replaced by the single Year select.
- */
-function applyViewVisibility() {
-
-    setGroupVisible(dom.stateFilterGroup, false);
-    setGroupVisible(dom.regionFilterGroup, false);
-    setGroupVisible(dom.monthFilterGroup, false);
-
-    const yearRange = dom.fromYearFilter?.closest(".year-range-filters");
-
-    if (yearRange) {
-        yearRange.hidden = true;
-    }
-
-    const makerGroup = dom.makerFilter?.closest(".filter-group");
-
-    if (makerGroup) {
-        makerGroup.hidden = false;
-    }
-}
-
-
-/*
- * Only one breakdown dimension can be active, because no table
- * crosses them: region comes from the RTO table, month from the
- * month tables, class from the class tables.
- */
-function enforceFilterCompatibility() {
-
-    const regionSelected =
-        !isStateView() && !isAll(dom.regionFilter?.value);
-
-    /*
-     * Column filters belong to whichever table is on screen -
-     * a month table has no classes and vice versa. Region
-     * replaces the table outright, so it disables both.
-     */
-    if (dom.monthFilter) {
-        dom.monthFilter.disabled = regionSelected;
-    }
-
-    if (dom.categoryFilter) {
-        dom.categoryFilter.disabled = regionSelected;
-    }
-
-    if (dom.subcategoryFilter) {
-        dom.subcategoryFilter.disabled = regionSelected;
-    }
-
-    if (dom.regionFilter) {
-        dom.regionFilter.disabled = state.regionsLoading;
-    }
-
-    refreshAllCombos();
-
-    updateFilterNotice();
-}
-
 
 function updateFilterNotice() {
 
@@ -2160,774 +1876,933 @@ function updateFilterNotice() {
         return;
     }
 
+    const pending = state.pending;
+    const grain = grainFor(pending);
     const messages = [];
 
-    /*
-     * Vahan drops classes with no entries, so each scope+year
-     * table carries a different column set. Say so, since the
-     * column count visibly changes when switching.
-     */
-    const schema = currentSchema();
-
-    if (schema) {
+    if (rtoOverrideActive(pending)) {
         messages.push(
-            `${currentView().scopeLabel} ${state.year}: ` +
-            `${schema.classColumns.length} vehicle classes with ` +
-            "registrations. Other scopes and years differ."
+            "RTO is selected, so Scope is ignored: the figures cover " +
+            `${pending.rtos.join(", ")} only.`
         );
     }
 
-    /*
-     * The scope tables were pulled from Vahan in mid-August 2026; the
-     * month tables behind the trend close on 31 August. So the two
-     * cards disagree on 2026 by a few per cent - about 5 lakh units
-     * at All India - and will keep disagreeing until the scope
-     * tables are re-pulled. Better said out loud than discovered.
-     */
-    if (String(state.year) === DATA_AS_OF.year) {
+    const missing = rtosWithoutGrain(pending.rtos, grain);
+
+    if (missing.length > 0) {
         messages.push(
-            `2026 figures here are as of ${DATA_AS_OF.label}. The ` +
-            "monthly trend runs to the end of August, so its 2026 " +
-            "totals are slightly higher."
+            `${missing.join(", ")} has no month tables, so it drops out ` +
+            "while a month is selected."
         );
     }
 
-    if (messages.length === 0) {
-        dom.filterNotice.hidden = true;
-        dom.filterNotice.textContent = "";
-        return;
+    if (grain === "month") {
+        messages.push(
+            "Month grain: figures come from the monthly tables, which " +
+            "run to 2024 and close on 31 August 2026."
+        );
+    } else {
+        messages.push(
+            `Year grain: 2026 is as of ${DATA_AS_OF.label}. Selecting a ` +
+            "month switches to the monthly tables, whose 2026 totals are " +
+            "slightly higher."
+        );
     }
 
-    dom.filterNotice.hidden = false;
+    dom.filterNotice.hidden = messages.length === 0;
     dom.filterNotice.textContent = messages.join(" ");
 }
 
 
 /* ============================================================
-   16. VISIBLE COLUMNS
+   18. LOADING RECORDS
 
-   The table shows the source table's own columns. The Month /
-   Category / Subcategory controls narrow WHICH columns are
-   shown rather than collapsing the table to a single number.
+   A record is one row of one source, kept as it arrived:
+
+       { rto, scope, year, month, maker, raw }
+
+   The class figures stay inside `raw` and are summed on demand.
+   Copying 75 columns into a second object per row would triple
+   the memory for no gain - every consumer wants a different
+   subset of them.
    ============================================================ */
 
-function getVisibleValueColumns() {
+/*
+ * Loads one year further back than asked for, so the detailed
+ * table can show a year-on-year change on its first render
+ * rather than after a second request.
+ */
+function yearsToLoad(selected, grain) {
 
-    const schema = currentSchema();
+    const available = availableYears(grain);
 
-    if (!schema) {
-        return [];
+    const wanted = selected.length > 0 ? selected : available;
+
+    const withPrior = new Set(wanted);
+
+    wanted.forEach(year => {
+        withPrior.add(String(Number(year) - 1));
+    });
+
+    return available.filter(year => withPrior.has(year));
+}
+
+
+async function loadRecords(sources, grain, years, months, signal) {
+
+    if (sources.length === 0) {
+        return { records: [], classColumns: [] };
     }
 
-    const view = currentView();
+    const schema = await describeSources(sources, grain);
 
-    if (view.columnKind === "month") {
+    const records = grain === "month"
+        ? await loadMonthRecords(sources, years, months, signal)
+        : await loadYearRecords(sources, signal);
 
-        const month = state.filters.month;
+    return { records, classColumns: schema.classColumns };
+}
 
-        return isAll(month)
-            ? schema.monthColumns
-            : schema.monthColumns.filter(column => column === month);
-    }
 
-    const { category, subcategory } = state.filters;
+async function loadYearRecords(sources, signal) {
 
-    if (!isAll(subcategory)) {
-        return schema.classColumns.filter(column => column === subcategory);
-    }
+    const perSource = await Promise.all(sources.map(async source => {
 
-    if (!isAll(category)) {
+        const table = tableFor(source.scope);
+        const schema = await describeSource(table);
 
-        const allowed = getClassesForGroupLabel(category);
+        const rows = await getCachedTable(
+            table,
+            sourceColumns(schema),
+            signal
+        );
 
-        return schema.classColumns.filter(column => allowed.includes(column));
-    }
+        return rows.map(row => ({
+            rto: source.rto,
+            scope: source.scope,
+            year: normalizeString(row[schema.yearColumn]),
+            month: null,
+            maker: normalizeString(row[schema.entityColumn]),
+            raw: row
+        }));
+    }));
 
-    return schema.classColumns;
+    return perSource.flat();
 }
 
 
 /*
- * Column descriptors drive the header, the body and the totals
- * row, so all three stay in lockstep.
+ * One request for every scope at once - PostgREST takes a list -
+ * narrowed by year and month in the database rather than by
+ * reading the whole view and discarding most of it.
  */
-function buildColumns(valueColumns, { regionLabel = null } = {}) {
+async function loadMonthRecords(sources, years, months, signal) {
 
-    const view = currentView();
+    const schema = await describeSource(MONTH_VIEW);
 
     const columns = [
-        { key: "__index", label: "Sr No.", type: "index" },
-        { key: "__entity", label: view.entity, type: "entity" }
+        SCOPE_COLUMN,
+        schema.yearColumn,
+        MONTH_COLUMN,
+        schema.entityColumn,
+        schema.totalColumn,
+        ...schema.classColumns
     ];
 
-    if (regionLabel) {
+    const filters = [
+        {
+            column: SCOPE_COLUMN,
+            values: sources.map(source => source.scope)
+        },
+        {
+            column: MONTH_COLUMN,
+            values: months.map(Number)
+        }
+    ];
 
-        columns.push({
-            key: "__region",
-            label: regionLabel,
-            type: "value"
-        });
-
-    } else {
-
-        valueColumns.forEach(column => {
-            columns.push({ key: column, label: column, type: "value" });
-        });
+    if (years.length > 0) {
+        filters.push({ column: schema.yearColumn, values: years });
     }
 
-    columns.push({ key: "__total", label: "Total", type: "total" });
+    const rows = await fetchAllRowsFast(MONTH_VIEW, columns, {
+        signal,
+        filters
+    });
 
-    return columns;
+    const rtoByScope = new Map(
+        sources.map(source => [source.scope, source.rto])
+    );
+
+    return rows.map(row => ({
+        rto: rtoByScope.get(row[SCOPE_COLUMN]) || null,
+        scope: row[SCOPE_COLUMN],
+        year: normalizeString(row[schema.yearColumn]),
+        month: toNumber(row[MONTH_COLUMN]),
+        maker: normalizeString(row[schema.entityColumn]),
+        raw: row
+    }));
+}
+
+
+/*
+ * Card 2 always reads the four RTO sources, whatever Scope says -
+ * an RTO breakdown of All India would need RTO tables that do not
+ * exist, so the card answers the one question the data can.
+ */
+async function loadRtoRecords(filters, grain, years, months, signal) {
+
+    const sources = rtoSources(filters.rtos, grain);
+
+    return loadRecords(sources, grain, years, months, signal);
 }
 
 
 /* ============================================================
-   17. DATA FETCHING
+   19. SELECTION HELPERS
    ============================================================ */
 
-function matchesEntityFilter(entity) {
+function selectedYears() {
 
-    if (isStateView()) {
+    const available = availableYears(state.grain);
+    const chosen = state.filters.years;
 
-        const selected = state.filters.state;
+    const wanted = chosen.length > 0
+        ? available.filter(year => chosen.includes(year))
+        : available.slice();
 
-        return (
-            isAll(selected) ||
-            normalizeKey(selected) === normalizeKey(entity)
-        );
-    }
-
-    const makers = state.filters.makers;
-
-    if (makers.length === 0) {
-        return true;
-    }
-
-    return makers.some(
-        maker => normalizeKey(maker) === normalizeKey(entity)
-    );
+    /* Ascending, so the year columns read left to right. */
+    return wanted.sort((a, b) => Number(a) - Number(b));
 }
 
 
-async function fetchDashboardData(filters, signal) {
+function selectedMonthNumbers() {
 
-    /* --- Region overrides the table: long RTO data ------- */
+    const chosen = state.filters.months;
 
-    if (regionIsActive()) {
+    return chosen.length > 0
+        ? MONTHS
+            .filter(month => chosen.includes(String(month.number)))
+            .map(month => month.number)
+        : MONTHS.map(month => month.number);
+}
 
-        const schema = state.schema.makerRto;
-        const region = filters.region;
 
-        const serverFilters = [
-            { column: schema.regionColumn, values: [region] }
-        ];
+function makerFilterSet() {
 
-        if (filters.makers.length > 0) {
-            serverFilters.push({
-                column: schema.makerColumn,
-                values: filters.makers
-            });
+    const chosen = state.filters.makers;
+
+    return chosen.length === 0
+        ? null
+        : new Set(chosen.map(normalizeKey));
+}
+
+
+function activeClassColumns(classColumns) {
+
+    return resolveClassColumns(state.filters.classes, classColumns);
+}
+
+
+function growthBetween(from, to) {
+
+    if (!Number.isFinite(from) || from <= 0) {
+        return null;
+    }
+
+    return ((to - from) / from) * 100;
+}
+
+
+/* ============================================================
+   20. CARD 1 - MAKER COMPARISON (YEAR WISE)
+   ============================================================ */
+
+function buildMakerTable() {
+
+    const years = selectedYears();
+    const yearSet = new Set(years);
+    const columns = activeClassColumns(state.main.classColumns);
+    const allowed = makerFilterSet();
+
+    const byMaker = new Map();
+
+    state.main.records.forEach(record => {
+
+        if (!yearSet.has(record.year)) {
+            return;
         }
 
-        const raw = await fetchAllRows(
-            schema.table,
-            [schema.makerColumn, schema.valueColumn],
-            { signal, filters: serverFilters }
-        );
+        if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            return;
+        }
 
-        const columns = buildColumns([], {
-            regionLabel: prettifyRegion(region)
-        });
+        const value = sumColumns(record.raw, columns);
 
-        const rows = raw.map(row => ({
-            entity: normalizeString(row[schema.makerColumn]),
-            values: { __region: toNumber(row[schema.valueColumn]) }
-        }));
+        let row = byMaker.get(record.maker);
 
-        return {
-            rows,
-            columns,
-            sourceTable: schema.table,
-            classRows: null,
-            classSchema: null
-        };
-    }
+        if (!row) {
+            row = { maker: record.maker, byYear: {}, total: 0 };
+            byMaker.set(record.maker, row);
+        }
 
-    /* --- Otherwise: the selected wide table -------------- */
-
-    const schema = currentSchema();
-
-    if (!schema) {
-        return {
-            rows: [],
-            columns: buildColumns([]),
-            sourceTable: null,
-            classRows: null,
-            classSchema: null
-        };
-    }
-
-    const valueColumns = getVisibleValueColumns();
-
-    const selectColumns = [
-        schema.entityColumn,
-        schema.totalColumn,
-        ...schema.valueColumns
-    ];
-
-    if (schema.srNoColumn) {
-        selectColumns.unshift(schema.srNoColumn);
-    }
-
-    if (schema.yearColumn) {
-        selectColumns.unshift(schema.yearColumn);
-    }
-
-    const cached = await getCachedTable(schema.table, selectColumns, signal);
-
-    const raw = rowsForSelectedYear(schema, cached);
-
-    const rows = raw.map(row => {
-
-        const values = {};
-
-        valueColumns.forEach(column => {
-            values[column] = toNumber(row[column]);
-        });
-
-        return {
-            entity: normalizeString(row[schema.entityColumn]),
-            srNo: schema.srNoColumn ? toNumber(row[schema.srNoColumn]) : null,
-            values
-        };
+        row.byYear[record.year] = (row.byYear[record.year] || 0) + value;
+        row.total += value;
     });
 
+    const rows = [...byMaker.values()].filter(row => row.total > 0);
+
+    const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
+
+    const first = years[0];
+    const last = years[years.length - 1];
+
+    rows.forEach(row => {
+
+        row.share = grandTotal > 0 ? (row.total / grandTotal) * 100 : null;
+
+        row.growth = years.length > 1
+            ? growthBetween(row.byYear[first] || 0, row.byYear[last] || 0)
+            : null;
+    });
+
+    const totals = {
+        maker: `Total (${formatIndianNumber(rows.length)})`,
+        byYear: {},
+        total: grandTotal,
+        share: grandTotal > 0 ? 100 : null,
+        growth: null
+    };
+
+    years.forEach(year => {
+        totals.byYear[year] = rows.reduce(
+            (sum, row) => sum + (row.byYear[year] || 0),
+            0
+        );
+    });
+
+    if (years.length > 1) {
+        totals.growth = growthBetween(totals.byYear[first], totals.byYear[last]);
+    }
+
+    state.makerTable = { rows, years, totals, first, last };
+}
+
+
+/* ============================================================
+   21. CARD 2 - RTO COMPARISON (MAKER WISE)
+   ============================================================ */
+
+function buildRtoTable() {
+
+    const years = new Set(selectedYears());
+    const columns = activeClassColumns(state.rto.classColumns);
+    const allowed = makerFilterSet();
+
+    /* code -> { code, name, total, byMaker: Map } */
+    const byRto = new Map();
+    const makerTotals = new Map();
+
+    state.rto.records.forEach(record => {
+
+        if (!record.rto || !years.has(record.year)) {
+            return;
+        }
+
+        if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            return;
+        }
+
+        const value = sumColumns(record.raw, columns);
+
+        if (value === 0) {
+            return;
+        }
+
+        let row = byRto.get(record.rto);
+
+        if (!row) {
+
+            const rto = rtoByCode(record.rto);
+
+            row = {
+                code: record.rto,
+                name: rto ? rto.name : record.rto,
+                total: 0,
+                byMaker: new Map()
+            };
+
+            byRto.set(record.rto, row);
+        }
+
+        row.total += value;
+
+        row.byMaker.set(
+            record.maker,
+            (row.byMaker.get(record.maker) || 0) + value
+        );
+
+        makerTotals.set(
+            record.maker,
+            (makerTotals.get(record.maker) || 0) + value
+        );
+    });
+
+    const makerColumns = [...makerTotals.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, CONFIG.RTO_MAKER_COLUMNS)
+        .map(entry => entry[0]);
+
+    const rows = [...byRto.values()].sort((a, b) => b.total - a.total);
+
+    const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
+
+    rows.forEach(row => {
+
+        row.values = {};
+
+        let named = 0;
+
+        makerColumns.forEach(maker => {
+
+            const value = row.byMaker.get(maker) || 0;
+
+            row.values[maker] = value;
+            named += value;
+        });
+
+        row.others = row.total - named;
+        row.share = grandTotal > 0 ? (row.total / grandTotal) * 100 : null;
+    });
+
+    const totals = {
+        code: "TOTAL",
+        name: `${rows.length} RTO${rows.length === 1 ? "" : "s"}`,
+        values: {},
+        others: rows.reduce((sum, row) => sum + row.others, 0),
+        total: grandTotal,
+        share: grandTotal > 0 ? 100 : null
+    };
+
+    makerColumns.forEach(maker => {
+        totals.values[maker] = rows.reduce(
+            (sum, row) => sum + row.values[maker],
+            0
+        );
+    });
+
+    state.rtoTable = { rows, makerColumns, totals };
+}
+
+
+/* ============================================================
+   22. CARD 3 - DETAILED REGISTRATION DATA
+
+   One row per year, month, RTO, maker and vehicle class, which
+   means unpivoting maker x class. Most of that grid is zero - a
+   maker builds one kind of vehicle and nothing else - so only
+   the cells that carry a figure become rows.
+   ============================================================ */
+
+/*
+ * The year is part of the key, so the same cell one year earlier is
+ * found by looking up the key built with year - 1. Leaving the year
+ * out looked simpler but broke as soon as the earlier year was
+ * itself selected: 2025 would then be both a row and its own
+ * comparison, and the index could hold only one of the two.
+ */
+function detailKey(year, record, column) {
+
     /*
-     * KPI class data. When the displayed table already carries
-     * classes, reuse it; otherwise borrow the matching class
-     * table for the same entity kind.
+     * JSON rather than a joined string: a maker name carrying the
+     * separator would otherwise collide with a different cell.
      */
-    let classSchema = null;
-    let classRows = null;
+    return JSON.stringify([
+        year,
+        record.month,
+        record.rto || "",
+        normalizeKey(record.maker),
+        column
+    ]);
+}
 
-    if (currentView().columnKind === "class") {
 
-        classSchema = schema;
-        classRows = raw;
+function buildDetailTable() {
 
-    } else {
+    const years = selectedYears();
+    const yearSet = new Set(years);
+    const columns = activeClassColumns(state.main.classColumns);
+    const allowed = makerFilterSet();
 
-        classSchema = isStateView()
-            ? state.schema.stateClass
-            : state.filters.makers.length === 0 && state.schema.stateClass
-                ? state.schema.stateClass
-                : state.schema.makerClass;
+    /*
+     * The year before each selected one. A year can be both a row
+     * and another year's comparison - selecting 2025 and 2026
+     * together is the ordinary case - so this is not narrowed to
+     * years outside the selection.
+     */
+    const priorYears = new Set(
+        years.map(year => String(Number(year) - 1))
+    );
 
-        if (classSchema) {
+    const prior = new Map();
 
-            try {
+    state.main.records.forEach(record => {
 
-                classRows = await getCachedTable(
-                    classSchema.table,
-                    [
-                        classSchema.entityColumn,
-                        classSchema.totalColumn,
-                        ...classSchema.classColumns
-                    ],
-                    signal
-                );
+        if (!priorYears.has(record.year)) {
+            return;
+        }
 
-            } catch (error) {
+        if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            return;
+        }
 
-                console.warn("Class KPI data unavailable:", error.message);
+        columns.forEach(column => {
 
-                classRows = null;
-                classSchema = null;
+            const value = toNumber(record.raw[column]);
+
+            if (value > 0) {
+                prior.set(detailKey(record.year, record, column), value);
             }
+        });
+    });
+
+    const rows = [];
+    const makerTotals = new Map();
+
+    let truncated = false;
+
+    for (const record of state.main.records) {
+
+        if (!yearSet.has(record.year)) {
+            continue;
+        }
+
+        if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            continue;
+        }
+
+        const rto = record.rto ? rtoByCode(record.rto) : null;
+
+        for (const column of columns) {
+
+            const value = toNumber(record.raw[column]);
+
+            if (value <= 0) {
+                continue;
+            }
+
+            if (rows.length >= CONFIG.MAX_DETAIL_ROWS) {
+                truncated = true;
+                break;
+            }
+
+            const before = prior.get(
+                detailKey(String(Number(record.year) - 1), record, column)
+            );
+
+            rows.push({
+                year: record.year,
+                month: record.month,
+                rtoCode: record.rto || "—",
+                rtoName: rto ? rto.name : "—",
+                maker: record.maker,
+                vehicleClass: column,
+                registration: value,
+                yoy: before === undefined
+                    ? null
+                    : growthBetween(before, value)
+            });
+
+            makerTotals.set(
+                record.maker,
+                (makerTotals.get(record.maker) || 0) + value
+            );
+        }
+
+        if (truncated) {
+            break;
         }
     }
 
-    return {
+    const grandTotal = rows.reduce((sum, row) => sum + row.registration, 0);
+
+    /*
+     * Rank is the maker's standing in the whole selection, not the
+     * row's - so the same maker carries the same rank on each of
+     * its rows, which is what the column is for.
+     */
+    const ranks = new Map(
+        [...makerTotals.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map((entry, index) => [entry[0], index + 1])
+    );
+
+    rows.forEach(row => {
+        row.share = grandTotal > 0 ? (row.registration / grandTotal) * 100 : null;
+        row.rank = ranks.get(row.maker) || null;
+    });
+
+    state.detailTable = {
         rows,
-        columns: buildColumns(valueColumns),
-        sourceTable: schema.table,
-        classRows,
-        classSchema
+        truncated,
+        totals: {
+            registration: grandTotal,
+            share: grandTotal > 0 ? 100 : null,
+            rows: rows.length
+        }
     };
 }
 
 
 /* ============================================================
-   18. AGGREGATION
+   23. KPIs
+
+   Each card is the same measure taken twice: once over the
+   selected years, once over the year before the latest of them,
+   which is what "vs Previous Year" compares.
    ============================================================ */
 
 /*
- * Collapses duplicate entities, applies the entity filter, and
- * computes each row's Total as the sum of its VISIBLE columns -
- * so narrowing to one category gives a Total for that category
- * rather than the table's own untouched grand total.
+ * One year at a time, cached for the life of a render. The strip
+ * asks for three overlapping measures - the whole selection, its
+ * latest year and the year before - and a per-year figure serves
+ * all three by union rather than by three sweeps of the records.
  */
-function aggregateRows(rows, columns) {
+const measureCache = new Map();
 
-    const valueKeys = columns
-        .filter(column => column.type === "value")
-        .map(column => column.key);
 
-    const map = new Map();
+function measureYear(year) {
 
-    rows.forEach(row => {
+    if (measureCache.has(year)) {
+        return measureCache.get(year);
+    }
 
-        const entity = normalizeString(row.entity);
+    const columns = activeClassColumns(state.main.classColumns);
+    const rtoColumns = activeClassColumns(state.rto.classColumns);
+    const allowed = makerFilterSet();
 
-        if (!entity || !matchesEntityFilter(entity)) {
+    const makers = new Set();
+    const classes = new Set();
+    const rtos = new Set();
+
+    let registrations = 0;
+    let industry = 0;
+
+    state.main.records.forEach(record => {
+
+        if (record.year !== year) {
             return;
         }
 
-        const key = normalizeKey(entity);
-
-        if (!map.has(key)) {
-            map.set(key, {
-                entity,
-                srNo: row.srNo ?? null,
-                values: {},
-                total: 0
-            });
-        }
-
-        const target = map.get(key);
-
         /*
-         * Duplicates keep the lowest source row number.
+         * The total and the classes that carry a figure come out
+         * of the same pass - a second sweep over 75 columns per
+         * row is the difference between a fast render and a
+         * noticeable one on the All India table.
          */
-        if (
-            row.srNo !== null &&
-            row.srNo !== undefined &&
-            (target.srNo === null || row.srNo < target.srNo)
-        ) {
-            target.srNo = row.srNo;
-        }
+        let value = 0;
+        const present = [];
 
-        valueKeys.forEach(valueKey => {
+        columns.forEach(column => {
 
-            target.values[valueKey] =
-                toNumber(target.values[valueKey]) +
-                toNumber(row.values[valueKey]);
+            const amount = toNumber(record.raw[column]);
+
+            if (amount > 0) {
+                value += amount;
+                present.push(column);
+            }
         });
-    });
 
-    const result = [];
+        industry += value;
 
-    map.forEach(row => {
+        if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            return;
+        }
 
-        row.total = valueKeys.reduce(
-            (sum, valueKey) => sum + toNumber(row.values[valueKey]),
-            0
-        );
+        registrations += value;
 
-        if (row.total > 0) {
-            result.push(row);
+        if (value > 0) {
+            makers.add(normalizeKey(record.maker));
+            present.forEach(column => classes.add(column));
         }
     });
+
+    state.rto.records.forEach(record => {
+
+        if (!record.rto || record.year !== year) {
+            return;
+        }
+
+        if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            return;
+        }
+
+        if (sumColumns(record.raw, rtoColumns) > 0) {
+            rtos.add(record.rto);
+        }
+    });
+
+    const result = { registrations, industry, makers, classes, rtos };
+
+    measureCache.set(year, result);
 
     return result;
 }
 
 
-/*
- * Per-column totals for the footer, summed over every filtered
- * row rather than just the visible page.
- */
-function calculateColumnTotals(rows, columns) {
+function measure(years) {
 
-    const totals = {};
+    const makers = new Set();
+    const classes = new Set();
+    const rtos = new Set();
 
-    columns.forEach(column => {
+    let registrations = 0;
+    let industry = 0;
 
-        if (column.type === "index" || column.type === "entity") {
-            return;
-        }
+    years.forEach(year => {
 
-        totals[column.key] =
-            column.type === "total"
-                ? rows.reduce((sum, row) => sum + toNumber(row.total), 0)
-                : rows.reduce(
-                    (sum, row) => sum + toNumber(row.values[column.key]),
-                    0
-                );
+        const yearly = measureYear(year);
+
+        registrations += yearly.registrations;
+        industry += yearly.industry;
+
+        yearly.makers.forEach(value => makers.add(value));
+        yearly.classes.forEach(value => classes.add(value));
+        yearly.rtos.forEach(value => rtos.add(value));
     });
 
-    return totals;
+    return {
+        registrations,
+        makers: makers.size,
+        rtos: rtos.size,
+        classes: classes.size,
+        share: industry > 0 ? (registrations / industry) * 100 : null
+    };
 }
 
 
-/* ============================================================
-   19. KPIs
-   ============================================================ */
+function buildKpis() {
 
-function calculateKPIs(rows, classRows, classSchema, visibleClassColumns) {
+    const years = selectedYears();
+    const current = measure(years);
 
-    const total = rows.reduce((sum, row) => sum + toNumber(row.total), 0);
+    const latest = years[years.length - 1];
+    const previousYear = String(Number(latest) - 1);
 
-    const kpis = {
-        totalRegistrations: total,
-        totalEntities: rows.length,
-        twoWRegistrations: null,
-        threeWRegistrations: null,
-        twoWPercentage: null,
-        threeWPercentage: null,
-        classNote: ""
+    const hasPrevious =
+        latest !== undefined &&
+        availableYears(state.grain).includes(previousYear);
+
+    const previous = hasPrevious ? measure([previousYear]) : null;
+    const latestOnly = hasPrevious ? measure([latest]) : null;
+
+    const delta = key => {
+
+        if (!previous || !latestOnly) {
+            return null;
+        }
+
+        const from = previous[key];
+        const to = latestOnly[key];
+
+        if (!Number.isFinite(from) || from <= 0 || !Number.isFinite(to)) {
+            return null;
+        }
+
+        return ((to - from) / from) * 100;
     };
 
-    if (!classRows || !classSchema) {
-        return kpis;
-    }
+    state.kpis = {
+        registrations: current.registrations,
+        makers: current.makers,
+        rtos: current.rtos,
+        classes: current.classes,
+        share: current.share,
 
-    /*
-     * Always expanded against the schema being summed - the KPI
-     * source and the table source are not always the same table.
-     */
-    const schemaTwoW = groupColumnsFor(classSchema, "2W");
-    const schemaThreeW = groupColumnsFor(classSchema, "3W");
+        yearsLabel: years.length === 0
+            ? "—"
+            : years.length === 1
+                ? years[0]
+                : `${years[0]} - ${years[years.length - 1]}`,
 
-    if (schemaTwoW.length === 0 && schemaThreeW.length === 0) {
-        return kpis;
-    }
+        yearsMeta: years.length === 0
+            ? ""
+            : `(${years.length} Year${years.length === 1 ? "" : "s"} Selected)`,
 
-    /*
-     * When the displayed table IS the class table, restrict the
-     * groups to the columns currently on screen so numerator and
-     * denominator describe the same population.
-     */
-    const restrict = groupColumns =>
-        Array.isArray(visibleClassColumns)
-            ? groupColumns.filter(column =>
-                visibleClassColumns.includes(column))
-            : groupColumns;
+        comparedWith: hasPrevious ? previousYear : null,
 
-    const relevant = classRows.filter(row =>
-        matchesEntityFilter(normalizeString(row[classSchema.entityColumn]))
-    );
-
-    const twoW = relevant.reduce(
-        (sum, row) => sum + sumColumns(row, restrict(schemaTwoW)),
-        0
-    );
-
-    const threeW = relevant.reduce(
-        (sum, row) => sum + sumColumns(row, restrict(schemaThreeW)),
-        0
-    );
-
-    kpis.twoWRegistrations = schemaTwoW.length > 0 ? twoW : null;
-    kpis.threeWRegistrations = schemaThreeW.length > 0 ? threeW : null;
-
-    /*
-     * When the class source is the electric-only table but the
-     * total came from a national table, the two describe
-     * different populations - percentage against the electric
-     * total instead, and say so on the card.
-     */
-    const comparable =
-        Array.isArray(visibleClassColumns) ||
-        true;
-
-    const classTotal = relevant.reduce(
-        (sum, row) => sum + toNumber(row[classSchema.totalColumn]),
-        0
-    );
-
-    const denominator = comparable ? total : classTotal;
-
-    kpis.twoWPercentage =
-        kpis.twoWRegistrations !== null && denominator > 0
-            ? (twoW / denominator) * 100
-            : null;
-
-    kpis.threeWPercentage =
-        kpis.threeWRegistrations !== null && denominator > 0
-            ? (threeW / denominator) * 100
-            : null;
-
-    if (!comparable) {
-        kpis.classNote = "of electric registrations";
-    }
-
-    return kpis;
-}
-
-
-function updateKPICards() {
-
-    const kpis = state.kpis;
-    const view = currentView();
-
-    if (dom.totalRegistrations) {
-        dom.totalRegistrations.textContent = formatIndianNumber(
-            kpis.totalRegistrations
-        );
-    }
-
-    if (dom.totalMakers) {
-        dom.totalMakers.textContent = formatIndianNumber(kpis.totalEntities);
-    }
-
-    if (dom.entityCountLabel) {
-        dom.entityCountLabel.textContent = `Total ${view.entityPlural}`;
-    }
-
-    if (dom.entityCountMeta) {
-        dom.entityCountMeta.textContent =
-            `${view.entityPlural} with registrations`;
-    }
-
-    const suffix = kpis.classNote || "of selection";
-
-    if (dom.twoWRegistrations) {
-        dom.twoWRegistrations.textContent =
-            kpis.twoWRegistrations === null
-                ? "—"
-                : formatIndianNumber(kpis.twoWRegistrations);
-    }
-
-    if (dom.threeWRegistrations) {
-        dom.threeWRegistrations.textContent =
-            kpis.threeWRegistrations === null
-                ? "—"
-                : formatIndianNumber(kpis.threeWRegistrations);
-    }
-
-    if (dom.twoWPercentage) {
-        dom.twoWPercentage.textContent =
-            kpis.twoWPercentage === null
-                ? "Not available for this selection"
-                : `${formatPercentage(kpis.twoWPercentage)} ${suffix}`;
-    }
-
-    if (dom.threeWPercentage) {
-        dom.threeWPercentage.textContent =
-            kpis.threeWPercentage === null
-                ? "Not available for this selection"
-                : `${formatPercentage(kpis.threeWPercentage)} ${suffix}`;
-    }
+        deltas: {
+            registrations: delta("registrations"),
+            makers: delta("makers"),
+            rtos: delta("rtos"),
+            classes: delta("classes"),
+            share: delta("share")
+        }
+    };
 }
 
 
 /* ============================================================
-   20. SEARCH / SORT / PAGINATION
+   24. QUICK SUMMARY
    ============================================================ */
 
-function getActiveSearchTerms() {
+function buildSummary() {
 
-    return state.searchTerms.map(normalizeKey).filter(Boolean);
+    const maker = state.makerTable;
+    const rto = state.rtoTable;
+
+    const makers = maker.rows
+        .slice()
+        .sort((a, b) => b.total - a.total)
+        .map(row => ({
+            name: row.maker,
+            value: formatPercentage(row.share)
+        }));
+
+    const rtos = rto.rows.map(row => ({
+        name: `${row.code} — ${row.name}`,
+        value: formatIndianNumber(row.total)
+    }));
+
+    /*
+     * Growth is only worth ranking off a base that means
+     * something. Without the floor this panel fills with makers
+     * that went from two units to nine.
+     */
+    const growth = maker.rows
+        .filter(row =>
+            row.growth !== null &&
+            (row.byYear[maker.first] || 0) >= CONFIG.GROWTH_MIN_BASE)
+        .sort((a, b) => b.growth - a.growth)
+        .map(row => ({
+            name: row.maker,
+            value: formatPercentage(row.growth),
+            positive: row.growth >= 0
+        }));
+
+    const filters = state.filters;
+
+    state.summary = {
+        makers,
+        rtos,
+        growth,
+        growthTitle: maker.years.length > 1
+            ? `HIGHEST GROWTH (${String(maker.first).slice(-2)}-` +
+              `${String(maker.last).slice(-2)})`
+            : "HIGHEST GROWTH",
+
+        facts: [
+            ["Total Years Selected", maker.years.length],
+            ["Total Months Selected", filters.months.length || MONTHS.length],
+            ["Total RTOs Selected", state.kpis.rtos || 0],
+            ["Total Makers Selected", state.kpis.makers || 0],
+            ["Total Classes Selected", state.kpis.classes || 0]
+        ]
+    };
 }
 
 
-function getSearchFilteredRows(rows) {
+/* ============================================================
+   25. DERIVE EVERYTHING
 
-    const terms = getActiveSearchTerms();
+   One entry point, so the three cards, the KPI strip and the
+   summary rail can never be looking at different selections.
+   ============================================================ */
 
-    if (terms.length === 0) {
-        return [...rows];
+function deriveAll() {
+
+    measureCache.clear();
+
+    buildMakerTable();
+    buildRtoTable();
+    buildDetailTable();
+    buildKpis();
+    buildSummary();
+}
+
+
+/* ============================================================
+   26. TABLE RENDERING
+
+   All three cards share one painter. A column descriptor
+   carries three functions:
+
+       raw(row)   the value to sort and to write into a sheet
+       text(row)  what the cell shows
+       cls(row)   an optional class, for growth arrows and zeros
+
+   The totals row is an ordinary row shaped to answer the same
+   three, so the head, the body, the foot and the exports can
+   never drift apart.
+   ============================================================ */
+
+function numberText(value) {
+
+    return formatIndianNumber(value);
+}
+
+
+function growthText(value) {
+
+    if (value === null || value === undefined) {
+        return "—";
     }
 
-    return rows.filter(row => {
-
-        const entity = normalizeKey(row.entity);
-
-        return terms.some(term => entity.includes(term));
-    });
+    return `${formatPercentage(Math.abs(value))} ${value >= 0 ? "▲" : "▼"}`;
 }
 
 
-function sortRows(rows) {
+function growthClass(value) {
 
-    const sorted = [...rows];
-    const key = state.sortKey;
+    if (value === null || value === undefined) {
+        return "";
+    }
 
-    sorted.sort((a, b) => {
-
-        let result = 0;
-
-        if (key === "__index") {
-
-            result = toNumber(a.srNo) - toNumber(b.srNo);
-
-        } else if (key === "__entity") {
-
-            result = String(a.entity).localeCompare(
-                String(b.entity),
-                undefined,
-                { sensitivity: "base" }
-            );
-
-        } else if (key === "__total") {
-
-            result = toNumber(a.total) - toNumber(b.total);
-
-        } else {
-
-            result =
-                toNumber(a.values[key]) - toNumber(b.values[key]);
-        }
-
-        /*
-         * Ties fall back to the entity name so paging is stable.
-         */
-        if (result === 0) {
-            result = String(a.entity).localeCompare(String(b.entity));
-        }
-
-        return state.sortDirection === "asc" ? result : -result;
-    });
-
-    return sorted;
+    return value >= 0 ? "col-growth is-up" : "col-growth is-down";
 }
 
 
-function getPaginatedRows(rows) {
+function sortIconFor(column, sort) {
 
-    const start = (state.currentPage - 1) * state.pageSize;
-
-    return rows.slice(start, start + state.pageSize);
-}
-
-
-function sortIconFor(key) {
-
-    if (key !== state.sortKey) {
+    if (!column.sortable || sort.sortKey !== column.key) {
         return "↕";
     }
 
-    return state.sortDirection === "asc" ? "↑" : "↓";
+    return sort.sortDir === "asc" ? "▲" : "▼";
 }
 
 
-/* ============================================================
-   21. TABLE STATES
-   ============================================================ */
+function paintHead(headEl, columns, sort, sortGroup) {
 
-function setTableState(mode, message) {
-
-    if (dom.tableContent) {
-        dom.tableContent.hidden = mode !== "data";
-    }
-
-    if (dom.tableLoading) {
-        dom.tableLoading.hidden = mode !== "loading";
-    }
-
-    if (dom.tableEmpty) {
-        dom.tableEmpty.hidden = mode !== "empty";
-    }
-
-    if (dom.tableError) {
-        dom.tableError.hidden = mode !== "error";
-    }
-
-    if (mode === "empty" && dom.tableEmptyText && message) {
-        dom.tableEmptyText.textContent = message;
-    }
-
-    if (mode === "error" && dom.tableErrorText && message) {
-        dom.tableErrorText.textContent = message;
-    }
-}
-
-
-/* ============================================================
-   22. RENDER
-   ============================================================ */
-
-/*
- * Sticky classes are applied per cell. The first two columns
- * pin to the left and Total pins to the right, so the row label
- * and its total stay on screen while the middle scrolls.
- */
-function cellClassFor(column) {
-
-    if (column.type === "index") {
-        return "col-index sticky-left sticky-left--index";
-    }
-
-    if (column.type === "entity") {
-        return "col-entity sticky-left sticky-left--entity";
-    }
-
-    if (column.type === "total") {
-        return "col-total sticky-right numeric-column";
-    }
-
-    return "col-value numeric-column";
-}
-
-
-/*
- * A numeric cell carries two figures: the count on the left and
- * its share of the column on the right. They go in a flex span
- * rather than on the cell itself, so the td stays a table-cell
- * and keeps its sticky positioning and column width.
- */
-function fillNumericCell(cell, value, columnTotal) {
-
-    /*
-     * Most cells in this table are zero - a maker builds one kind of
-     * vehicle and nothing else - so a zero is marked and set in a
-     * lighter ink. It leaves the figures that exist standing out of
-     * the grid rather than buried in it.
-     */
-    if (toNumber(value) === 0) {
-        cell.classList.add("is-zero");
-    }
-
-    const split = document.createElement("span");
-    split.className = "cell-split";
-
-    const amount = document.createElement("span");
-    amount.className = "cell-amount";
-    amount.textContent = formatIndianNumber(value);
-
-    const share = document.createElement("span");
-    share.className = "cell-share";
-    share.textContent = formatShare(value, columnTotal);
-
-    split.appendChild(amount);
-    split.appendChild(share);
-
-    cell.appendChild(split);
-}
-
-
-function renderTableHead() {
-
-    if (!dom.makerSummaryTableHead) {
-        return;
-    }
-
-    dom.makerSummaryTableHead.innerHTML = "";
+    headEl.innerHTML = "";
 
     const tr = document.createElement("tr");
 
-    state.columns.forEach(column => {
+    columns.forEach(column => {
 
         const th = document.createElement("th");
 
         th.scope = "col";
-        th.className = cellClassFor(column);
-        th.setAttribute("data-sort-key", column.key);
+        th.className = headClassFor(column);
+
+        if (!column.sortable || !sortGroup) {
+            th.textContent = column.label;
+            tr.appendChild(th);
+            return;
+        }
 
         th.setAttribute(
             "aria-sort",
-            column.key === state.sortKey
-                ? state.sortDirection === "asc"
-                    ? "ascending"
-                    : "descending"
+            sort.sortKey === column.key
+                ? sort.sortDir === "asc" ? "ascending" : "descending"
                 : "none"
         );
 
         const button = document.createElement("button");
+
         button.type = "button";
         button.className = "table-sort-button";
-        button.setAttribute("data-sort", column.key);
+        button.setAttribute("data-sort-group", sortGroup);
+        button.setAttribute("data-sort-key", column.key);
         button.setAttribute("aria-label", `Sort by ${column.label}`);
 
         const label = document.createElement("span");
@@ -2936,7 +2811,7 @@ function renderTableHead() {
         const icon = document.createElement("span");
         icon.className = "sort-icon";
         icon.setAttribute("aria-hidden", "true");
-        icon.textContent = sortIconFor(column.key);
+        icon.textContent = sortIconFor(column, sort);
 
         button.appendChild(label);
         button.appendChild(icon);
@@ -2945,174 +2820,50 @@ function renderTableHead() {
         tr.appendChild(th);
     });
 
-    dom.makerSummaryTableHead.appendChild(tr);
+    headEl.appendChild(tr);
 }
 
 
-function renderTableFoot(rows, shareTotals) {
+function headClassFor(column) {
 
-    if (!dom.makerSummaryTableFoot) {
-        return;
-    }
-
-    dom.makerSummaryTableFoot.innerHTML = "";
-
-    const totals = calculateColumnTotals(rows, state.columns);
-    const denominators = shareTotals || totals;
-
-    const tr = document.createElement("tr");
-
-    state.columns.forEach(column => {
-
-        const cell = document.createElement(
-            column.type === "entity" ? "th" : "td"
-        );
-
-        cell.className = cellClassFor(column);
-
-        if (column.type === "index") {
-            cell.textContent = "";
-        } else if (column.type === "entity") {
-            cell.scope = "row";
-            cell.textContent = `Total (${formatIndianNumber(rows.length)})`;
-        } else {
-
-            /*
-             * Against the unsearched denominator this reads 100%
-             * on the full list, and on a search it reads how much
-             * of the market the matches account for.
-             */
-            fillNumericCell(
-                cell,
-                totals[column.key],
-                denominators[column.key]
-            );
-        }
-
-        tr.appendChild(cell);
-    });
-
-    dom.makerSummaryTableFoot.appendChild(tr);
+    return [
+        column.numeric ? "numeric" : "",
+        column.sticky ? "sticky-left" : ""
+    ].filter(Boolean).join(" ");
 }
 
 
-function renderTable() {
+function cellClassFor(column, row) {
 
-    if (!dom.makerSummaryTableBody) {
-        return;
-    }
+    return [
+        column.numeric ? "numeric" : "",
+        column.sticky ? "sticky-left" : "",
+        column.emphasis ? "col-emphasis" : "",
+        column.label === "Maker" || column.key === "maker" ? "col-label" : "",
+        column.cls ? column.cls(row) : ""
+    ].filter(Boolean).join(" ");
+}
 
-    const searched = getSearchFilteredRows(state.rows);
-    const rows = sortRows(searched);
 
-    state.filteredRows = rows;
+function paintRows(bodyEl, columns, rows) {
 
-    /* Nothing on screen means nothing to write. */
-    [dom.detailsDownloadButton, dom.detailsPdfButton].forEach(button => {
-        if (button) {
-            button.disabled = rows.length === 0;
-        }
-    });
-
-    const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
-
-    if (state.currentPage > totalPages) {
-        state.currentPage = totalPages;
-    }
-
-    const pageRows = getPaginatedRows(rows);
-
-    /*
-     * Two sets of totals, because they answer different
-     * questions. The foot sums what is on screen, so it follows
-     * the search. Market share must not - searching for one maker
-     * would otherwise show it holding 100% of the market - so its
-     * denominator stays the unsearched set, leaving a maker's
-     * share identical whether or not it was searched for.
-     * Filters still apply to both: they define which market is
-     * being measured.
-     */
-    const shareTotals =
-        state.searchTerms.length === 0
-            ? calculateColumnTotals(rows, state.columns)
-            : calculateColumnTotals(state.rows, state.columns);
-
-    dom.makerSummaryTableBody.innerHTML = "";
-
-    renderTableHead();
-    renderTableFoot(rows, shareTotals);
-
-    updateResultCount(rows.length, state.rows.length);
-    updatePagination(totalPages);
-
-    if (rows.length === 0) {
-
-        const terms = state.searchTerms.map(normalizeString).filter(Boolean);
-        const entity = currentView().entity.toLowerCase();
-
-        let message = "No data found for the selected filters.";
-
-        if (terms.length === 1) {
-            message = `No ${entity} matches "${terms[0]}".`;
-        } else if (terms.length > 1) {
-            message =
-                `No ${entity} matches ` +
-                terms.map(term => `"${term}"`).join(" or ") + ".";
-        }
-
-        setTableState("empty", message);
-
-        return;
-    }
-
-    setTableState("data");
-
-    const startIndex = (state.currentPage - 1) * state.pageSize;
+    bodyEl.innerHTML = "";
 
     const fragment = document.createDocumentFragment();
 
-    pageRows.forEach((row, offset) => {
+    rows.forEach(row => {
 
         const tr = document.createElement("tr");
 
-        state.columns.forEach(column => {
+        columns.forEach(column => {
 
             const td = document.createElement("td");
 
-            td.className = cellClassFor(column);
+            td.className = cellClassFor(column, row);
+            td.textContent = column.text(row);
 
-            if (column.type === "index") {
-
-                /*
-                 * The source row number where the table has one,
-                 * so the numbering matches the originating
-                 * workbook regardless of sort order.
-                 */
-                td.textContent =
-                    row.srNo === null || row.srNo === undefined
-                        ? formatIndianNumber(startIndex + offset + 1)
-                        : formatIndianNumber(row.srNo);
-
-            } else if (column.type === "entity") {
-
-                td.textContent = row.entity;
-                td.title = row.entity;
-
-            } else if (column.type === "total") {
-
-                fillNumericCell(
-                    td,
-                    row.total,
-                    shareTotals[column.key]
-                );
-
-            } else {
-
-                fillNumericCell(
-                    td,
-                    row.values[column.key],
-                    shareTotals[column.key]
-                );
+            if (!column.numeric) {
+                td.title = td.textContent;
             }
 
             tr.appendChild(td);
@@ -3121,983 +2872,794 @@ function renderTable() {
         fragment.appendChild(tr);
     });
 
-    dom.makerSummaryTableBody.appendChild(fragment);
+    bodyEl.appendChild(fragment);
 }
 
 
-function updateResultCount(shown, total) {
+function paintFoot(footEl, columns, totals) {
 
-    if (!dom.resultCount) {
+    footEl.innerHTML = "";
+
+    if (!totals) {
         return;
     }
 
-    const plural = currentView().entityPlural.toLowerCase();
+    const tr = document.createElement("tr");
 
-    dom.resultCount.textContent =
-        shown === total
-            ? `${formatIndianNumber(total)} ${plural}`
-            : `${formatIndianNumber(shown)} of ` +
-              `${formatIndianNumber(total)} ${plural}`;
+    columns.forEach(column => {
+
+        const cell = document.createElement("td");
+
+        cell.className = cellClassFor(column, totals);
+        cell.textContent = column.text(totals);
+
+        tr.appendChild(cell);
+    });
+
+    footEl.appendChild(tr);
 }
 
 
-function updatePagination(totalPages) {
+/*
+ * Loading, empty and error all replace the table rather than
+ * sitting above it, so a stale grid is never left on screen
+ * under a message saying it could not be loaded.
+ */
+function setCardState(card, mode, message) {
 
-    if (dom.pageIndicator) {
-        dom.pageIndicator.textContent =
-            `Page ${state.currentPage} of ${totalPages}`;
+    const stateEl = dom[`${card}CardState`];
+    const wrapper = dom[`${card}Table`]?.closest(".table-wrapper");
+
+    if (!stateEl) {
+        return;
     }
 
-    if (dom.previousPageButton) {
-        dom.previousPageButton.disabled = state.currentPage <= 1;
-    }
+    if (mode === "data") {
 
-    if (dom.nextPageButton) {
-        dom.nextPageButton.disabled = state.currentPage >= totalPages;
-    }
-}
+        stateEl.hidden = true;
+        stateEl.className = "table-state";
 
-
-function updateViewLabels() {
-
-    const view = currentView();
-
-    if (dom["maker-summary-title"]) {
-
-        dom["maker-summary-title"].textContent = regionIsActive()
-            ? `Maker × ${prettifyRegion(state.filters.region)}`
-            : view.title;
-    }
-
-    getSearchInputs().forEach(input => {
-
-        if (input) {
-            input.placeholder = view.searchPlaceholder;
+        if (wrapper) {
+            wrapper.hidden = false;
         }
+
+        return;
+    }
+
+    stateEl.hidden = false;
+    stateEl.className = `table-state table-state--${mode}`;
+    stateEl.innerHTML = "";
+
+    if (mode === "loading") {
+
+        const spinner = document.createElement("span");
+
+        spinner.className = "loading-spinner loading-spinner--small";
+        spinner.setAttribute("aria-hidden", "true");
+
+        stateEl.appendChild(spinner);
+    }
+
+    const text = document.createElement("span");
+    text.textContent = message || "";
+    stateEl.appendChild(text);
+
+    if (wrapper) {
+        wrapper.hidden = true;
+    }
+}
+
+
+function sortRows(rows, columns, sort) {
+
+    const column = columns.find(entry => entry.key === sort.sortKey);
+
+    if (!column) {
+        return rows;
+    }
+
+    const direction = sort.sortDir === "asc" ? 1 : -1;
+
+    return rows.slice().sort((a, b) => {
+
+        const left = column.raw(a);
+        const right = column.raw(b);
+
+        if (typeof left === "number" && typeof right === "number") {
+            return (left - right) * direction;
+        }
+
+        return String(left).localeCompare(
+            String(right),
+            undefined,
+            { numeric: true, sensitivity: "base" }
+        ) * direction;
     });
 }
 
 
-function updateYearRangeHeader() {
+function pageOf(rows, view) {
 
-    const element = dom["data-year-range"];
+    const start = (view.page - 1) * view.pageSize;
+
+    return rows.slice(start, start + view.pageSize);
+}
+
+
+function paintPagination(card, total, view) {
+
+    const pages = Math.max(1, Math.ceil(total / view.pageSize));
+
+    if (view.page > pages) {
+        view.page = pages;
+    }
+
+    const indicator = dom[`${card}PageIndicator`];
+
+    if (indicator) {
+        indicator.textContent = `Page ${view.page} of ${pages}`;
+    }
+
+    const previous = document.querySelector(`[data-page="${card}-prev"]`);
+    const next = document.querySelector(`[data-page="${card}-next"]`);
+
+    if (previous) {
+        previous.disabled = view.page <= 1;
+    }
+
+    if (next) {
+        next.disabled = view.page >= pages;
+    }
+
+    return pages;
+}
+
+
+/* ============================================================
+   27. CARD 1 - COLUMNS + RENDER
+   ============================================================ */
+
+function makerColumns() {
+
+    const { years, first, last } = state.makerTable;
+
+    const columns = [
+        {
+            key: "maker",
+            label: "Maker",
+            sticky: true,
+            sortable: true,
+            raw: row => row.maker,
+            text: row => row.maker
+        }
+    ];
+
+    years.forEach(year => {
+        columns.push({
+            key: `year:${year}`,
+            label: year,
+            numeric: true,
+            sortable: true,
+            raw: row => row.byYear[year] || 0,
+            text: row => numberText(row.byYear[year] || 0),
+            cls: row => (row.byYear[year] ? "" : "is-zero")
+        });
+    });
+
+    columns.push(
+        {
+            key: "__total",
+            label: "Total Registration",
+            numeric: true,
+            emphasis: true,
+            sortable: true,
+            raw: row => row.total,
+            text: row => numberText(row.total)
+        },
+        {
+            key: "__share",
+            label: "Market Share %",
+            numeric: true,
+            sortable: true,
+            raw: row => row.share || 0,
+            text: row => formatPercentage(row.share)
+        },
+        {
+            key: "__growth",
+            label: years.length > 1
+                ? `Growth % (${String(first).slice(-2)}-${String(last).slice(-2)})`
+                : "Growth %",
+            numeric: true,
+            sortable: true,
+            raw: row => (row.growth === null ? -Infinity : row.growth),
+            text: row => growthText(row.growth),
+            cls: row => growthClass(row.growth)
+        }
+    );
+
+    return columns;
+}
+
+
+function renderMakerCard() {
+
+    const { rows, totals, years } = state.makerTable;
+    const columns = makerColumns();
+    const view = state.view.maker;
+
+    if (dom.makerCardMeta) {
+        dom.makerCardMeta.textContent =
+            `${formatIndianNumber(rows.length)} makers · ` +
+            `${years.length} year${years.length === 1 ? "" : "s"}`;
+    }
+
+    setExportEnabled(["maker-xlsx", "maker-pdf"], rows.length > 0);
+
+    if (rows.length === 0) {
+        setCardState("maker", "empty", "No registrations for this selection.");
+        paintHead(dom.makerTableHead, columns, view, null);
+        dom.makerTableBody.innerHTML = "";
+        dom.makerTableFoot.innerHTML = "";
+        paintPagination("maker", 0, view);
+        return;
+    }
+
+    setCardState("maker", "data");
+
+    const sorted = sortRows(rows, columns, view);
+
+    state.makerTable.sorted = sorted;
+
+    paintPagination("maker", sorted.length, view);
+
+    paintHead(dom.makerTableHead, columns, view, "maker");
+    paintRows(dom.makerTableBody, columns, pageOf(sorted, view));
+    paintFoot(dom.makerTableFoot, columns, totals);
+}
+
+
+/* ============================================================
+   28. CARD 2 - COLUMNS + RENDER
+   ============================================================ */
+
+function rtoColumns() {
+
+    const { makerColumns: makers } = state.rtoTable;
+
+    const columns = [
+        {
+            key: "code",
+            label: "RTO Code",
+            sticky: true,
+            raw: row => row.code,
+            text: row => row.code
+        },
+        {
+            key: "name",
+            label: "RTO Name",
+            raw: row => row.name,
+            text: row => row.name
+        }
+    ];
+
+    makers.forEach(maker => {
+        columns.push({
+            key: `maker:${maker}`,
+            label: maker,
+            numeric: true,
+            raw: row => row.values[maker] || 0,
+            text: row => numberText(row.values[maker] || 0),
+            cls: row => (row.values[maker] ? "" : "is-zero")
+        });
+    });
+
+    columns.push(
+        {
+            key: "__others",
+            label: "Others",
+            numeric: true,
+            raw: row => row.others,
+            text: row => numberText(row.others),
+            cls: row => (row.others ? "" : "is-zero")
+        },
+        {
+            key: "__total",
+            label: "Total Registration",
+            numeric: true,
+            emphasis: true,
+            raw: row => row.total,
+            text: row => numberText(row.total)
+        },
+        {
+            key: "__share",
+            label: "Market Share %",
+            numeric: true,
+            raw: row => row.share || 0,
+            text: row => formatPercentage(row.share)
+        }
+    );
+
+    return columns;
+}
+
+
+function renderRtoCard() {
+
+    const { rows, totals } = state.rtoTable;
+    const columns = rtoColumns();
+
+    if (dom.rtoCardMeta) {
+        dom.rtoCardMeta.textContent =
+            `${rows.length} of ${RTOS.length} RTOs`;
+    }
+
+    if (dom.rtoCardNote) {
+
+        dom.rtoCardNote.hidden = state.notices.rto === "";
+        dom.rtoCardNote.textContent = state.notices.rto;
+    }
+
+    setExportEnabled(["rto-xlsx", "rto-pdf"], rows.length > 0);
+
+    if (rows.length === 0) {
+
+        setCardState(
+            "rto",
+            "empty",
+            "No RTO registrations for this selection."
+        );
+
+        paintHead(dom.rtoTableHead, columns, {}, null);
+        dom.rtoTableBody.innerHTML = "";
+        dom.rtoTableFoot.innerHTML = "";
+
+        return;
+    }
+
+    setCardState("rto", "data");
+
+    paintHead(dom.rtoTableHead, columns, {}, null);
+    paintRows(dom.rtoTableBody, columns, rows);
+    paintFoot(dom.rtoTableFoot, columns, totals);
+}
+
+
+/* ============================================================
+   29. CARD 3 - COLUMNS + RENDER
+   ============================================================ */
+
+function detailColumns() {
+
+    return [
+        {
+            key: "year",
+            label: "Year",
+            sortable: true,
+            raw: row => row.year,
+            text: row => row.year
+        },
+        {
+            key: "month",
+            label: "Month",
+            sortable: true,
+            raw: row => (row.month === null ? 0 : row.month),
+            text: row => (row.month === null ? "All" : monthShort(row.month))
+        },
+        {
+            key: "rtoCode",
+            label: "RTO Code",
+            sortable: true,
+            raw: row => row.rtoCode,
+            text: row => row.rtoCode
+        },
+        {
+            key: "rtoName",
+            label: "RTO Name",
+            sortable: true,
+            raw: row => row.rtoName,
+            text: row => row.rtoName
+        },
+        {
+            key: "maker",
+            label: "Maker",
+            sortable: true,
+            raw: row => row.maker,
+            text: row => row.maker
+        },
+        {
+            key: "vehicleClass",
+            label: "Vehicle Class",
+            sortable: true,
+            raw: row => row.vehicleClass,
+            text: row => row.vehicleClass
+        },
+        {
+            key: "registration",
+            label: "Registration",
+            numeric: true,
+            emphasis: true,
+            sortable: true,
+            raw: row => row.registration,
+            text: row => numberText(row.registration)
+        },
+        {
+            key: "share",
+            label: "Market Share %",
+            numeric: true,
+            sortable: true,
+            raw: row => row.share || 0,
+            text: row => formatPercentage(row.share)
+        },
+        {
+            key: "yoy",
+            label: "YoY Growth %",
+            numeric: true,
+            sortable: true,
+            raw: row => (row.yoy === null ? -Infinity : row.yoy),
+            text: row => growthText(row.yoy),
+            cls: row => growthClass(row.yoy)
+        },
+        {
+            key: "rank",
+            label: "Rank (Maker)",
+            numeric: true,
+            sortable: true,
+            raw: row => row.rank || Infinity,
+            text: row => (row.rank === null ? "—" : String(row.rank))
+        }
+    ];
+}
+
+
+function monthShort(number) {
+
+    const month = MONTHS.find(entry => entry.number === Number(number));
+
+    return month ? month.key : String(number);
+}
+
+
+function detailSearchRows(rows) {
+
+    const query = normalizeKey(state.view.detail.search);
+
+    if (query === "") {
+        return rows;
+    }
+
+    return rows.filter(row =>
+        normalizeKey(row.maker).includes(query) ||
+        normalizeKey(row.vehicleClass).includes(query)
+    );
+}
+
+
+function detailTotalsRow(rows) {
+
+    const registration = rows.reduce(
+        (sum, row) => sum + row.registration,
+        0
+    );
+
+    return {
+        year: "",
+        /* "" rather than null: null is the year-grain "All". */
+        month: "",
+        rtoCode: "",
+        rtoName: "",
+        maker: `TOTAL (Selected Data)`,
+        vehicleClass: `${formatIndianNumber(rows.length)} rows`,
+        registration,
+        /*
+         * Against the unsearched total, so searching for one maker
+         * shows what it holds rather than 100%.
+         */
+        share: state.detailTable.totals.registration > 0
+            ? (registration / state.detailTable.totals.registration) * 100
+            : null,
+        yoy: null,
+        rank: null
+    };
+}
+
+
+function renderDetailCard() {
+
+    const columns = detailColumns();
+    const view = state.view.detail;
+
+    const searched = detailSearchRows(state.detailTable.rows);
+    const sorted = sortRows(searched, columns, view);
+
+    state.detailTable.visible = sorted;
+
+    if (dom.detailCardMeta) {
+
+        dom.detailCardMeta.textContent =
+            sorted.length === state.detailTable.rows.length
+                ? `${formatIndianNumber(sorted.length)} rows`
+                : `${formatIndianNumber(sorted.length)} of ` +
+                  `${formatIndianNumber(state.detailTable.rows.length)} rows`;
+    }
+
+    if (dom.detailCardNote) {
+
+        const notes = [];
+
+        if (state.detailTable.truncated) {
+            notes.push(
+                `Capped at ${formatIndianNumber(CONFIG.MAX_DETAIL_ROWS)} ` +
+                "rows — narrow the maker or class filter to see the rest."
+            );
+        }
+
+        if (state.notices.detail) {
+            notes.push(state.notices.detail);
+        }
+
+        dom.detailCardNote.hidden = notes.length === 0;
+        dom.detailCardNote.textContent = notes.join(" ");
+    }
+
+    setExportEnabled(["detail-xlsx", "detail-pdf"], sorted.length > 0);
+
+    if (sorted.length === 0) {
+
+        setCardState(
+            "detail",
+            "empty",
+            state.view.detail.search
+                ? `Nothing matches "${state.view.detail.search}".`
+                : "No registrations for this selection."
+        );
+
+        paintHead(dom.detailTableHead, columns, view, null);
+        dom.detailTableBody.innerHTML = "";
+        dom.detailTableFoot.innerHTML = "";
+        paintPagination("detail", 0, view);
+
+        return;
+    }
+
+    setCardState("detail", "data");
+
+    paintPagination("detail", sorted.length, view);
+
+    paintHead(dom.detailTableHead, columns, view, "detail");
+    paintRows(dom.detailTableBody, columns, pageOf(sorted, view));
+    paintFoot(dom.detailTableFoot, columns, detailTotalsRow(sorted));
+}
+
+
+/* ============================================================
+   30. KPI STRIP + SUMMARY RAIL
+   ============================================================ */
+
+function renderDelta(element, value, comparedWith) {
 
     if (!element) {
         return;
     }
 
-    element.textContent = state.year || "—";
-}
+    element.innerHTML = "";
 
+    if (value === null || value === undefined) {
 
-/* ============================================================
-   22b. MONTHLY TREND
-
-   Fiscal years down the side, months across the top. Each month
-   carries three figures:
-
-       IND  every maker's registrations that month
-       VOL  what the Maker and Category filters select
-       MS   VOL as a share of IND
-
-   The twelve month tables are All-India only, so this section
-   deliberately ignores the Scope filter and says so on screen.
-   ============================================================ */
-
-const MONTH_TABLES = [
-    { number: 1, key: "Jan", label: "January" },
-    { number: 2, key: "Feb", label: "February" },
-    { number: 3, key: "Mar", label: "March" },
-    { number: 4, key: "Apr", label: "April" },
-    { number: 5, key: "May", label: "May" },
-    { number: 6, key: "Jun", label: "June" },
-    { number: 7, key: "Jul", label: "July" },
-    { number: 8, key: "Aug", label: "August" },
-    { number: 9, key: "Sep", label: "September" },
-    { number: 10, key: "Oct", label: "October" },
-    { number: 11, key: "Nov", label: "November" },
-    { number: 12, key: "Dec", label: "December" }
-];
-
-
-/* April first - a fiscal year runs April to March. */
-const FISCAL_MONTH_ORDER = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
-
-function fiscalYearStart(month, year) {
-    return month >= 4 ? year : year - 1;
-}
-
-
-function fiscalYearLabel(start) {
-    return `FY ${start}-${String(start + 1).slice(-2)}`;
-}
-
-
-/*
- * Group choices are prefixed so one control can offer both without
- * a class ever being mistaken for the group of the same name.
- */
-const TREND_GROUP_PREFIX = "group:";
-
-
-/*
- * The first group whose test matches wins, which is the same order
- * CLASS_GROUPS is evaluated in everywhere else.
- */
-function classGroupIdFor(column) {
-
-    const group = CLASS_GROUPS.find(candidate => candidate.test(column));
-
-    return group ? group.id : null;
-}
-
-
-/*
- * All Classes, then the groups that actually have columns, then
- * every individual class. Group labels lead with "All" so a group
- * reads apart from a class in one flat list.
- */
-function loadTrendClassOptions() {
-
-    if (!dom.trendClassFilter) {
-        return;
-    }
-
-    const schema = state.monthly.schema;
-
-    if (!schema) {
-        return;
-    }
-
-    const present = new Set(
-        schema.classColumns.map(classGroupIdFor).filter(Boolean)
-    );
-
-    const groups = CLASS_GROUPS
-        .filter(group => present.has(group.id))
-        .map(group => ({
-            value: `${TREND_GROUP_PREFIX}${group.id}`,
-            label: `All ${group.label}`
-        }));
-
-    const classes = uniqueSorted(schema.classColumns).map(column => ({
-        value: column,
-        label: column
-    }));
-
-    populateSelect(
-        dom.trendClassFilter,
-        [...groups, ...classes],
-        "All Classes",
-        state.trendClass
-    );
-
-    state.trendClass = dom.trendClassFilter.value;
-}
-
-
-/*
- * The month tables carry their own column set, so the class choice
- * is resolved against them rather than against whichever scope
- * table happens to be selected.
- *
- * Returns null when everything is selected, which lets the caller
- * read the row's Total instead of summing 75 columns.
- */
-function monthlyValueColumns() {
-
-    const schema = state.monthly.schema;
-
-    if (!schema) {
-        return [];
-    }
-
-    const chosen = state.trendClass;
-
-    if (isAll(chosen)) {
-        return null;
-    }
-
-    if (String(chosen).startsWith(TREND_GROUP_PREFIX)) {
-
-        const id = String(chosen).slice(TREND_GROUP_PREFIX.length);
-
-        return schema.classColumns.filter(
-            column => classGroupIdFor(column) === id
-        );
-    }
-
-    return schema.classColumns.filter(column => column === chosen);
-}
-
-
-/*
- * The trend answers to its own maker select, not the sidebar's, so
- * the two tables can sit at different makers at once.
- */
-/*
- * Names of the three views the trend reads. Before they existed
- * this section paged all 37,074 maker-rows to fill a 4 x 12 grid;
- * these narrow or aggregate the same figures server-side.
- */
-const MONTHLY_TOTALS_VIEW = "trend_totals";
-const MONTHLY_BY_MAKER_VIEW = "trend_by_maker";
-const MONTHLY_MAKERS_VIEW = "trend_makers";
-
-const MONTH_COLUMN = "month";
-
-/*
- * Every read below is narrowed by this. The views carry all six
- * scopes at once - 192 rows in trend_totals where there used to be
- * 32 - so an unfiltered read would sum All India together with
- * Gujarat, Ahmedabad and the three RTOs and inflate IND by about a
- * tenth. The older monthly_* views had no scope to filter on, which
- * is why they are still there for anything running old code.
- */
-const SCOPE_COLUMN = "scope";
-
-
-function trendScope() {
-
-    return currentView().id;
-}
-
-
-/*
- * The distinct maker list, straight from its own view. It runs back
- * to 2024 and so is wider than the scope tables' - 2,552 names
- * against 1,949.
- */
-async function loadTrendMakerOptions(signal) {
-
-    if (!dom.trendMakerFilter || state.monthly.makers) {
-        return;
-    }
-
-    const rows = await fetchAllRows(
-        MONTHLY_MAKERS_VIEW,
-        [state.monthly.schema.entityColumn],
-        {
-            signal,
-            filters: [{ column: SCOPE_COLUMN, values: [trendScope()] }]
-        }
-    );
-
-    state.monthly.makers = uniqueSorted(
-        rows.map(row => row[state.monthly.schema.entityColumn])
-    );
-
-    populateSelect(
-        dom.trendMakerFilter,
-        state.monthly.makers,
-        "All Makers"
-    );
-
-    /* refreshCombo drops any maker this scope does not offer. */
-    state.trendMakers = comboValues(dom.trendMakerFilter);
-}
-
-
-async function describeMonthlySchema() {
-
-    if (state.monthly.schema) {
-        return state.monthly.schema;
-    }
-
-    /* Two overlapping loads would otherwise both probe the view. */
-    if (state.monthly.describing) {
-        return state.monthly.describing;
-    }
-
-    state.monthly.describing = describeMonthlySchemaOnce()
-        .finally(() => {
-            state.monthly.describing = null;
-        });
-
-    return state.monthly.describing;
-}
-
-
-async function describeMonthlySchemaOnce() {
-
-    const sample = await fetchSampleRow(MONTHLY_TOTALS_VIEW);
-
-    if (!sample) {
-        throw new Error(
-            "The monthly views are unavailable, so the trend cannot load."
-        );
-    }
-
-    const totalColumn = getTotalColumn(sample);
-    const yearColumn = getYearColumn(sample);
-
-    state.monthly.schema = {
-        /* Only monthly_by_maker carries it, but both views share it. */
-        entityColumn: "Maker",
-        totalColumn,
-        yearColumn,
-        monthColumn: MONTH_COLUMN,
-        classColumns: Object.keys(sample).filter(
-            column =>
-                column !== totalColumn &&
-                column !== MONTH_COLUMN &&
-                column !== SCOPE_COLUMN &&
-                !isMetadataColumn(column)
-        )
-    };
-
-    return state.monthly.schema;
-}
-
-
-/*
- * Thirty-two rows: one per month per year, every class already
- * summed across makers. Answers IND always, and VOL too whenever
- * no single maker is chosen.
- */
-function getMonthlyTotals(valueColumns, signal) {
-
-    const schema = state.monthly.schema;
-
-    /*
-     * Keyed by scope as well as columns. Without the scope in the
-     * key, switching from All India to GJ38 would be served the
-     * cached All India rows and quietly show the wrong numbers.
-     */
-    const key =
-        trendScope() + " " +
-        (valueColumns ? valueColumns.join("|") : "__total__");
-
-    if (state.monthly.cache.has(key)) {
-        return state.monthly.cache.get(key);
-    }
-
-    const columns = [
-        schema.monthColumn,
-        schema.yearColumn,
-        schema.totalColumn,
-        ...(valueColumns || [])
-    ];
-
-    /*
-     * The promise is cached, not its result: startup calls this
-     * twice, and caching only the result let the second call start
-     * a second fetch before the first had finished.
-     */
-    const pending = fetchAllRows(MONTHLY_TOTALS_VIEW, columns, {
-        signal,
-        filters: [{ column: SCOPE_COLUMN, values: [trendScope()] }]
-    });
-
-    state.monthly.cache.set(key, pending);
-    pending.catch(() => state.monthly.cache.delete(key));
-
-    return pending;
-}
-
-
-/*
- * The chosen makers' rows, filtered in the database rather than by
- * reading every maker and discarding the rest. One request covers
- * all of them - PostgREST takes a list - and the Maker column comes
- * back so the rows can be split apart again.
- */
-function getMonthlyForMakers(makers, valueColumns, signal) {
-
-    const schema = state.monthly.schema;
-
-    /* JSON so a maker containing the separator cannot collide. */
-    const key =
-        trendScope() + " " + JSON.stringify(makers) + " " +
-        (valueColumns ? valueColumns.join("|") : "");
-
-    if (state.monthly.makerCache.has(key)) {
-        return state.monthly.makerCache.get(key);
-    }
-
-    const columns = [
-        schema.entityColumn,
-        schema.monthColumn,
-        schema.yearColumn,
-        schema.totalColumn,
-        ...(valueColumns || [])
-    ];
-
-    const pending = fetchAllRows(MONTHLY_BY_MAKER_VIEW, columns, {
-        signal,
-        filters: [
-            { column: SCOPE_COLUMN, values: [trendScope()] },
-            { column: schema.entityColumn, values: makers }
-        ]
-    });
-
-    state.monthly.makerCache.set(key, pending);
-    pending.catch(() => state.monthly.makerCache.delete(key));
-
-    return pending;
-}
-
-
-/*
- * One maker's thirty-two rows, filtered in the database rather than
- * by reading every maker and discarding the rest.
- */
-function getMonthlyForMaker(maker, valueColumns, signal) {
-
-    const schema = state.monthly.schema;
-    /* Scope-keyed for the same reason getMonthlyTotals is. */
-    const key =
-        trendScope() + "\u0000" + maker + "\u0000" +
-        (valueColumns ? valueColumns.join("|") : "");
-
-    if (state.monthly.makerCache.has(key)) {
-        return state.monthly.makerCache.get(key);
-    }
-
-    const columns = [
-        schema.monthColumn,
-        schema.yearColumn,
-        schema.totalColumn,
-        ...(valueColumns || [])
-    ];
-
-    const pending = fetchAllRows(MONTHLY_BY_MAKER_VIEW, columns, {
-        signal,
-        filters: [
-            { column: SCOPE_COLUMN, values: [trendScope()] },
-            { column: schema.entityColumn, values: [maker] }
-        ]
-    });
-
-    state.monthly.makerCache.set(key, pending);
-    pending.catch(() => state.monthly.makerCache.delete(key));
-
-    return pending;
-}
-
-
-/*
- * industryRows carries every maker; selectedRows is whatever the
- * Maker select narrowed to, or the same rows when it is on All.
- */
-/*
- * Builds the grid.
- *
- * industryRows is IND - every maker in the scope. series is one
- * entry per selected maker, each with its own rows; with none
- * selected it holds a single unnamed entry standing for the whole
- * industry, which is why VOL then repeats IND.
- *
- * With two or more makers the grid gains a Maker column and each
- * fiscal year becomes one row per maker, so the makers can be read
- * against each other month by month.
- */
-function buildMonthlyPivot(industryRows, series, valueColumns) {
-
-    const schema = state.monthly.schema;
-    const years = new Set();
-
-    /* start:month -> IND */
-    const industry = new Map();
-
-    /* maker -> (start:month -> VOL) */
-    const selected = new Map();
-
-    const place = row => {
-
-        const month = Number(row[schema.monthColumn]);
-        const year = Number(row[schema.yearColumn]);
-
-        if (!Number.isFinite(month) || !Number.isFinite(year)) {
-            return null;
-        }
-
-        const start = fiscalYearStart(month, year);
-
-        years.add(start);
-
-        return `${start}:${month}`;
-    };
-
-    const measure = row => valueColumns
-        ? sumColumns(row, valueColumns)
-        : toNumber(row[schema.totalColumn]);
-
-    /*
-     * The class choice narrows IND as well as VOL, so a share is
-     * read within the segment: Maruti against the Motor Car market,
-     * not against every registration of every kind.
-     */
-    for (const row of industryRows) {
-
-        const id = place(row);
-
-        if (id) {
-            industry.set(id, (industry.get(id) || 0) + measure(row));
-        }
-    }
-
-    series.forEach(entry => {
-
-        const own = new Map();
-
-        selected.set(entry.maker, own);
-
-        for (const row of entry.rows) {
-
-            const id = place(row);
-
-            if (id) {
-                own.set(id, (own.get(id) || 0) + measure(row));
-            }
-        }
-    });
-
-    /*
-     * Adds a run of cells into one. Empty in, null out - a fiscal
-     * year with no data at all should read as a dash, not as zero.
-     *
-     * MS is deliberately not carried through: a share of shares is
-     * meaningless. monthlyCell recomputes it from the summed IND and
-     * VOL, which weights each month by its own size.
-     */
-    const sumCells = list => {
-
-        let ind = 0;
-        let vol = 0;
-        let present = false;
-
-        for (const cell of list) {
-
-            if (cell) {
-                ind += cell.industry;
-                vol += cell.selected;
-                present = true;
-            }
-        }
-
-        return present ? { industry: ind, selected: vol } : null;
-    };
-
-    const cellFor = (maker, start, month) => {
-
-        const id = `${start}:${month}`;
-
-        if (!industry.has(id)) {
-            return null;
-        }
-
-        const own = selected.get(maker);
-
-        return {
-            industry: industry.get(id) || 0,
-            selected: own ? own.get(id) || 0 : 0
-        };
-    };
-
-    const ordered = [...years].sort((a, b) => a - b);
-    const multi = series.length > 1;
-
-    const rows = [];
-
-    ordered.forEach(start => {
-
-        series.forEach((entry, index) => {
-
-            const months = FISCAL_MONTH_ORDER.map(
-                month => cellFor(entry.maker, start, month)
-            );
-
-            rows.push({
-                start,
-                /* The year is printed once per group, not per maker. */
-                label: index === 0 ? fiscalYearLabel(start) : "",
-                maker: multi ? entry.maker : null,
-                /*
-                 * The first and last fiscal years are usually partial -
-                 * the data starts in Jan 2024 and stops mid-2026 - so
-                 * these totals cover the months actually present, which
-                 * is what the empty month cells beside them show.
-                 */
-                total: sumCells(months),
-                months,
-                firstOfYear: index === 0
-            });
-        });
-    });
-
-    /*
-     * The footer is every maker at once, so with several selected it
-     * reads as their combined volume against the industry.
-     */
-    const totals = FISCAL_MONTH_ORDER.map(month => {
-
-        let ind = 0;
-        let vol = 0;
-        let present = false;
-
-        ordered.forEach(start => {
-
-            const id = `${start}:${month}`;
-
-            if (!industry.has(id)) {
-                return;
-            }
-
-            present = true;
-            ind += industry.get(id) || 0;
-
-            series.forEach(entry => {
-                const own = selected.get(entry.maker);
-                vol += own ? own.get(id) || 0 : 0;
-            });
-        });
-
-        return present ? { industry: ind, selected: vol } : null;
-    });
-
-    return {
-        rows,
-        totals,
-        grandTotal: sumCells(totals),
-        multi,
-        makers: series.map(entry => entry.maker).filter(Boolean)
-    };
-}
-
-
-/*
- * `extra` marks the trailing Total column, which is otherwise an
- * ordinary triple of cells.
- */
-function monthlyCell(cell, extra = "") {
-
-    const mark = extra ? ` ${extra}` : "";
-
-    if (!cell) {
-        return `
-            <td class="numeric monthly-trend__empty${mark}">&mdash;</td>
-            <td class="numeric monthly-trend__empty${mark}">&mdash;</td>
-            <td class="numeric monthly-trend__empty${mark}">&mdash;</td>
-        `;
-    }
-
-    const share = cell.industry > 0
-        ? (cell.selected / cell.industry) * 100
-        : 0;
-
-    return `
-        <td class="numeric${mark}">${formatIndianNumber(cell.industry)}</td>
-        <td class="numeric monthly-trend__vol${mark}">${formatIndianNumber(cell.selected)}</td>
-        <td class="numeric monthly-trend__ms${mark}">${share.toFixed(1)}%</td>
-    `;
-}
-
-
-function renderMonthlyTrend(pivot) {
-
-    /* What the export writes, so the two cannot disagree. */
-    state.monthly.pivot = pivot;
-
-    /*
-     * The hairlines between month groups are placed by nth-child, so
-     * the stylesheet has to know the rows gained a leading cell.
-     */
-    if (dom.monthlyTrendTable) {
-        dom.monthlyTrendTable.classList.toggle(
-            "monthly-trend__table--with-maker",
-            Boolean(pivot.multi)
-        );
-    }
-
-    [dom.trendDownloadButton, dom.trendPdfButton].forEach(button => {
-        if (button) {
-            button.disabled = pivot.rows.length === 0;
-        }
-    });
-
-    const months = FISCAL_MONTH_ORDER.map(
-        number => MONTH_TABLES.find(month => month.number === number)
-    );
-
-    if (dom.monthlyTrendHead) {
-
-        /* The Maker column only appears when there is one to tell apart. */
-        const makerHead = pivot.multi
-            ? '<th rowspan="2" class="monthly-trend__maker-head">Maker</th>'
+        element.textContent = comparedWith
+            ? "No comparable previous year"
             : "";
 
-        dom.monthlyTrendHead.innerHTML = `
-            <tr>
-                <th rowspan="2" class="monthly-trend__year-head">
-                    Fiscal Year
-                </th>
-                ${makerHead}
-                ${months.map(month => `
-                    <th colspan="3" class="monthly-trend__month-head">
-                        ${month.label}
-                    </th>
-                `).join("")}
-                <th
-                    colspan="3"
-                    class="monthly-trend__month-head monthly-trend__total-head"
-                >
-                    Total
-                </th>
-            </tr>
-            <tr>
-                ${months.map(() => `
-                    <th class="numeric monthly-trend__sub">IND</th>
-                    <th class="numeric monthly-trend__sub">VOL</th>
-                    <th class="numeric monthly-trend__sub">MS</th>
-                `).join("")}
-                <th class="numeric monthly-trend__sub monthly-trend__total-cell">IND</th>
-                <th class="numeric monthly-trend__sub monthly-trend__total-cell">VOL</th>
-                <th class="numeric monthly-trend__sub monthly-trend__total-cell">MS</th>
-            </tr>
-        `;
+        return;
     }
 
-    if (dom.monthlyTrendBody) {
+    const up = value >= 0;
 
-        /*
-         * Wrapped rather than passed by reference: map hands the
-         * index in as the second argument, which monthlyCell now
-         * uses for the column class.
-         */
-        dom.monthlyTrendBody.innerHTML = pivot.rows.map(row => `
-            <tr${row.firstOfYear && pivot.multi
-                ? ' class="monthly-trend__group-start"'
-                : ""}>
-                <th scope="row" class="monthly-trend__year">${row.label}</th>
-                ${pivot.multi
-                    ? `<td class="monthly-trend__maker" title="${
-                        escapeHtml(row.maker)}">${escapeHtml(row.maker)}</td>`
-                    : ""}
-                ${row.months.map(cell => monthlyCell(cell)).join("")}
-                ${monthlyCell(row.total, "monthly-trend__total-cell")}
-            </tr>
-        `).join("");
-    }
+    element.appendChild(
+        document.createTextNode(`vs ${comparedWith} : `)
+    );
 
-    if (dom.monthlyTrendFoot) {
+    const figure = document.createElement("strong");
 
-        /*
-         * With several makers the footer is their combined volume,
-         * so it is labelled as such rather than left ambiguous.
-         */
-        dom.monthlyTrendFoot.innerHTML = `
-            <tr>
-                <th scope="row" class="monthly-trend__year">Total</th>
-                ${pivot.multi
-                    ? `<td class="monthly-trend__maker">All ${
-                        pivot.makers.length} selected</td>`
-                    : ""}
-                ${pivot.totals.map(cell => monthlyCell(cell)).join("")}
-                ${monthlyCell(pivot.grandTotal, "monthly-trend__total-cell")}
-            </tr>
-        `;
+    figure.className = up ? "is-up" : "is-down";
+    figure.textContent = `${up ? "▲" : "▼"} ${formatPercentage(Math.abs(value))}`;
+
+    element.appendChild(figure);
+}
+
+
+function renderKpis() {
+
+    const kpis = state.kpis;
+    const against = kpis.comparedWith;
+
+    const set = (id, value) => {
+        if (dom[id]) {
+            dom[id].textContent = value;
+        }
+    };
+
+    set("kpiRegistrations", formatIndianNumber(kpis.registrations));
+    set("kpiMakers", formatIndianNumber(kpis.makers));
+    set("kpiRtos", formatIndianNumber(kpis.rtos));
+    set("kpiClasses", formatIndianNumber(kpis.classes));
+    set("kpiShare", formatPercentage(kpis.share));
+    set("kpiYears", kpis.yearsLabel);
+
+    renderDelta(dom.kpiRegistrationsDelta, kpis.deltas.registrations, against);
+    renderDelta(dom.kpiMakersDelta, kpis.deltas.makers, against);
+    renderDelta(dom.kpiRtosDelta, kpis.deltas.rtos, against);
+    renderDelta(dom.kpiClassesDelta, kpis.deltas.classes, against);
+    renderDelta(dom.kpiShareDelta, kpis.deltas.share, against);
+
+    if (dom.kpiYearsDelta) {
+        dom.kpiYearsDelta.textContent = kpis.yearsMeta;
     }
 }
 
 
-function setMonthlyTrendState(view) {
+function paintSummaryList(element, entries) {
 
-    if (dom.monthlyTrendLoading) {
-        dom.monthlyTrendLoading.hidden = view !== "loading";
+    if (!element) {
+        return;
     }
 
-    if (dom.monthlyTrendError) {
-        dom.monthlyTrendError.hidden = view !== "error";
+    element.innerHTML = "";
+
+    if (entries.length === 0) {
+
+        const empty = document.createElement("li");
+
+        empty.className = "summary-list__empty";
+        empty.textContent = "Nothing to show yet.";
+
+        element.appendChild(empty);
+
+        return;
     }
 
-    if (dom.monthlyTrendContent) {
-        dom.monthlyTrendContent.hidden = view !== "ready";
+    const fragment = document.createDocumentFragment();
+
+    entries.forEach(entry => {
+
+        const item = document.createElement("li");
+
+        const name = document.createElement("span");
+        name.className = "summary-list__name";
+        name.textContent = entry.name;
+        name.title = entry.name;
+
+        const value = document.createElement("span");
+
+        value.className = "summary-list__value";
+
+        if (entry.positive !== undefined) {
+            value.classList.add(entry.positive ? "is-up" : "is-down");
+        }
+
+        value.textContent = entry.value;
+
+        item.appendChild(name);
+        item.appendChild(value);
+
+        fragment.appendChild(item);
+    });
+
+    element.appendChild(fragment);
+}
+
+
+function renderSummary() {
+
+    const summary = state.summary;
+
+    paintSummaryList(
+        dom.topMakersList,
+        summary.makers.slice(0, CONFIG.SUMMARY_ROWS)
+    );
+
+    paintSummaryList(
+        dom.topRtosList,
+        summary.rtos.slice(0, CONFIG.SUMMARY_ROWS)
+    );
+
+    paintSummaryList(
+        dom.topGrowthList,
+        summary.growth.slice(0, CONFIG.SUMMARY_ROWS)
+    );
+
+    if (dom.growthPanelTitle) {
+        dom.growthPanelTitle.textContent = summary.growthTitle;
+    }
+
+    if (dom.dataSummaryList) {
+
+        dom.dataSummaryList.innerHTML = "";
+
+        summary.facts.forEach(([label, value]) => {
+
+            const item = document.createElement("li");
+
+            const name = document.createElement("span");
+            name.textContent = label;
+
+            const figure = document.createElement("strong");
+            figure.textContent = formatIndianNumber(value);
+
+            item.appendChild(name);
+            item.appendChild(figure);
+
+            dom.dataSummaryList.appendChild(item);
+        });
     }
 }
 
 
-/*
- * The maker list belongs to one scope, so it is thrown away when the
- * scope changes rather than carried across. The two row caches are
- * keyed by scope and can stay.
- */
-function resetTrendForScope() {
+const VIEW_ALL_TITLES = {
+    makers: "All makers by market share",
+    rtos: "All RTOs by registration",
+    growth: "All makers by growth"
+};
 
-    const scope = trendScope();
 
-    if (state.monthly.scope === scope) {
-        return;
+function openViewAll(kind) {
+
+    const entries = state.summary[kind] || [];
+
+    if (dom.viewAllTitle) {
+        dom.viewAllTitle.textContent = VIEW_ALL_TITLES[kind] || "All";
     }
 
-    state.monthly.scope = scope;
-    state.monthly.makers = null;
+    paintSummaryList(dom.viewAllList, entries);
 
-    /* Makers absent from the new scope fall back to All Makers. */
-    state.trendMakers = [];
-
-    const combo = combos.get(dom.trendMakerFilter);
-
-    if (combo) {
-        combo.values = [];
+    if (dom.viewAllOverlay) {
+        dom.viewAllOverlay.hidden = false;
     }
 }
 
 
-async function loadMonthlyTrend(signal) {
+function closeViewAll() {
 
-    if (!dom.monthlyTrendContent) {
-        return;
-    }
-
-    /*
-     * GJ13 has no month tables behind it, so there is nothing to
-     * draw. Saying so beats an empty grid that looks like a bug.
-     */
-    if (SCOPES_WITHOUT_TREND.has(trendScope())) {
-
-        setMonthlyTrendState("error");
-
-        if (dom.monthlyTrendErrorText) {
-            dom.monthlyTrendErrorText.textContent =
-                `No month-level data has been loaded for ` +
-                `${currentView().scopeLabel} yet, so the trend cannot be ` +
-                "shown for this scope. Every other scope has it.";
-        }
-
-        return;
-    }
-
-    try {
-
-        setMonthlyTrendState("loading");
-
-        resetTrendForScope();
-
-        await describeMonthlySchema();
-
-        if (!state.trendOptionsLoaded) {
-            loadTrendClassOptions();
-            state.trendOptionsLoaded = true;
-        }
-
-        const valueColumns = monthlyValueColumns();
-
-        /*
-         * The industry series is always needed. A chosen maker adds
-         * one more small read; on All Makers the same rows serve as
-         * both sides of the comparison.
-         */
-        const [industryRows] = await Promise.all([
-            getMonthlyTotals(valueColumns, signal),
-            loadTrendMakerOptions(signal)
-        ]);
-
-        /*
-         * No maker chosen means the selection is the whole industry,
-         * so the same rows serve as both sides and nothing more is
-         * fetched. Otherwise every chosen maker comes back in one
-         * request and is split apart by name here.
-         */
-        let series;
-
-        if (state.trendMakers.length === 0) {
-
-            series = [{ maker: null, rows: industryRows }];
-
-        } else {
-
-            const rows = await getMonthlyForMakers(
-                state.trendMakers,
-                valueColumns,
-                signal
-            );
-
-            const byMaker = new Map(
-                state.trendMakers.map(maker => [maker, []])
-            );
-
-            rows.forEach(row => {
-
-                const bucket = byMaker.get(
-                    row[state.monthly.schema.entityColumn]
-                );
-
-                if (bucket) {
-                    bucket.push(row);
-                }
-            });
-
-            series = state.trendMakers.map(maker => ({
-                maker,
-                rows: byMaker.get(maker) || []
-            }));
-        }
-
-        const pivot = buildMonthlyPivot(
-            industryRows,
-            series,
-            valueColumns
-        );
-
-        renderMonthlyTrend(pivot);
-
-        /*
-         * With no maker and no class chosen, "the selection" is the
-         * whole industry, so VOL repeats IND and every share is
-         * 100%. That is correct but useless, so say why.
-         */
-        if (dom.monthlyTrendHint) {
-
-            const unnarrowed =
-                state.trendMakers.length === 0 && isAll(state.trendClass);
-
-            dom.monthlyTrendHint.hidden = !unnarrowed;
-
-            dom.monthlyTrendHint.textContent = unnarrowed
-                ? "Choose a Maker or Class above to make VOL and MS " +
-                  "meaningful. With both set to All, VOL is the whole " +
-                  "industry, so it repeats IND and every share reads 100%."
-                : "";
-        }
-
-        if (dom.monthlyTrendMeta) {
-
-            const selected = pivot.totals.reduce(
-                (sum, cell) => sum + (cell ? cell.selected : 0),
-                0
-            );
-
-            dom.monthlyTrendMeta.textContent =
-                `${currentView().scopeLabel} · ` +
-                `${pivot.rows.length} fiscal years · ` +
-                `${formatIndianNumber(selected)} in selection`;
-        }
-
-        setMonthlyTrendState("ready");
-
-    } catch (error) {
-
-        if (isAbortError(error)) {
-            return;
-        }
-
-        console.error("Monthly trend failed:", error);
-
-        if (dom.monthlyTrendErrorText) {
-            dom.monthlyTrendErrorText.textContent = toUserMessage(
-                error,
-                "The monthly trend could not be loaded."
-            );
-        }
-
-        setMonthlyTrendState("error");
+    if (dom.viewAllOverlay) {
+        dom.viewAllOverlay.hidden = true;
     }
 }
 
 
 /* ============================================================
-   23. XLSX EXPORT
+   31. HEADER + SHELL CHROME
+   ============================================================ */
+
+function renderHeader() {
+
+    if (dom.dashboardTitle) {
+
+        dom.dashboardTitle.textContent =
+            `${scopeLabel(state.filters).toUpperCase()} ` +
+            "VEHICLE REGISTRATION DASHBOARD";
+    }
+
+    if (dom.dataRefreshedOn) {
+
+        dom.dataRefreshedOn.textContent = state.grain === "month"
+            ? "31-Aug-2026 (monthly tables)"
+            : `${DATA_AS_OF.label} (yearly tables)`;
+    }
+}
+
+
+function renderAll() {
+
+    renderHeader();
+    renderKpis();
+    renderMakerCard();
+    renderRtoCard();
+    renderDetailCard();
+    renderSummary();
+}
+
+
+/* ============================================================
+   32. XLSX EXPORT
 
    Writes a real .xlsx - a ZIP of XML parts - rather than a CSV
    named .xlsx or an HTML table served as application/vnd.ms-excel,
@@ -4562,56 +4124,8 @@ async function downloadWorkbook(fileName, sheetName, rows, options) {
 }
 
 
-/*
- * Spelled into the file so a downloaded sheet can be read months
- * later without having to remember what was on screen.
- */
-function activeFilterSummary({ trend = false } = {}) {
-
-    const parts = [`Scope: ${currentView().scopeLabel}`];
-
-    if (trend) {
-
-        parts.push(
-            `Maker: ${state.trendMakers.length === 0
-                ? "All"
-                : state.trendMakers.join(", ")}`,
-            `Class: ${isAll(state.trendClass) ? "All" : state.trendClass}`
-        );
-
-    } else {
-
-        parts.push(`Year: ${state.year}`);
-
-        if (state.filters.makers.length > 0) {
-            parts.push(`Maker: ${state.filters.makers.join(", ")}`);
-        }
-
-        if (!isAll(state.filters.category)) {
-            parts.push(`Category: ${state.filters.category}`);
-        }
-
-        if (!isAll(state.filters.subcategory)) {
-            parts.push(`Subcategory: ${state.filters.subcategory}`);
-        }
-
-        if (!isAll(state.filters.month)) {
-            parts.push(`Month: ${state.filters.month}`);
-        }
-
-        const terms = state.searchTerms.filter(term => term.trim() !== "");
-
-        if (terms.length > 0) {
-            parts.push(`Search: ${terms.join(" | ")}`);
-        }
-    }
-
-    return parts.join("  ·  ");
-}
-
-
 /* ============================================================
-   PDF
+   33. PDF
 
    Also written by hand, for the same reason the xlsx is: no
    package.json, no CDN script.
@@ -5150,544 +4664,324 @@ async function downloadPdf(fileName, title, subtitle, rows, widths, options) {
 }
 
 
+/* ============================================================
+   34. EXPORTS
+
+   Every card writes from the same column descriptors it renders
+   from, so a sheet is the table it was taken from: same
+   columns, same order, same totals row - and every filtered
+   row, not the page that happened to be on screen.
+   ============================================================ */
+
+/*
+ * Spelled into the file so a downloaded sheet can be read months
+ * later without having to remember what was on screen.
+ */
+function activeFilterSummary() {
+
+    const filters = state.filters;
+
+    const list = (values, all) =>
+        values.length === 0 ? all : values.join(", ");
+
+    const parts = [
+        `Scope: ${scopeLabel(filters)}`,
+        `Grain: ${state.grain === "month" ? "monthly" : "yearly"}`,
+        `Year: ${list(selectedYears(), "all")}`,
+        `Month: ${filters.months.length === 0
+            ? "all"
+            : filters.months.map(monthLabel).join(", ")}`
+    ];
+
+    if (filters.makers.length > 0) {
+        parts.push(`Maker: ${filters.makers.join(", ")}`);
+    }
+
+    if (filters.classes.length > 0) {
+        parts.push(
+            `Class: ${filters.classes.map(classOptionLabel).join(", ")}`
+        );
+    }
+
+    if (state.view.detail.search) {
+        parts.push(`Search: ${state.view.detail.search}`);
+    }
+
+    return parts.join("  ·  ");
+}
+
+
 function exportFileName(prefix, extension) {
 
     const stamp = new Date().toISOString().slice(0, 10);
 
-    return `${prefix}-${currentView().id}-${stamp}.${extension}`;
+    const scope = scopeLabel(state.filters)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+
+    return `${prefix}-${scope}-${stamp}.${extension}`;
 }
 
 
 /*
- * The Details table, every filtered row rather than the page on
- * screen. Columns, order and totals are the rendered ones.
+ * A sheet wants the number, not the rendering of it. raw() gives
+ * that for every column except the growth pair, whose sentinel
+ * for "no comparable year" is not a figure anyone should see in
+ * a spreadsheet.
  */
-async function exportDetailsTable() {
+function exportValue(column, row) {
 
-    const rows = state.filteredRows;
+    const value = column.raw(row);
 
-    if (!rows || rows.length === 0) {
-        return;
+    if (typeof value === "string") {
+        return value;
     }
 
-    const columns = state.columns;
+    return Number.isFinite(value) ? value : null;
+}
 
-    const sheet = [
-        [{ value: `${currentView().title}`, style: 1 }],
-        [activeFilterSummary()],
-        [`${rows.length} rows · exported from all pages, not just the one shown`],
-        [],
-        columns.map(column => ({ value: column.label, style: 1 }))
-    ];
 
-    rows.forEach((row, index) => {
+/*
+ * The three cards, each resolved at the moment of export so a
+ * menu item and the button beside the table write the same file.
+ */
+function exportSpecFor(kind) {
 
-        sheet.push(columns.map(column => {
+    if (kind === "maker") {
 
-            if (column.type === "index") {
-                return row.srNo === null || row.srNo === undefined
-                    ? index + 1
-                    : toNumber(row.srNo);
-            }
+        const columns = makerColumns();
 
-            if (column.type === "entity") {
-                return row.entity;
-            }
+        return {
+            title: "Maker Comparison (Year Wise)",
+            sheet: "Maker Comparison",
+            prefix: "maker-comparison",
+            columns,
+            rows: state.makerTable.sorted || state.makerTable.rows,
+            totals: state.makerTable.totals,
+            labelWidth: 42
+        };
+    }
 
-            const value = column.type === "total"
-                ? row.total
-                : row.values[column.key];
+    if (kind === "rto") {
 
-            /* Blank stays blank; only a real figure becomes a number. */
-            return value === null || value === undefined || value === ""
-                ? null
-                : toNumber(value);
-        }));
+        const columns = rtoColumns();
+
+        return {
+            title: "RTO Comparison (Maker Wise)",
+            sheet: "RTO Comparison",
+            prefix: "rto-comparison",
+            columns,
+            rows: state.rtoTable.rows,
+            totals: state.rtoTable.totals,
+            labelWidth: 30
+        };
+    }
+
+    const columns = detailColumns();
+    const rows = state.detailTable.visible || state.detailTable.rows;
+
+    return {
+        title: "Detailed Registration Data",
+        sheet: "Detailed Data",
+        prefix: "detailed-data",
+        columns,
+        rows,
+        totals: detailTotalsRow(rows),
+        labelWidth: 34
+    };
+}
+
+
+function sheetFor(spec, { heading = true } = {}) {
+
+    const rows = [];
+
+    if (heading) {
+        rows.push([{ value: spec.title, style: 1 }]);
+        rows.push([activeFilterSummary()]);
+        rows.push([
+            `${formatIndianNumber(spec.rows.length)} rows · every filtered ` +
+            "row, not just the page on screen"
+        ]);
+        rows.push([]);
+    }
+
+    rows.push(spec.columns.map(column => ({ value: column.label, style: 1 })));
+
+    spec.rows.forEach(row => {
+        rows.push(spec.columns.map(column => exportValue(column, row)));
     });
 
-    const totals = calculateColumnTotals(rows, columns);
+    if (spec.totals) {
+        rows.push(spec.columns.map(column => ({
+            value: exportValue(column, spec.totals),
+            style: 2
+        })));
+    }
 
-    sheet.push(columns.map((column, index) => {
+    return rows;
+}
+
+
+function widthsFor(spec) {
+
+    return spec.columns.map((column, index) => {
 
         if (index === 0) {
-            return { value: "Total", style: 2 };
+            return spec.labelWidth;
         }
 
-        if (column.type === "entity") {
-            return { value: `${rows.length} ${currentView().entityPlural}`, style: 2 };
-        }
+        return Math.max(11, Math.min(34, column.label.length + 3));
+    });
+}
 
-        return { value: totals[column.key], style: 2 };
-    }));
 
-    const widths = columns.map((column, index) =>
-        index === 0 ? 8 : index === 1 ? 42 : Math.max(12, column.label.length + 2)
-    );
+async function exportCardXlsx(kind) {
+
+    const spec = exportSpecFor(kind);
+
+    if (spec.rows.length === 0) {
+        return;
+    }
 
     await downloadWorkbook(
-        exportFileName("details", "xlsx"),
-        `${currentView().scopeLabel} ${state.year}`.slice(0, 31),
-        sheet,
-        { widths }
+        exportFileName(spec.prefix, "xlsx"),
+        spec.sheet.slice(0, 31),
+        sheetFor(spec),
+        { widths: widthsFor(spec) }
     );
 }
 
 
 /*
- * The Details table as a PDF. Same rows the spreadsheet gets, laid
- * out across column bands so nothing has to shrink to fit.
+ * All three on one sheet, stacked with a blank line between, so
+ * the whole dashboard travels as a single file.
  */
-async function exportDetailsPdf() {
+async function exportEverythingXlsx() {
 
-    const rows = state.filteredRows;
+    const specs = ["maker", "rto", "detail"]
+        .map(exportSpecFor)
+        .filter(spec => spec.rows.length > 0);
 
-    if (!rows || rows.length === 0) {
+    if (specs.length === 0) {
         return;
     }
 
-    const columns = state.columns;
+    const rows = [
+        [{ value: "Vehicle Registration Dashboard", style: 1 }],
+        [activeFilterSummary()],
+        []
+    ];
 
-    const sheet = [columns.map(column => column.label)];
+    specs.forEach((spec, index) => {
 
-    rows.forEach((row, index) => {
+        if (index > 0) {
+            rows.push([], []);
+        }
 
-        sheet.push(columns.map(column => {
+        rows.push([{ value: spec.title, style: 1 }]);
 
-            if (column.type === "index") {
-                return formatIndianNumber(
-                    row.srNo === null || row.srNo === undefined
-                        ? index + 1
-                        : toNumber(row.srNo)
-                );
-            }
-
-            if (column.type === "entity") {
-                return row.entity;
-            }
-
-            const value = column.type === "total"
-                ? row.total
-                : row.values[column.key];
-
-            return value === null || value === undefined || value === ""
-                ? ""
-                : formatIndianNumber(toNumber(value));
-        }));
+        sheetFor(spec, { heading: false }).forEach(row => rows.push(row));
     });
 
-    const totals = calculateColumnTotals(rows, columns);
+    await downloadWorkbook(
+        exportFileName("dashboard", "xlsx"),
+        "Dashboard",
+        rows,
+        {}
+    );
+}
 
-    sheet.push(columns.map((column, index) => {
 
-        if (index === 0) {
-            return "Total";
-        }
+async function exportCardPdf(kind) {
 
-        if (column.type === "entity") {
-            return `${rows.length} ${currentView().entityPlural}`;
-        }
+    const spec = exportSpecFor(kind);
 
-        return formatIndianNumber(totals[column.key]);
-    }));
+    if (spec.rows.length === 0) {
+        return;
+    }
+
+    const sheet = [spec.columns.map(column => column.label)];
+
+    spec.rows.forEach(row => {
+        sheet.push(spec.columns.map(column => column.text(row)));
+    });
+
+    if (spec.totals) {
+        sheet.push(spec.columns.map(column => column.text(spec.totals)));
+    }
 
     /*
-     * The entity column is given room for a real maker name; the
+     * The label column is given room for a real maker name; the
      * rest are sized to their heading, which is what decides how
      * many fit in a band.
      */
-    const widths = columns.map((column, index) => {
+    const widths = spec.columns.map((column, index) => {
 
-        if (index === 0) {
-            return 34;
-        }
-
-        if (column.type === "entity") {
-            return 168;
+        if (index === 0 && !column.numeric) {
+            return 150;
         }
 
         return Math.min(
-            120,
-            Math.max(44, pdfTextWidth(column.label, PDF_HEAD_SIZE) + 10)
+            130,
+            Math.max(46, pdfTextWidth(column.label, PDF_HEAD_SIZE) + 12)
         );
     });
 
     await downloadPdf(
-        exportFileName("details", "pdf"),
-        currentView().title,
-        activeFilterSummary() + `  ·  ${rows.length} rows`,
+        exportFileName(spec.prefix, "pdf"),
+        spec.title,
+        `${activeFilterSummary()}  ·  ${spec.rows.length} rows`,
         sheet,
         widths,
-        { lead: 2, footRows: [sheet.length - 1] }
+        { lead: 1, footRows: spec.totals ? [sheet.length - 1] : [] }
     );
 }
 
 
-/*
- * The trend grid as a PDF. Each month is one column reading
- * "IND / VOL / MS" rather than three, because twelve months at
- * three columns each will not fit any page at a readable size.
- */
-async function exportTrendPdf() {
+function setExportEnabled(kinds, enabled) {
 
-    const pivot = state.monthly.pivot;
+    kinds.forEach(kind => {
 
-    if (!pivot || pivot.rows.length === 0) {
-        return;
-    }
+        document.querySelectorAll(`[data-export="${kind}"]`).forEach(button => {
 
-    const months = FISCAL_MONTH_ORDER.map(
-        number => MONTH_TABLES.find(month => month.number === number)
-    );
-
-    const groups = months.map(month => month.label).concat("Total");
-
-    const lead = pivot.multi ? 2 : 1;
-
-    /*
-     * Two header rows, as on screen and in the spreadsheet: the
-     * month spanning its triplet, then IND / VOL / MS beneath.
-     */
-    const groupRow = pivot.multi ? ["", ""] : [""];
-    const subRow = pivot.multi
-        ? ["Fiscal Year", "Maker"]
-        : ["Fiscal Year"];
-
-    groups.forEach(label => {
-        groupRow.push({ text: label, span: 3 });
-        subRow.push("IND", "VOL", "MS");
+            /* Menu items are always clickable; only buttons disable. */
+            if (button.classList.contains("download-button")) {
+                button.disabled = !enabled;
+            }
+        });
     });
-
-    const sheet = [groupRow, subRow];
-
-    const triplet = cell => {
-
-        if (!cell) {
-            return ["", "", ""];
-        }
-
-        const share = cell.industry > 0
-            ? (cell.selected / cell.industry) * 100
-            : 0;
-
-        return [
-            formatIndianNumber(cell.industry),
-            formatIndianNumber(cell.selected),
-            share.toFixed(1) + "%"
-        ];
-    };
-
-    pivot.rows.forEach(row => {
-
-        /*
-         * The screen prints the year once per block of makers; on
-         * paper a page break could separate them, so every row
-         * carries its own.
-         */
-        const line = pivot.multi
-            ? [fiscalYearLabel(row.start), row.maker]
-            : [row.label];
-
-        row.months.forEach(cell => line.push(...triplet(cell)));
-        line.push(...triplet(row.total));
-
-        sheet.push(line);
-    });
-
-    const footer = pivot.multi
-        ? ["Total", `All ${pivot.makers.length} selected`]
-        : ["Total"];
-
-    pivot.totals.forEach(cell => footer.push(...triplet(cell)));
-    footer.push(...triplet(pivot.grandTotal));
-
-    sheet.push(footer);
-
-    const widths = (pivot.multi ? [58, 172] : [66])
-        .concat(groups.flatMap(() => [46, 46, 34]));
-
-    await downloadPdf(
-        exportFileName("trend", "pdf"),
-        `Monthly Trend \u2014 ${currentView().scopeLabel}`,
-        activeFilterSummary({ trend: true }),
-        sheet,
-        widths,
-        {
-            lead,
-            groupSize: 3,
-            headerCount: 2,
-            footRows: [sheet.length - 1]
-        }
-    );
 }
 
 
-/*
- * The trend grid as it reads on screen: a fiscal year per row,
- * IND / VOL / MS under each month, and the Total group last.
- */
-async function exportTrendTable() {
+async function runExport(action) {
 
-    const pivot = state.monthly.pivot;
+    const [kind, format] = action.split("-");
 
-    if (!pivot || pivot.rows.length === 0) {
-        return;
-    }
+    try {
 
-    const months = FISCAL_MONTH_ORDER.map(
-        number => MONTH_TABLES.find(month => month.number === number)
-    );
-
-    const groups = [...months.map(month => month.label), "Total"];
-
-    /* Row 5 spans each group across its three columns; row 6 names them. */
-    const lead = pivot.multi ? 2 : 1;
-
-    const groupRow = pivot.multi ? ["", ""] : [""];
-
-    const subRow = pivot.multi
-        ? [{ value: "Fiscal Year", style: 1 }, { value: "Maker", style: 1 }]
-        : [{ value: "Fiscal Year", style: 1 }];
-
-    groups.forEach(label => {
-        groupRow.push({ value: label, style: 1 }, "", "");
-        subRow.push(
-            { value: "IND", style: 1 },
-            { value: "VOL", style: 1 },
-            { value: "MS %", style: 1 }
-        );
-    });
-
-    const sheet = [
-        [{ value: "Monthly Trend", style: 1 }],
-        [activeFilterSummary({ trend: true })],
-        ["IND is the whole industry, VOL the selection, MS the share of IND"],
-        [],
-        groupRow,
-        subRow
-    ];
-
-    const cellsFor = cell => {
-
-        if (!cell) {
-            return [null, null, null];
+        if (kind === "all") {
+            await exportEverythingXlsx();
+            return;
         }
 
-        const share = cell.industry > 0
-            ? (cell.selected / cell.industry) * 100
-            : 0;
+        if (format === "pdf") {
+            await exportCardPdf(kind);
+        } else {
+            await exportCardXlsx(kind);
+        }
 
-        return [
-            cell.industry,
-            cell.selected,
-            { value: Number(share.toFixed(1)), style: 3 }
-        ];
-    };
-
-    pivot.rows.forEach(row => {
-
-        /*
-         * The screen prints the year once per block of makers; a
-         * spreadsheet gets sorted and filtered, so every row carries
-         * its own year.
-         */
-        const line = pivot.multi
-            ? [fiscalYearLabel(row.start), row.maker]
-            : [row.label];
-
-        row.months.forEach(cell => line.push(...cellsFor(cell)));
-        line.push(...cellsFor(row.total));
-
-        sheet.push(line);
-    });
-
-    const footer = pivot.multi
-        ? [
-            { value: "Total", style: 2 },
-            { value: `All ${pivot.makers.length} selected`, style: 2 }
-        ]
-        : [{ value: "Total", style: 2 }];
-
-    pivot.totals.forEach(cell =>
-        cellsFor(cell).forEach(value =>
-            footer.push(
-                value !== null && typeof value === "object"
-                    ? { ...value, style: 2 }
-                    : { value, style: 2 }
-            )
-        )
-    );
-
-    cellsFor(pivot.grandTotal).forEach(value =>
-        footer.push(
-            value !== null && typeof value === "object"
-                ? { ...value, style: 2 }
-                : { value, style: 2 }
-        )
-    );
-
-    sheet.push(footer);
-
-    /* Merge each group label across its three columns, on row 5. */
-    const merges = groups.map((label, index) => {
-
-        const first = lead + index * 3;
-
-        return `${columnLetter(first)}5:${columnLetter(first + 2)}5`;
-    });
-
-    const widths = pivot.multi
-        ? [14, 40, ...groups.flatMap(() => [12, 12, 8])]
-        : [14, ...groups.flatMap(() => [12, 12, 8])];
-
-    await downloadWorkbook(
-        exportFileName("trend", "xlsx"),
-        `Trend ${currentView().scopeLabel}`.slice(0, 31),
-        sheet,
-        { merges, widths }
-    );
+    } catch (error) {
+        console.error("Export failed:", error);
+        displayError(error, "The download could not be built.");
+    }
 }
 
 
 /* ============================================================
-   24. LOADING / ERROR
+   35. ERROR + LOADING
    ============================================================ */
-
-function showLoading({ global = false } = {}) {
-
-    state.loading = true;
-
-    if (global && dom.globalLoading) {
-        dom.globalLoading.hidden = false;
-    }
-
-    setTableState("loading");
-}
-
-
-function hideLoading() {
-
-    state.loading = false;
-
-    if (dom.globalLoading) {
-        dom.globalLoading.hidden = true;
-    }
-
-    if (dom.tableLoading) {
-        dom.tableLoading.hidden = true;
-    }
-}
-
-
-/*
- * A dead API fails every table at once, so naming one of them
- * misleads: it reads like a missing table when nothing is wrong
- * with the schema.
- */
-const DB_UNREACHABLE_MESSAGE =
-    "Can't reach the database right now. Check your connection, " +
-    "then press Retry.";
-
-
-/*
- * A table the API does not know about. Since the tables are named
- * in this file, the usual cause is a stale cached copy of it -
- * GitHub Pages serves script.js with max-age=600, so for ten
- * minutes after a deploy a browser can still be asking for tables
- * that were renamed or dropped.
- */
-const TABLE_MISSING_MESSAGE =
-    "This page is asking for a table that no longer exists, which " +
-    "usually means it is running a cached copy. Reload with " +
-    "Ctrl+Shift+R (Cmd+Shift+R on a Mac).";
-
-
-function isTableMissing(error) {
-
-    if (!error) {
-        return false;
-    }
-
-    if (error.code === "PGRST205") {
-        return true;
-    }
-
-    return /could not find the table/i.test(String(error.message || error));
-}
-
-
-function isDatabaseUnreachable(error) {
-
-    if (!error || isTableMissing(error)) {
-        return false;
-    }
-
-    if (error.code === "PGRST002" || error.code === "FETCH_FAILED") {
-        return true;
-    }
-
-    const text = String(error.message || error);
-
-    /*
-     * Matched narrowly: PGRST205 also says "schema cache", and that
-     * one means the table is gone, not the database.
-     */
-    return (
-        /could not query the database/i.test(text) ||
-        /failed to fetch/i.test(text) ||
-        /networkerror/i.test(text) ||
-        /load failed/i.test(text)
-    );
-}
-
-
-/*
- * Accepts an Error or a plain string. Errors are classified so a
- * dead API reads as a service problem rather than a data one.
- */
-function toUserMessage(error, fallback) {
-
-    if (typeof error === "string") {
-        return error;
-    }
-
-    if (isTableMissing(error)) {
-        return TABLE_MISSING_MESSAGE;
-    }
-
-    if (isDatabaseUnreachable(error)) {
-        return DB_UNREACHABLE_MESSAGE;
-    }
-
-    return (error && error.message) || fallback;
-}
-
-
-function displayError(error, fallback = "Something went wrong.") {
-
-    const message = toUserMessage(error, fallback);
-
-    console.error(error);
-
-    if (dom.errorMessage && dom.errorMessageText) {
-        dom.errorMessageText.textContent = message;
-        dom.errorMessage.hidden = false;
-    }
-
-    setTableState("error", message);
-}
-
-
-function clearError() {
-
-    if (dom.errorMessage) {
-        dom.errorMessage.hidden = true;
-    }
-
-    if (dom.errorMessageText) {
-        dom.errorMessageText.textContent = "";
-    }
-}
-
 
 function isAbortError(error) {
 
@@ -5698,9 +4992,82 @@ function isAbortError(error) {
 }
 
 
+function displayError(error, fallback) {
+
+    if (!dom.errorMessage) {
+        return;
+    }
+
+    dom.errorMessage.hidden = false;
+
+    dom.errorMessageText.textContent =
+        (error && error.message) || fallback || "Something went wrong.";
+}
+
+
+function clearError() {
+
+    if (dom.errorMessage) {
+        dom.errorMessage.hidden = true;
+    }
+}
+
+
+function showLoading({ global = false } = {}) {
+
+    if (global && dom.globalLoading) {
+        dom.globalLoading.hidden = false;
+    }
+
+    ["maker", "rto", "detail"].forEach(card => {
+        setCardState(card, "loading", "Loading…");
+    });
+}
+
+
+function hideLoading() {
+
+    if (dom.globalLoading) {
+        dom.globalLoading.hidden = true;
+    }
+}
+
+
 /* ============================================================
-   24. APPLY FILTERS
+   36. APPLY
+
+   Copies the sidebar's selection into the live one, reads both
+   sources, then derives and renders everything from them.
    ============================================================ */
+
+function cloneFilters(filters) {
+
+    return {
+        scope: filters.scope,
+        years: filters.years.slice(),
+        months: filters.months.slice(),
+        rtos: filters.rtos.slice(),
+        makers: filters.makers.slice(),
+        classes: filters.classes.slice()
+    };
+}
+
+
+function buildNotices(grain, sources) {
+
+    const dropped = rtosWithoutGrain(state.filters.rtos, grain);
+
+    state.notices.rto = dropped.length > 0
+        ? `${dropped.join(", ")} has no monthly tables, so it is absent ` +
+          "while a month is selected."
+        : "";
+
+    state.notices.detail = sources.some(source => source.rto === null)
+        ? "RTO Code and RTO Name read “—” because the selection is a " +
+          "scope rather than an RTO. Tick an RTO to fill them."
+        : "";
+}
+
 
 async function applyFilters({ global = false } = {}) {
 
@@ -5714,112 +5081,41 @@ async function applyFilters({ global = false } = {}) {
     state.activeController = controller;
 
     clearError();
-    clearYearError();
 
-    const previousView = state.view;
-    const previousYear = state.year;
+    state.filters = cloneFilters(state.pending);
+    state.grain = grainFor(state.filters);
 
-    readFiltersFromUI();
+    state.view.maker.page = 1;
+    state.view.detail.page = 1;
 
-    const viewChanged = state.view !== previousView;
-    const yearChanged = state.year !== previousYear;
+    markDirty();
+    renderHeader();
 
-    /*
-     * Only the scope selects a different table now. Its class
-     * columns differ from the previous scope's, so the cache, the
-     * schema and the class taxonomy all have to be rebuilt.
-     */
-    if (viewChanged) {
+    const grain = state.grain;
+    const sources = mainSources(state.filters, grain);
+    const years = yearsToLoad(state.filters.years, grain);
+    const months = selectedMonthNumbers();
 
-        state.tableCache = new Map();
-
-        await discoverSchema();
-
-        applyViewVisibility();
-        loadMonths();
-        loadClassFilters();
-    }
-
-    /*
-     * A year change keeps the same table and its cached rows - the
-     * year is a column now - so nothing is refetched. Only the
-     * entity list narrows, since makers come and go between years.
-     */
-    if (viewChanged || yearChanged) {
-
-        await loadEntityOptions(controller.signal);
-
-        updateViewLabels();
-        readFiltersFromUI();
-    }
-
-    enforceFilterCompatibility();
-    readFiltersFromUI();
-
-    state.currentPage = 1;
-
-    updateYearRangeHeader();
-    updateViewLabels();
+    buildNotices(grain, sources);
 
     showLoading({ global });
 
     try {
 
-        const { rows, columns, sourceTable, classRows, classSchema } =
-            await fetchDashboardData(state.filters, controller.signal);
+        const [main, rto] = await Promise.all([
+            loadRecords(sources, grain, years, months, controller.signal),
+            loadRtoRecords(state.filters, grain, years, months, controller.signal)
+        ]);
 
         if (requestId !== state.requestId) {
             return false;
         }
 
-        state.columns = columns;
-        state.sourceTable = sourceTable;
+        state.main = main;
+        state.rto = rto;
 
-        state.rows = aggregateRows(rows, columns);
-
-        state.dimensionTotal = state.rows.reduce(
-            (sum, row) => sum + toNumber(row.total),
-            0
-        );
-
-        /*
-         * Sorting by a column that no longer exists falls back
-         * to Total - as does source-row order on a table that
-         * has no row numbers of its own, such as the RTO data.
-         */
-        const missingColumn = !columns.some(
-            column => column.key === state.sortKey
-        );
-
-        const noSourceOrder =
-            state.sortKey === "__index" &&
-            state.rows.length > 0 &&
-            (state.rows[0].srNo === null || state.rows[0].srNo === undefined);
-
-        if (missingColumn || noSourceOrder) {
-            state.sortKey = "__total";
-            state.sortDirection = "desc";
-        }
-
-        state.kpis = calculateKPIs(
-            state.rows,
-            classRows,
-            classSchema,
-            currentView().columnKind === "class" && !regionIsActive()
-                ? getVisibleValueColumns()
-                : null
-        );
-
-        updateKPICards();
-        renderTable();
-
-        /*
-         * Deliberately not awaited. The trend reads twelve separate
-         * tables, so letting it settle on its own keeps the main
-         * table on screen at the usual speed; it reports its own
-         * loading and failure states.
-         */
-        loadMonthlyTrend(controller.signal);
+        deriveAll();
+        renderAll();
 
         return true;
 
@@ -5831,12 +5127,15 @@ async function applyFilters({ global = false } = {}) {
 
         console.error("Dashboard data error:", error);
 
-        state.rows = [];
-        state.filteredRows = [];
-        state.dimensionTotal = 0;
-        state.kpis = emptyKPIs();
+        state.main = { records: [], classColumns: [] };
+        state.rto = { records: [], classColumns: [] };
 
-        updateKPICards();
+        deriveAll();
+        renderAll();
+
+        ["maker", "rto", "detail"].forEach(card => {
+            setCardState(card, "error", error.message);
+        });
 
         displayError(error, "Unable to load dashboard data.");
 
@@ -5852,475 +5151,254 @@ async function applyFilters({ global = false } = {}) {
 }
 
 
-/* ============================================================
-   25. RESET
-   ============================================================ */
-
 async function resetFilters() {
 
-    if (dom.breakdownFilter) {
-        dom.breakdownFilter.value = DEFAULT_VIEW;
+    state.pending = emptyFilters();
+
+    state.view.detail.search = "";
+
+    if (dom.detailSearch) {
+        dom.detailSearch.value = "";
     }
 
-    if (dom.yearFilter) {
-        dom.yearFilter.value = AVAILABLE_YEARS[0];
+    if (dom.scopeFilter) {
+        dom.scopeFilter.value = DEFAULT_SCOPE;
     }
 
-    [
-        dom.makerFilter,
-        dom.trendMakerFilter,
-        dom.trendClassFilter,
-        dom.stateFilter,
-        dom.monthFilter,
-        dom.regionFilter,
-        dom.categoryFilter,
-        dom.subcategoryFilter
-    ].forEach(select => {
+    checklists.forEach(checklist => {
 
-        if (select) {
-            select.value = CONFIG.ALL;
+        checklist.query = "";
+
+        if (checklist.search) {
+            checklist.search.value = "";
         }
     });
 
-    state.trendMakers = [];
+    await loadFilterOptions();
 
-    const trendCombo = combos.get(dom.trendMakerFilter);
-
-    if (trendCombo) {
-        trendCombo.values = [];
-    }
-
-    state.trendClass = CONFIG.ALL;
-
-    refreshAllCombos();
-
-    clearTableSearch();
-
-    state.sortKey = "__index";
-    state.sortDirection = "asc";
-    state.currentPage = 1;
-
-    state.view = DEFAULT_VIEW;
-    state.year = AVAILABLE_YEARS[0];
-
-    state.tableCache = new Map();
-
-    await discoverSchema();
-
-    applyViewVisibility();
-    loadMonths();
-    loadClassFilters();
-
-    /*
-     * Reset restores the default table, so the entity list has
-     * to be rebuilt from it too.
-     */
-    await loadEntityOptions();
-
-    updateViewLabels();
-    enforceFilterCompatibility();
-
-    clearError();
-    clearYearError();
+    renderAllChecklists();
+    updateFilterNotice();
 
     await applyFilters();
 }
 
 
 /* ============================================================
-   26. SEARCH ROWS
+   37. EVENT WIRING
    ============================================================ */
-
-function getSearchRows() {
-
-    if (!dom.makerSearchList) {
-        return [];
-    }
-
-    return [...dom.makerSearchList.querySelectorAll("[data-search-row]")];
-}
-
-
-function getSearchInputs() {
-
-    return getSearchRows().map(row =>
-        row.querySelector("[data-maker-search]")
-    );
-}
-
-
-function syncSearchRows() {
-
-    const rows = getSearchRows();
-    const view = currentView();
-
-    state.searchTerms = rows.map(row => {
-
-        const input = row.querySelector("[data-maker-search]");
-
-        return input ? normalizeString(input.value) : "";
-    });
-
-    rows.forEach((row, index) => {
-
-        const input = row.querySelector("[data-maker-search]");
-        const addButton = row.querySelector("[data-add-search]");
-        const removeButton = row.querySelector("[data-remove-search]");
-        const clearButton = row.querySelector("[data-clear-search]");
-
-        const isFirst = index === 0;
-
-        if (input) {
-
-            input.placeholder = view.searchPlaceholder;
-
-            input.setAttribute(
-                "aria-label",
-                rows.length > 1
-                    ? `Search ${view.entityPlural.toLowerCase()}, ` +
-                      `box ${index + 1} of ${rows.length}`
-                    : `Search ${view.entityPlural.toLowerCase()}`
-            );
-        }
-
-        if (addButton) {
-            addButton.hidden = !isFirst;
-            addButton.disabled = rows.length >= CONFIG.MAX_SEARCH_ROWS;
-
-            addButton.title =
-                rows.length >= CONFIG.MAX_SEARCH_ROWS
-                    ? `Maximum of ${CONFIG.MAX_SEARCH_ROWS} searches`
-                    : "Add another search";
-        }
-
-        if (removeButton) {
-            removeButton.hidden = isFirst;
-        }
-
-        if (clearButton) {
-            clearButton.hidden = !(input && input.value);
-        }
-    });
-}
-
-
-function addSearchRow({ focus = true } = {}) {
-
-    if (
-        !dom.makerSearchList ||
-        !dom.searchRowTemplate ||
-        getSearchRows().length >= CONFIG.MAX_SEARCH_ROWS
-    ) {
-        return null;
-    }
-
-    const fragment = dom.searchRowTemplate.content.cloneNode(true);
-    const row = fragment.querySelector("[data-search-row]");
-
-    dom.makerSearchList.appendChild(fragment);
-
-    syncSearchRows();
-
-    if (focus) {
-
-        const input = row?.querySelector("[data-maker-search]");
-
-        if (input) {
-            input.focus();
-        }
-    }
-
-    return row;
-}
-
-
-function removeSearchRow(row) {
-
-    if (!row || getSearchRows().length <= 1) {
-        return;
-    }
-
-    row.remove();
-
-    syncSearchRows();
-
-    state.currentPage = 1;
-
-    renderTable();
-}
-
-
-function applySearchChange() {
-
-    syncSearchRows();
-
-    state.currentPage = 1;
-
-    renderTable();
-}
-
-
-function setupSearch() {
-
-    if (!dom.makerSearchList) {
-        return;
-    }
-
-    if (getSearchRows().length === 0) {
-        addSearchRow({ focus: false });
-    }
-
-    dom.makerSearchList.addEventListener("input", event => {
-
-        if (!event.target.closest("[data-maker-search]")) {
-            return;
-        }
-
-        clearTimeout(state.searchTimer);
-
-        state.searchTimer = setTimeout(
-            applySearchChange,
-            CONFIG.SEARCH_DELAY
-        );
-    });
-
-    dom.makerSearchList.addEventListener("click", event => {
-
-        if (event.target.closest("[data-add-search]")) {
-            addSearchRow();
-            return;
-        }
-
-        const removeButton = event.target.closest("[data-remove-search]");
-
-        if (removeButton) {
-            removeSearchRow(removeButton.closest("[data-search-row]"));
-            return;
-        }
-
-        const clearButton = event.target.closest("[data-clear-search]");
-
-        if (clearButton) {
-
-            const row = clearButton.closest("[data-search-row]");
-            const input = row?.querySelector("[data-maker-search]");
-
-            if (input) {
-                input.value = "";
-                input.focus();
-            }
-
-            applySearchChange();
-        }
-    });
-}
-
-
-function clearTableSearch() {
-
-    clearTimeout(state.searchTimer);
-
-    getSearchRows().forEach((row, index) => {
-
-        if (index === 0) {
-
-            const input = row.querySelector("[data-maker-search]");
-
-            if (input) {
-                input.value = "";
-            }
-
-        } else {
-            row.remove();
-        }
-    });
-
-    syncSearchRows();
-
-    state.currentPage = 1;
-
-    renderTable();
-}
-
-
-/* ============================================================
-   27. EVENT WIRING
-   ============================================================ */
-
-function setupSorting() {
-
-    document.addEventListener("click", event => {
-
-        const button = event.target.closest("[data-sort]");
-
-        if (!button) {
-            return;
-        }
-
-        const key = button.dataset.sort;
-
-        if (!state.columns.some(column => column.key === key)) {
-            return;
-        }
-
-        if (state.sortKey === key) {
-            state.sortDirection =
-                state.sortDirection === "asc" ? "desc" : "asc";
-        } else {
-            state.sortKey = key;
-
-            state.sortDirection =
-                key === "__entity" || key === "__index" ? "asc" : "desc";
-        }
-
-        state.currentPage = 1;
-
-        renderTable();
-    });
-}
-
-
-function setupPagination() {
-
-    if (dom.previousPageButton) {
-
-        dom.previousPageButton.addEventListener("click", () => {
-
-            if (state.currentPage > 1) {
-                state.currentPage -= 1;
-                renderTable();
-            }
-        });
-    }
-
-    if (dom.nextPageButton) {
-
-        dom.nextPageButton.addEventListener("click", () => {
-
-            const totalPages = Math.max(
-                1,
-                Math.ceil(state.filteredRows.length / state.pageSize)
-            );
-
-            if (state.currentPage < totalPages) {
-                state.currentPage += 1;
-                renderTable();
-            }
-        });
-    }
-
-    if (dom.pageSizeSelect) {
-
-        dom.pageSizeSelect.addEventListener("change", event => {
-
-            const size = Number(event.target.value);
-
-            if (CONFIG.PAGE_SIZES.includes(size)) {
-                state.pageSize = size;
-                state.currentPage = 1;
-                renderTable();
-            }
-        });
-    }
-}
-
-
-function setupDownloadListeners() {
-
-    /*
-     * Building the archive is async - deflate is a stream - so the
-     * button is held disabled for the duration. A second click
-     * mid-write would otherwise start a competing export.
-     */
-    const wire = (button, run, label) => {
-
-        if (!button) {
-            return;
-        }
-
-        button.addEventListener("click", async () => {
-
-            button.disabled = true;
-
-            try {
-                await run();
-            } catch (error) {
-                console.error(`${label} export failed:`, error);
-            } finally {
-                button.disabled = false;
-            }
-        });
-    };
-
-    wire(dom.detailsDownloadButton, exportDetailsTable, "Details xlsx");
-    wire(dom.detailsPdfButton, exportDetailsPdf, "Details pdf");
-    wire(dom.trendDownloadButton, exportTrendTable, "Trend xlsx");
-    wire(dom.trendPdfButton, exportTrendPdf, "Trend pdf");
-}
-
 
 function setupFilterListeners() {
 
-    [
-        dom.breakdownFilter,
-        dom.yearFilter,
-        dom.makerFilter,
-        dom.stateFilter,
-        dom.monthFilter,
-        dom.regionFilter,
-        dom.categoryFilter,
-        dom.subcategoryFilter
-    ].forEach(element => {
+    if (dom.scopeFilter) {
 
-        if (!element) {
-            return;
-        }
-
-        element.addEventListener("change", async () => {
-            enforceFilterCompatibility();
-            await applyFilters();
-        });
-    });
-
-    /*
-     * The trend's own maker only affects the trend, so it redraws
-     * that section rather than running the whole dashboard.
-     */
-    if (dom.trendMakerFilter) {
-
-        [dom.trendMakerFilter, dom.trendClassFilter].forEach(element => {
-
-            if (!element) {
-                return;
-            }
-
-            element.addEventListener("change", async () => {
-
-                state.trendMakers = comboValues(dom.trendMakerFilter);
-
-                state.trendClass = dom.trendClassFilter
-                    ? dom.trendClassFilter.value
-                    : CONFIG.ALL;
-
-                /*
-                 * Clicking an option already writes the input, but a
-                 * change raised any other way would leave the visible
-                 * text behind the value.
-                 */
-                refreshCombo(element);
-
-                await loadMonthlyTrend();
-            });
+        dom.scopeFilter.addEventListener("change", async () => {
+            state.pending.scope = dom.scopeFilter.value;
+            await onPendingChanged("scope");
         });
     }
 
-    if (dom.clearFiltersButton) {
+    if (dom.dashboardFilters) {
 
-        dom.clearFiltersButton.addEventListener("click", async event => {
+        dom.dashboardFilters.addEventListener("submit", async event => {
             event.preventDefault();
+            await applyFilters();
+        });
+    }
+
+    if (dom.resetFiltersButton) {
+
+        dom.resetFiltersButton.addEventListener("click", async () => {
             await resetFilters();
         });
     }
+
+    if (dom.collapseFiltersButton) {
+
+        dom.collapseFiltersButton.addEventListener("click", () => {
+
+            const collapsed = dom.appShell.classList.toggle("is-collapsed");
+
+            dom.collapseFiltersButton.setAttribute(
+                "aria-expanded",
+                String(!collapsed)
+            );
+
+            dom.collapseFiltersButton.title = collapsed
+                ? "Expand filters"
+                : "Collapse filters";
+        });
+    }
+}
+
+
+function setupTableListeners() {
+
+    /*
+     * Sorting, paging and page size are all delegated: the heads
+     * are rebuilt on every render, so a listener bound to a
+     * button would not survive the next one.
+     */
+    document.addEventListener("click", event => {
+
+        const sort = event.target.closest("[data-sort-group]");
+
+        if (sort) {
+
+            const group = sort.getAttribute("data-sort-group");
+            const key = sort.getAttribute("data-sort-key");
+            const view = state.view[group];
+
+            if (!view) {
+                return;
+            }
+
+            if (view.sortKey === key) {
+                view.sortDir = view.sortDir === "asc" ? "desc" : "asc";
+            } else {
+                view.sortKey = key;
+                view.sortDir = "desc";
+            }
+
+            view.page = 1;
+
+            if (group === "maker") {
+                renderMakerCard();
+            } else {
+                renderDetailCard();
+            }
+
+            return;
+        }
+
+        const page = event.target.closest("[data-page]");
+
+        if (page) {
+
+            const [card, direction] = page.getAttribute("data-page").split("-");
+            const view = state.view[card];
+
+            if (!view) {
+                return;
+            }
+
+            view.page = Math.max(
+                1,
+                view.page + (direction === "next" ? 1 : -1)
+            );
+
+            if (card === "maker") {
+                renderMakerCard();
+            } else {
+                renderDetailCard();
+            }
+        }
+    });
+
+    [["makerPageSize", "maker"], ["detailPageSize", "detail"]]
+        .forEach(([id, card]) => {
+
+            if (!dom[id]) {
+                return;
+            }
+
+            dom[id].addEventListener("change", () => {
+
+                state.view[card].pageSize = Number(dom[id].value) || 25;
+                state.view[card].page = 1;
+
+                if (card === "maker") {
+                    renderMakerCard();
+                } else {
+                    renderDetailCard();
+                }
+            });
+        });
+
+    if (dom.detailSearch) {
+
+        dom.detailSearch.addEventListener("input", () => {
+
+            clearTimeout(state.searchTimer);
+
+            state.searchTimer = setTimeout(() => {
+                state.view.detail.search = dom.detailSearch.value;
+                state.view.detail.page = 1;
+                renderDetailCard();
+            }, CONFIG.SEARCH_DELAY);
+        });
+    }
+}
+
+
+function setupExportListeners() {
+
+    if (dom.exportMenuButton) {
+
+        dom.exportMenuButton.addEventListener("click", event => {
+
+            event.stopPropagation();
+
+            const open = dom.exportMenuList.hidden;
+
+            dom.exportMenuList.hidden = !open;
+            dom.exportMenuButton.setAttribute("aria-expanded", String(open));
+        });
+    }
+
+    document.addEventListener("click", async event => {
+
+        const trigger = event.target.closest("[data-export]");
+
+        if (trigger) {
+
+            if (dom.exportMenuList) {
+                dom.exportMenuList.hidden = true;
+                dom.exportMenuButton.setAttribute("aria-expanded", "false");
+            }
+
+            await runExport(trigger.getAttribute("data-export"));
+
+            return;
+        }
+
+        if (
+            dom.exportMenuList &&
+            !dom.exportMenuList.hidden &&
+            !event.target.closest(".export-menu")
+        ) {
+            dom.exportMenuList.hidden = true;
+            dom.exportMenuButton.setAttribute("aria-expanded", "false");
+        }
+    });
+}
+
+
+function setupSummaryListeners() {
+
+    document.addEventListener("click", event => {
+
+        const trigger = event.target.closest("[data-view-all]");
+
+        if (trigger) {
+            openViewAll(trigger.getAttribute("data-view-all"));
+            return;
+        }
+
+        if (event.target === dom.viewAllOverlay) {
+            closeViewAll();
+        }
+    });
+
+    if (dom.viewAllClose) {
+        dom.viewAllClose.addEventListener("click", closeViewAll);
+    }
+
+    document.addEventListener("keydown", event => {
+
+        if (event.key === "Escape") {
+            closeViewAll();
+        }
+    });
 }
 
 
@@ -6340,7 +5418,7 @@ function setupRetry() {
 
 
 /* ============================================================
-   28. INITIALIZATION
+   38. INITIALIZATION
    ============================================================ */
 
 async function initializeDashboard({ force = false } = {}) {
@@ -6353,40 +5431,29 @@ async function initializeDashboard({ force = false } = {}) {
     setupRetry();
 
     state.tableCache = new Map();
-    state.regionsLoaded = false;
 
     if (dom.globalLoading) {
         dom.globalLoading.hidden = false;
     }
 
-    setTableState("loading");
-
     try {
 
         await initializeApi();
-        await discoverSchema();
 
-        /*
-         * Built before the options load, so populateSelect can
-         * mirror straight into them.
-         */
-        enhanceFilterSelects();
+        buildChecklists();
 
         await loadFilterOptions();
 
+        renderAllChecklists();
+        updateFilterNotice();
+
         if (!state.wired) {
-            setupSearch();
-            setupSorting();
-            setupPagination();
             setupFilterListeners();
-            setupDownloadListeners();
-            setupComboDismiss();
+            setupTableListeners();
+            setupExportListeners();
+            setupSummaryListeners();
             state.wired = true;
         }
-
-        updateViewLabels();
-        enforceFilterCompatibility();
-        updateYearRangeHeader();
 
         await applyFilters({ global: true });
 
@@ -6394,14 +5461,11 @@ async function initializeDashboard({ force = false } = {}) {
 
         console.error("Dashboard initialization failed:", error);
 
-        state.rows = [];
-        state.filteredRows = [];
-        state.dimensionTotal = 0;
-        state.kpis = emptyKPIs();
-
-        updateKPICards();
-
         displayError(error, "Dashboard initialization failed.");
+
+        ["maker", "rto", "detail"].forEach(card => {
+            setCardState(card, "error", error.message);
+        });
 
     } finally {
 
@@ -6413,23 +5477,20 @@ async function initializeDashboard({ force = false } = {}) {
 
 
 /* ============================================================
-   29. GLOBAL API
+   39. GLOBAL API
    ============================================================ */
 
 window.vehicleDashboard = {
     initializeDashboard,
     applyFilters,
     resetFilters,
-    clearTableSearch,
-    fetchDashboardData,
     loadFilterOptions,
-    getSelectedMakersFromUI,
     state
 };
 
 
 /* ============================================================
-   30. DOM READY
+   40. DOM READY
    ============================================================ */
 
 if (document.readyState === "loading") {

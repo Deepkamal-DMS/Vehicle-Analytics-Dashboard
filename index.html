@@ -15,7 +15,7 @@
 
     <meta
         name="theme-color"
-        content="#0f172a"
+        content="#0b1f4b"
     >
 
     <title>Vehicle Registration Dashboard</title>
@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=22"
+        href="style.css?v=23"
     >
 
 </head>
@@ -73,18 +73,18 @@
          APPLICATION HEADER
          ========================================================= -->
 
-    <header class="dashboard-header">
+    <header class="app-header">
 
-        <div class="dashboard-header__brand">
+        <div class="app-header__brand">
 
             <div class="brand-mark" aria-hidden="true">
                 <svg
                     viewBox="0 0 24 24"
-                    width="24"
-                    height="24"
+                    width="26"
+                    height="26"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="1.8"
+                    stroke-width="1.7"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                 >
@@ -96,43 +96,182 @@
                 </svg>
             </div>
 
-            <div>
-                <h1 id="dashboard-title">
+            <div class="app-header__titles">
+
+                <h1 id="dashboardTitle">
                     VEHICLE REGISTRATION DASHBOARD
                 </h1>
 
-                <p class="dashboard-header__subtitle">
-                    Vehicle registration analytics and insights
+                <p class="app-header__crumbs">
+                    YEAR WISE <span aria-hidden="true">|</span>
+                    MONTH WISE <span aria-hidden="true">|</span>
+                    RTO WISE <span aria-hidden="true">|</span>
+                    CLASS WISE <span aria-hidden="true">|</span>
+                    MAKER WISE COMPARISON
                 </p>
+
             </div>
 
         </div>
 
 
-        <div
-            class="dashboard-header__meta"
-            aria-label="Dashboard information"
-        >
+        <div class="app-header__meta">
 
-            <div class="data-period">
+            <div class="refreshed">
 
-                <span class="data-period__label">
-                    Data Year Range
+                <span class="refreshed__icon" aria-hidden="true">
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="22"
+                        height="22"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                        <path d="M3 10h18"></path>
+                        <path d="M8 3v4"></path>
+                        <path d="M16 3v4"></path>
+                    </svg>
                 </span>
 
-                <strong id="data-year-range">
-                    —
-                </strong>
+                <div>
+                    <span class="refreshed__label">
+                        DATA LAST REFRESHED ON :
+                    </span>
+
+                    <strong
+                        id="dataRefreshedOn"
+                        class="refreshed__value"
+                    >
+                        &mdash;
+                    </strong>
+                </div>
 
             </div>
 
-            <div
-                class="data-period__divider"
-                aria-hidden="true"
-            ></div>
 
-            <div class="unit-label">
-                All Values in Units
+            <!--
+                 One menu for every download on the page. The
+                 per-table buttons stay too - this is the shortcut
+                 for someone who wants the lot.
+            -->
+            <div class="export-menu">
+
+                <button
+                    type="button"
+                    id="exportMenuButton"
+                    class="export-button"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    aria-controls="exportMenuList"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.9"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M12 3v11"></path>
+                        <path d="M8 11l4 4 4-4"></path>
+                        <path d="M4 19h16"></path>
+                    </svg>
+
+                    Export
+
+                    <span class="export-button__caret" aria-hidden="true"></span>
+                </button>
+
+                <ul
+                    id="exportMenuList"
+                    class="export-menu__list"
+                    role="menu"
+                    hidden
+                >
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            data-export="all-xlsx"
+                        >
+                            All three tables (Excel)
+                        </button>
+                    </li>
+
+                    <li class="export-menu__separator" role="separator"></li>
+
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            data-export="maker-xlsx"
+                        >
+                            Maker comparison (Excel)
+                        </button>
+                    </li>
+
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            data-export="maker-pdf"
+                        >
+                            Maker comparison (PDF)
+                        </button>
+                    </li>
+
+                    <li class="export-menu__separator" role="separator"></li>
+
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            data-export="rto-xlsx"
+                        >
+                            RTO comparison (Excel)
+                        </button>
+                    </li>
+
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            data-export="rto-pdf"
+                        >
+                            RTO comparison (PDF)
+                        </button>
+                    </li>
+
+                    <li class="export-menu__separator" role="separator"></li>
+
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            data-export="detail-xlsx"
+                        >
+                            Detailed data (Excel)
+                        </button>
+                    </li>
+
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            data-export="detail-pdf"
+                        >
+                            Detailed data (PDF)
+                        </button>
+                    </li>
+                </ul>
+
             </div>
 
         </div>
@@ -142,267 +281,429 @@
 
     <!-- =========================================================
          MAIN DASHBOARD
+
+         Three columns: filters, content, quick summary. The
+         outer two collapse away before the content does.
          ========================================================= -->
 
-    <main class="dashboard-layout">
-
+    <main
+        id="appShell"
+        class="app-shell"
+    >
 
         <!-- =====================================================
              FILTER SIDEBAR
              ===================================================== -->
 
         <aside
-            class="filter-sidebar"
-            aria-labelledby="filters-title"
+            id="filterSidebar"
+            class="filters"
+            aria-labelledby="filtersTitle"
         >
 
-            <div class="filter-sidebar__header">
+            <div class="filters__head">
 
-                <div>
-                    <span class="section-eyebrow">
-                        CONTROLS
-                    </span>
-
-                    <h2 id="filters-title">
-                        Filters
-                    </h2>
-                </div>
-
-                <span
-                    class="filter-sidebar__icon"
-                    aria-hidden="true"
-                >
+                <span class="filters__icon" aria-hidden="true">
                     <svg
                         viewBox="0 0 24 24"
-                        width="19"
-                        height="19"
+                        width="18"
+                        height="18"
                         fill="none"
                         stroke="currentColor"
-                        stroke-width="1.8"
+                        stroke-width="1.9"
                         stroke-linecap="round"
                         stroke-linejoin="round"
                     >
-                        <path d="M4 6h16"></path>
-                        <path d="M7 12h10"></path>
-                        <path d="M10 18h4"></path>
+                        <path d="M3 5h18l-7 8v6l-4 2v-8z"></path>
                     </svg>
                 </span>
+
+                <h2 id="filtersTitle">
+                    FILTERS
+                </h2>
+
+                <button
+                    type="button"
+                    id="collapseFiltersButton"
+                    class="filters__collapse"
+                    aria-controls="filterSidebar"
+                    aria-expanded="true"
+                >
+                    <span aria-hidden="true">&laquo;</span>
+                    <span class="filters__collapse-text">Collapse</span>
+                </button>
 
             </div>
 
 
             <form
                 id="dashboardFilters"
-                class="filter-form"
+                class="filters__form"
                 novalidate
             >
 
-                <!-- Scope -->
-                <div class="filter-group filter-group--breakdown">
+                <!-- ---------------------------------------------
+                     SCOPE
 
-                    <label for="breakdownFilter">
-                        Scope
-                    </label>
+                     The sample has no scope control because it is
+                     Gujarat-only. This database also holds All
+                     India and Gujarat, which no RTO selection can
+                     reconstruct, so the control stays.
+                     --------------------------------------------- -->
+
+                <div class="filter-block">
+
+                    <div class="filter-block__head">
+
+                        <span class="filter-block__icon" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="15"
+                                height="15"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <path d="M3 12h18"></path>
+                                <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"></path>
+                            </svg>
+                        </span>
+
+                        <span class="filter-block__title">SCOPE</span>
+                    </div>
 
                     <select
-                        id="breakdownFilter"
+                        id="scopeFilter"
+                        class="filter-select"
                         name="scope"
                     >
-                        <option value="all_india">
-                            All India
-                        </option>
-
-                        <option value="gujarat">
-                            Gujarat
-                        </option>
+                        <option value="all_india">All India</option>
+                        <option value="gujarat">Gujarat</option>
 
                         <!-- GJ01 + GJ27 + GJ38, summed per maker -->
-                        <option value="ahmedabad">
-                            Ahmedabad
-                        </option>
-
-                        <option value="gj01">
-                            GJ01
-                        </option>
-
-                        <option value="gj13">
-                            GJ13
-                        </option>
-
-                        <option value="gj27">
-                            GJ27
-                        </option>
-
-                        <option value="gj38">
-                            GJ38
-                        </option>
+                        <option value="ahmedabad">Ahmedabad</option>
                     </select>
 
                 </div>
 
 
-                <!-- Year -->
-                <div class="filter-group">
+                <!-- ---------------------------------------------
+                     YEAR
+                     --------------------------------------------- -->
 
-                    <label for="yearFilter">
-                        Year
-                    </label>
-
-                    <select
-                        id="yearFilter"
-                        name="year"
-                    >
-                        <option value="2026">
-                            2026
-                        </option>
-
-                        <option value="2025">
-                            2025
-                        </option>
-                    </select>
-
-                </div>
-
-
-                <p
-                    id="yearRangeError"
-                    class="year-range-error"
-                    role="alert"
-                    hidden
-                ></p>
-
-
-                <!-- Maker -->
-                <div class="filter-group filter-group--maker">
-
-                    <label for="makerFilter">
-                        Maker
-                    </label>
-
-                    <select
-                        id="makerFilter"
-                        name="maker"
-                    >
-                        <option value="all">
-                            All
-                        </option>
-                    </select>
-
-                </div>
-
-
-                <!-- State -->
                 <div
-                    class="filter-group filter-group--state"
-                    id="stateFilterGroup"
-                    hidden
+                    class="filter-block"
+                    data-checklist="years"
                 >
 
-                    <label for="stateFilter">
-                        State
-                    </label>
+                    <div class="filter-block__head">
 
-                    <select
-                        id="stateFilter"
-                        name="state"
+                        <span class="filter-block__icon" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="15"
+                                height="15"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                                <path d="M3 10h18"></path>
+                                <path d="M8 3v4"></path>
+                                <path d="M16 3v4"></path>
+                            </svg>
+                        </span>
+
+                        <span class="filter-block__title">YEAR</span>
+                        <span class="filter-block__hint">(Multi Select)</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="filter-summary"
+                        data-checklist-toggle
+                        aria-expanded="true"
                     >
-                        <option value="all">
-                            All
-                        </option>
-                    </select>
+                        <span data-checklist-label>All Years</span>
+                        <span class="filter-summary__caret" aria-hidden="true"></span>
+                    </button>
+
+                    <div
+                        class="filter-panel"
+                        data-checklist-panel
+                    >
+                        <ul
+                            class="checklist checklist--grid"
+                            data-checklist-options
+                        ></ul>
+                    </div>
 
                 </div>
 
 
-                <!-- Month -->
+                <!-- ---------------------------------------------
+                     MONTH
+                     --------------------------------------------- -->
+
                 <div
-                    class="filter-group filter-group--month"
-                    id="monthFilterGroup"
+                    class="filter-block"
+                    data-checklist="months"
                 >
 
-                    <label for="monthFilter">
-                        Month
-                    </label>
+                    <div class="filter-block__head">
 
-                    <select
-                        id="monthFilter"
-                        name="month"
+                        <span class="filter-block__icon" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="15"
+                                height="15"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                                <path d="M7 14h2"></path>
+                                <path d="M11 14h6"></path>
+                                <path d="M7 18h2"></path>
+                                <path d="M11 18h6"></path>
+                            </svg>
+                        </span>
+
+                        <span class="filter-block__title">MONTH</span>
+                        <span class="filter-block__hint">(Multi Select)</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="filter-summary"
+                        data-checklist-toggle
+                        aria-expanded="true"
                     >
-                        <option value="all">
-                            All
-                        </option>
-                    </select>
+                        <span data-checklist-label>All Months</span>
+                        <span class="filter-summary__caret" aria-hidden="true"></span>
+                    </button>
+
+                    <div
+                        class="filter-panel"
+                        data-checklist-panel
+                    >
+                        <ul
+                            class="checklist checklist--grid"
+                            data-checklist-options
+                        ></ul>
+                    </div>
 
                 </div>
 
 
-                <!-- Region -->
+                <!-- ---------------------------------------------
+                     RTO
+                     --------------------------------------------- -->
+
                 <div
-                    class="filter-group filter-group--region"
-                    id="regionFilterGroup"
+                    class="filter-block"
+                    data-checklist="rtos"
                 >
 
-                    <label for="regionFilter">
-                        Region / RTO
-                    </label>
+                    <div class="filter-block__head">
 
-                    <select
-                        id="regionFilter"
-                        name="region"
+                        <span class="filter-block__icon" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="15"
+                                height="15"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="M4 21V7l6-4 6 4v14"></path>
+                                <path d="M16 11h4v10"></path>
+                                <path d="M8 10h2"></path>
+                                <path d="M8 14h2"></path>
+                                <path d="M8 18h2"></path>
+                            </svg>
+                        </span>
+
+                        <span class="filter-block__title">RTO</span>
+                        <span class="filter-block__hint">(Multi Select)</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="filter-summary"
+                        data-checklist-toggle
+                        aria-expanded="true"
                     >
-                        <option value="all">
-                            All
-                        </option>
-                    </select>
+                        <span data-checklist-label>All RTOs Selected</span>
+                        <span class="filter-summary__caret" aria-hidden="true"></span>
+                    </button>
+
+                    <div
+                        class="filter-panel"
+                        data-checklist-panel
+                    >
+                        <input
+                            type="search"
+                            class="filter-search"
+                            data-checklist-search
+                            placeholder="Search RTO"
+                            aria-label="Search RTO"
+                        >
+
+                        <ul
+                            class="checklist checklist--scroll"
+                            data-checklist-options
+                        ></ul>
+                    </div>
+
+                    <p class="filter-block__note">
+                        Ticking an RTO narrows every card to those
+                        RTOs and overrides Scope.
+                    </p>
 
                 </div>
 
 
-                <!-- Category -->
+                <!-- ---------------------------------------------
+                     MAKER
+                     --------------------------------------------- -->
+
                 <div
-                    class="filter-group filter-group--category"
-                    id="categoryFilterGroup"
+                    class="filter-block"
+                    data-checklist="makers"
                 >
 
-                    <label for="categoryFilter">
-                        Category
-                    </label>
+                    <div class="filter-block__head">
 
-                    <select
-                        id="categoryFilter"
-                        name="category"
+                        <span class="filter-block__icon" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="15"
+                                height="15"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <circle cx="9" cy="8" r="3"></circle>
+                                <path d="M3.5 19a5.5 5.5 0 0 1 11 0"></path>
+                                <path d="M16 5.5a3 3 0 0 1 0 5.8"></path>
+                                <path d="M17 14a5 5 0 0 1 3.5 5"></path>
+                            </svg>
+                        </span>
+
+                        <span class="filter-block__title">MAKER</span>
+                        <span class="filter-block__hint">(Multi Select)</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="filter-summary"
+                        data-checklist-toggle
+                        aria-expanded="true"
                     >
-                        <option value="all">
-                            All
-                        </option>
-                    </select>
+                        <span data-checklist-label>All Makers Selected</span>
+                        <span class="filter-summary__caret" aria-hidden="true"></span>
+                    </button>
+
+                    <div
+                        class="filter-panel"
+                        data-checklist-panel
+                    >
+                        <input
+                            type="search"
+                            class="filter-search"
+                            data-checklist-search
+                            placeholder="Search Maker"
+                            aria-label="Search maker"
+                        >
+
+                        <ul
+                            class="checklist checklist--scroll"
+                            data-checklist-options
+                        ></ul>
+                    </div>
 
                 </div>
 
 
-                <!-- Subcategory -->
+                <!-- ---------------------------------------------
+                     VEHICLE CLASS
+
+                     Offers the eight groups first, then every
+                     individual class the selected table carries.
+                     --------------------------------------------- -->
+
                 <div
-                    class="filter-group filter-group--subcategory"
-                    id="subcategoryFilterGroup"
+                    class="filter-block"
+                    data-checklist="classes"
                 >
 
-                    <label for="subcategoryFilter">
-                        Subcategory / Vehicle Class
-                    </label>
+                    <div class="filter-block__head">
 
-                    <select
-                        id="subcategoryFilter"
-                        name="subcategory"
+                        <span class="filter-block__icon" aria-hidden="true">
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="15"
+                                height="15"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="M5 17h14"></path>
+                                <path d="M6 17l1.2-5.2a2 2 0 0 1 2-1.55h5.6a2 2 0 0 1 2 1.55L18 17"></path>
+                                <circle cx="8" cy="17.5" r="1.5"></circle>
+                                <circle cx="16" cy="17.5" r="1.5"></circle>
+                            </svg>
+                        </span>
+
+                        <span class="filter-block__title">VEHICLE CLASS</span>
+                        <span class="filter-block__hint">(Multi Select)</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="filter-summary"
+                        data-checklist-toggle
+                        aria-expanded="true"
                     >
-                        <option value="all">
-                            All
-                        </option>
-                    </select>
+                        <span data-checklist-label>All Classes Selected</span>
+                        <span class="filter-summary__caret" aria-hidden="true"></span>
+                    </button>
+
+                    <div
+                        class="filter-panel"
+                        data-checklist-panel
+                    >
+                        <input
+                            type="search"
+                            class="filter-search"
+                            data-checklist-search
+                            placeholder="Search Vehicle Class"
+                            aria-label="Search vehicle class"
+                        >
+
+                        <ul
+                            class="checklist checklist--scroll"
+                            data-checklist-options
+                        ></ul>
+                    </div>
 
                 </div>
 
 
-                <!-- Filter notice -->
                 <p
                     id="filterNotice"
                     class="filter-notice"
@@ -411,34 +712,54 @@
                 ></p>
 
 
-                <!-- Clear -->
-                <button
-                    type="button"
-                    id="clearFiltersButton"
-                    class="clear-filters-button"
-                >
+                <div class="filters__actions">
 
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="17"
-                        height="17"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
+                    <button
+                        type="submit"
+                        id="applyFiltersButton"
+                        class="apply-button"
                     >
-                        <path d="M3 6h18"></path>
-                        <path d="M8 6V4h8v2"></path>
-                        <path d="M19 6l-1 14H6L5 6"></path>
-                        <path d="M10 11v5"></path>
-                        <path d="M14 11v5"></path>
-                    </svg>
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="16"
+                            height="16"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.9"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M3 5h18l-7 8v6l-4 2v-8z"></path>
+                        </svg>
 
-                    Clear Filters
+                        APPLY FILTERS
+                    </button>
 
-                </button>
+                    <button
+                        type="button"
+                        id="resetFiltersButton"
+                        class="reset-button"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="16"
+                            height="16"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.9"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M20 12a8 8 0 1 1-2.4-5.7"></path>
+                            <path d="M20 4v5h-5"></path>
+                        </svg>
+
+                        RESET FILTERS
+                    </button>
+
+                </div>
 
             </form>
 
@@ -449,7 +770,7 @@
              MAIN CONTENT
              ===================================================== -->
 
-        <section class="dashboard-content">
+        <section class="app-content">
 
 
             <!-- =================================================
@@ -482,234 +803,479 @@
 
 
             <!-- =================================================
-                 OVERVIEW
+                 KPI STRIP
+                 ================================================= -->
+
+            <div class="kpi-grid">
+
+                <article class="kpi-card kpi-card--blue">
+
+                    <div class="kpi-card__icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="22"
+                            height="22"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <rect x="4" y="3" width="16" height="18" rx="2"></rect>
+                            <path d="M8 8h8"></path>
+                            <path d="M8 12h8"></path>
+                            <path d="M8 16h5"></path>
+                        </svg>
+                    </div>
+
+                    <div class="kpi-card__body">
+
+                        <span class="kpi-card__label">
+                            TOTAL REGISTRATIONS
+                        </span>
+
+                        <strong
+                            id="kpiRegistrations"
+                            class="kpi-card__value"
+                        >
+                            &mdash;
+                        </strong>
+
+                        <span
+                            id="kpiRegistrationsDelta"
+                            class="kpi-card__delta"
+                        ></span>
+
+                    </div>
+
+                </article>
+
+
+                <article class="kpi-card kpi-card--green">
+
+                    <div class="kpi-card__icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="22"
+                            height="22"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <circle cx="9" cy="8" r="3"></circle>
+                            <path d="M3.5 19a5.5 5.5 0 0 1 11 0"></path>
+                            <path d="M16 5.5a3 3 0 0 1 0 5.8"></path>
+                            <path d="M17 14a5 5 0 0 1 3.5 5"></path>
+                        </svg>
+                    </div>
+
+                    <div class="kpi-card__body">
+
+                        <span class="kpi-card__label">
+                            TOTAL MAKERS
+                        </span>
+
+                        <strong
+                            id="kpiMakers"
+                            class="kpi-card__value"
+                        >
+                            &mdash;
+                        </strong>
+
+                        <span
+                            id="kpiMakersDelta"
+                            class="kpi-card__delta"
+                        ></span>
+
+                    </div>
+
+                </article>
+
+
+                <article class="kpi-card kpi-card--violet">
+
+                    <div class="kpi-card__icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="22"
+                            height="22"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M4 21V7l6-4 6 4v14"></path>
+                            <path d="M16 11h4v10"></path>
+                            <path d="M8 10h2"></path>
+                            <path d="M8 14h2"></path>
+                            <path d="M8 18h2"></path>
+                        </svg>
+                    </div>
+
+                    <div class="kpi-card__body">
+
+                        <span class="kpi-card__label">
+                            TOTAL RTOS
+                        </span>
+
+                        <strong
+                            id="kpiRtos"
+                            class="kpi-card__value"
+                        >
+                            &mdash;
+                        </strong>
+
+                        <span
+                            id="kpiRtosDelta"
+                            class="kpi-card__delta"
+                        ></span>
+
+                    </div>
+
+                </article>
+
+
+                <article class="kpi-card kpi-card--amber">
+
+                    <div class="kpi-card__icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="22"
+                            height="22"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M5 17h14"></path>
+                            <path d="M6 17l1.2-5.2a2 2 0 0 1 2-1.55h5.6a2 2 0 0 1 2 1.55L18 17"></path>
+                            <circle cx="8" cy="17.5" r="1.5"></circle>
+                            <circle cx="16" cy="17.5" r="1.5"></circle>
+                        </svg>
+                    </div>
+
+                    <div class="kpi-card__body">
+
+                        <span class="kpi-card__label">
+                            TOTAL CLASSES
+                        </span>
+
+                        <strong
+                            id="kpiClasses"
+                            class="kpi-card__value"
+                        >
+                            &mdash;
+                        </strong>
+
+                        <span
+                            id="kpiClassesDelta"
+                            class="kpi-card__delta"
+                        ></span>
+
+                    </div>
+
+                </article>
+
+
+                <article class="kpi-card kpi-card--rose">
+
+                    <div class="kpi-card__icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="22"
+                            height="22"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M12 3a9 9 0 1 0 9 9h-9z"></path>
+                            <path d="M14 3.5A9 9 0 0 1 20.5 10H14z"></path>
+                        </svg>
+                    </div>
+
+                    <div class="kpi-card__body">
+
+                        <!--
+                             Not the sample's "avg market share",
+                             which is 100% by construction whenever
+                             every maker is selected. This is the
+                             selected makers' share of the same
+                             scope's industry, so it moves.
+                        -->
+                        <span class="kpi-card__label">
+                            SELECTED MARKET SHARE
+                        </span>
+
+                        <strong
+                            id="kpiShare"
+                            class="kpi-card__value"
+                        >
+                            &mdash;
+                        </strong>
+
+                        <span
+                            id="kpiShareDelta"
+                            class="kpi-card__delta"
+                        ></span>
+
+                    </div>
+
+                </article>
+
+
+                <article class="kpi-card kpi-card--indigo">
+
+                    <div class="kpi-card__icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="22"
+                            height="22"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                            <path d="M3 10h18"></path>
+                            <path d="M8 3v4"></path>
+                            <path d="M16 3v4"></path>
+                            <path d="M8 14h3"></path>
+                        </svg>
+                    </div>
+
+                    <div class="kpi-card__body">
+
+                        <span class="kpi-card__label">
+                            SELECTED YEARS
+                        </span>
+
+                        <strong
+                            id="kpiYears"
+                            class="kpi-card__value"
+                        >
+                            &mdash;
+                        </strong>
+
+                        <span
+                            id="kpiYearsDelta"
+                            class="kpi-card__delta"
+                        ></span>
+
+                    </div>
+
+                </article>
+
+            </div>
+
+
+            <!-- =================================================
+                 1. MAKER COMPARISON (YEAR WISE)
                  ================================================= -->
 
             <section
-                class="content-section"
-                aria-labelledby="summary-title"
+                class="table-card"
+                aria-labelledby="makerCardTitle"
             >
 
-                <div class="section-heading">
+                <div class="table-card__head">
 
-                    <div>
+                    <span class="table-card__badge" aria-hidden="true">1</span>
 
-                        <span class="section-eyebrow">
-                            OVERVIEW
-                        </span>
+                    <h2 id="makerCardTitle">
+                        MAKER COMPARISON (YEAR WISE)
+                    </h2>
 
-                        <h2 id="summary-title">
-                            Registration Summary
-                        </h2>
+                    <div class="table-card__actions">
+
+                        <span
+                            id="makerCardMeta"
+                            class="table-card__meta"
+                        ></span>
+
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="maker-xlsx"
+                            title="Download this table as an Excel file"
+                            disabled
+                        >
+                            Excel
+                        </button>
+
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="maker-pdf"
+                            title="Download this table as a PDF"
+                            disabled
+                        >
+                            PDF
+                        </button>
 
                     </div>
 
                 </div>
 
+                <div
+                    id="makerCardState"
+                    class="table-state"
+                    hidden
+                ></div>
 
-                <div class="kpi-grid">
+                <div class="table-wrapper">
 
+                    <table
+                        id="makerTable"
+                        class="data-table"
+                    >
+                        <caption class="visually-hidden">
+                            Registrations by maker, one column per selected year
+                        </caption>
 
-                    <!-- Total Registrations -->
+                        <thead id="makerTableHead"></thead>
+                        <tbody id="makerTableBody"></tbody>
+                        <tfoot id="makerTableFoot"></tfoot>
+                    </table>
 
-                    <article class="kpi-card">
+                </div>
 
-                        <div
-                            class="kpi-card__icon"
-                            aria-hidden="true"
+                <nav
+                    class="pagination"
+                    aria-label="Maker comparison pagination"
+                >
+
+                    <div class="pagination__left">
+
+                        <label for="makerPageSize">Rows</label>
+
+                        <select id="makerPageSize">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+
+                    </div>
+
+                    <div class="pagination__right">
+
+                        <button
+                            type="button"
+                            class="pagination-button"
+                            data-page="maker-prev"
+                            disabled
                         >
-                            <svg
-                                viewBox="0 0 24 24"
-                                width="21"
-                                height="21"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <path d="M5 4h14v16H5z"></path>
-                                <path d="M8 8h8"></path>
-                                <path d="M8 12h8"></path>
-                                <path d="M8 16h5"></path>
-                            </svg>
-                        </div>
+                            Previous
+                        </button>
 
-                        <div class="kpi-card__content">
-
-                            <span class="kpi-card__label">
-                                Total Registrations
-                            </span>
-
-                            <strong
-                                id="totalRegistrations"
-                                class="kpi-card__value"
-                            >
-                                0
-                            </strong>
-
-                            <span class="kpi-card__meta">
-                                All selected registrations
-                            </span>
-
-                        </div>
-
-                    </article>
-
-
-                    <!-- Total Makers -->
-
-                    <article class="kpi-card">
-
-                        <div
-                            class="kpi-card__icon"
-                            aria-hidden="true"
+                        <span
+                            id="makerPageIndicator"
+                            class="page-indicator"
                         >
-                            <svg
-                                viewBox="0 0 24 24"
-                                width="21"
-                                height="21"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <circle cx="9" cy="8" r="3"></circle>
-                                <path d="M3.5 19a5.5 5.5 0 0 1 11 0"></path>
-                                <path d="M16 5.5a3 3 0 0 1 0 5.8"></path>
-                                <path d="M17 14a5 5 0 0 1 3.5 5"></path>
-                            </svg>
-                        </div>
+                            Page 1 of 1
+                        </span>
 
-                        <div class="kpi-card__content">
-
-                            <span
-                                id="entityCountLabel"
-                                class="kpi-card__label"
-                            >
-                                Total Makers
-                            </span>
-
-                            <strong
-                                id="totalMakers"
-                                class="kpi-card__value"
-                            >
-                                0
-                            </strong>
-
-                            <span
-                                id="entityCountMeta"
-                                class="kpi-card__meta"
-                            >
-                                Makers with registrations
-                            </span>
-
-                        </div>
-
-                    </article>
-
-
-                    <!-- 2W -->
-
-                    <article class="kpi-card">
-
-                        <div
-                            class="kpi-card__icon"
-                            aria-hidden="true"
+                        <button
+                            type="button"
+                            class="pagination-button"
+                            data-page="maker-next"
+                            disabled
                         >
-                            <svg
-                                viewBox="0 0 24 24"
-                                width="21"
-                                height="21"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <circle cx="6.5" cy="17" r="2.5"></circle>
-                                <circle cx="17.5" cy="17" r="2.5"></circle>
-                                <path d="M6.5 17l3.5-7h3l4.5 7"></path>
-                                <path d="M10 10l-2-3h3"></path>
-                                <path d="M13 10l2-3"></path>
-                            </svg>
-                        </div>
+                            Next
+                        </button>
 
-                        <div class="kpi-card__content">
+                    </div>
 
-                            <span class="kpi-card__label">
-                                2W Registrations
-                            </span>
+                </nav>
 
-                            <strong
-                                id="twoWRegistrations"
-                                class="kpi-card__value"
-                            >
-                                —
-                            </strong>
-
-                            <span
-                                id="twoWPercentage"
-                                class="kpi-card__meta"
-                            >
-                                —
-                            </span>
-
-                        </div>
-
-                    </article>
+            </section>
 
 
-                    <!-- 3W -->
+            <!-- =================================================
+                 2. RTO COMPARISON (MAKER WISE)
 
-                    <article class="kpi-card">
+                 Always the four Gujarat RTOs the database holds,
+                 whatever Scope says - an RTO breakdown of All
+                 India would need RTO tables that do not exist.
+                 ================================================= -->
 
-                        <div
-                            class="kpi-card__icon"
-                            aria-hidden="true"
+            <section
+                class="table-card"
+                aria-labelledby="rtoCardTitle"
+            >
+
+                <div class="table-card__head">
+
+                    <span class="table-card__badge" aria-hidden="true">2</span>
+
+                    <h2 id="rtoCardTitle">
+                        RTO COMPARISON (MAKER WISE)
+                    </h2>
+
+                    <div class="table-card__actions">
+
+                        <span
+                            id="rtoCardMeta"
+                            class="table-card__meta"
+                        ></span>
+
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="rto-xlsx"
+                            title="Download this table as an Excel file"
+                            disabled
                         >
-                            <svg
-                                viewBox="0 0 24 24"
-                                width="21"
-                                height="21"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <circle cx="6" cy="17" r="2.5"></circle>
-                                <circle cx="18" cy="17" r="2.5"></circle>
-                                <path d="M6 17l2-7h7l3 7"></path>
-                                <path d="M8 10l-1.5-3h5"></path>
-                                <path d="M15 10l2-3"></path>
-                            </svg>
-                        </div>
+                            Excel
+                        </button>
 
-                        <div class="kpi-card__content">
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="rto-pdf"
+                            title="Download this table as a PDF"
+                            disabled
+                        >
+                            PDF
+                        </button>
 
-                            <span class="kpi-card__label">
-                                3W Registrations
-                            </span>
+                    </div>
 
-                            <strong
-                                id="threeWRegistrations"
-                                class="kpi-card__value"
-                            >
-                                —
-                            </strong>
+                </div>
 
-                            <span
-                                id="threeWPercentage"
-                                class="kpi-card__meta"
-                            >
-                                —
-                            </span>
+                <p
+                    id="rtoCardNote"
+                    class="table-notice"
+                    hidden
+                ></p>
 
-                        </div>
+                <div
+                    id="rtoCardState"
+                    class="table-state"
+                    hidden
+                ></div>
 
-                    </article>
+                <div class="table-wrapper">
+
+                    <table
+                        id="rtoTable"
+                        class="data-table"
+                    >
+                        <caption class="visually-hidden">
+                            Registrations by RTO, one column per leading maker
+                        </caption>
+
+                        <thead id="rtoTableHead"></thead>
+                        <tbody id="rtoTableBody"></tbody>
+                        <tfoot id="rtoTableFoot"></tfoot>
+                    </table>
 
                 </div>
 
@@ -717,619 +1283,318 @@
 
 
             <!-- =================================================
-                 MONTHLY TREND
-
-                 Fiscal years down the side, months across the top,
-                 each month carrying industry volume, the current
-                 selection's volume, and the resulting market share.
+                 3. DETAILED REGISTRATION DATA
                  ================================================= -->
 
             <section
-                class="content-section"
-                aria-labelledby="monthly-trend-title"
+                class="table-card"
+                aria-labelledby="detailCardTitle"
             >
 
-                <div class="table-card">
+                <div class="table-card__head">
 
-                    <!-- Table header -->
+                    <span class="table-card__badge" aria-hidden="true">3</span>
 
-                    <div class="section-heading section-heading--table">
+                    <h2 id="detailCardTitle">
+                        DETAILED REGISTRATION DATA
+                    </h2>
 
-                        <div>
+                    <div class="table-card__actions">
 
-                            <span class="section-eyebrow">
-                                TREND
-                            </span>
+                        <span
+                            id="detailCardMeta"
+                            class="table-card__meta"
+                        ></span>
 
-                            <h2 id="monthly-trend-title">
-                                Monthly Trend
-                            </h2>
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="detail-xlsx"
+                            title="Download every filtered row as an Excel file"
+                            disabled
+                        >
+                            Excel
+                        </button>
 
-                        </div>
-
-                    </div>
-
-
-                    <!-- Table toolbar -->
-
-                    <div class="table-toolbar table-toolbar--trend">
-
-                        <div class="table-toolbar__left">
-
-                            <div class="trend-filters">
-
-                                <div class="trend-filter">
-
-                                    <label for="trendMakerFilter">
-                                        Maker
-                                    </label>
-
-                                    <select
-                                        id="trendMakerFilter"
-                                        name="trendMaker"
-                                    >
-                                        <option value="all">
-                                            All Makers
-                                        </option>
-                                    </select>
-
-                                </div>
-
-                                <div class="trend-filter">
-
-                                    <label for="trendClassFilter">
-                                        Class
-                                    </label>
-
-                                    <select
-                                        id="trendClassFilter"
-                                        name="trendClass"
-                                    >
-                                        <option value="all">
-                                            All Classes
-                                        </option>
-                                    </select>
-
-                                </div>
-
-                            </div>
-
-                            <p class="monthly-trend__note">
-                                <strong>IND</strong> is every maker's
-                                registrations in the chosen class,
-                                <strong>VOL</strong> is the chosen
-                                maker's, and <strong>MS</strong> is VOL
-                                as a share of IND &mdash; so picking a
-                                class gives a share within that segment.
-                                These two control this table only &mdash;
-                                the Scope filter in the sidebar drives both
-                                this table and the one below it.
-                            </p>
-
-                        </div>
-
-                        <div class="table-toolbar__right">
-
-                            <span
-                                id="monthlyTrendMeta"
-                                class="result-count"
-                            ></span>
-
-                            <!--
-                                 Writes the grid exactly as shown -
-                                 every fiscal year, both filters
-                                 applied.
-                            -->
-                            <button
-                                type="button"
-                                id="trendDownloadButton"
-                                class="download-button"
-                                disabled
-                                title="Download this trend as an Excel file"
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    width="15"
-                                    height="15"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.9"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M12 3v11"></path>
-                                    <path d="M8 11l4 4 4-4"></path>
-                                    <path d="M4 19h16"></path>
-                                </svg>
-
-                                Excel
-                            </button>
-
-                            <button
-                                type="button"
-                                id="trendPdfButton"
-                                class="download-button"
-                                title="Download as a PDF"
-                                disabled
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    width="15"
-                                    height="15"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.9"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M12 3v11"></path>
-                                    <path d="M8 11l4 4 4-4"></path>
-                                    <path d="M4 19h16"></path>
-                                </svg>
-
-                                PDF
-                            </button>
-
-                        </div>
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="detail-pdf"
+                            title="Download as a PDF"
+                            disabled
+                        >
+                            PDF
+                        </button>
 
                     </div>
 
+                </div>
 
-                    <!--
-                         Shown only while nothing narrows the
-                         selection, when VOL is the whole industry.
-                    -->
+                <div class="table-card__toolbar">
+
+                    <input
+                        type="search"
+                        id="detailSearch"
+                        class="table-search"
+                        placeholder="Search maker or vehicle class..."
+                        aria-label="Search the detailed data"
+                    >
 
                     <p
-                        id="monthlyTrendHint"
-                        class="table-notice"
+                        id="detailCardNote"
+                        class="table-notice table-notice--inline"
                         hidden
                     ></p>
 
+                </div>
 
-                    <!-- Loading -->
+                <div
+                    id="detailCardState"
+                    class="table-state"
+                    hidden
+                ></div>
 
-                    <div
-                        id="monthlyTrendLoading"
-                        class="table-state table-state--loading"
+                <div class="table-wrapper">
+
+                    <table
+                        id="detailTable"
+                        class="data-table"
                     >
-                        <div class="spinner"></div>
-                        <p>Loading monthly trend&hellip;</p>
-                    </div>
+                        <caption class="visually-hidden">
+                            One row per year, month, RTO, maker and vehicle class
+                        </caption>
 
-
-                    <!-- Error -->
-
-                    <div
-                        id="monthlyTrendError"
-                        class="table-state table-state--error"
-                        role="alert"
-                        hidden
-                    >
-                        <div class="table-state__icon">!</div>
-                        <p id="monthlyTrendErrorText"></p>
-                    </div>
-
-
-                    <!-- Table -->
-
-                    <div
-                        id="monthlyTrendContent"
-                        class="table-wrapper monthly-trend"
-                        hidden
-                    >
-
-                        <table id="monthlyTrendTable" class="data-table monthly-trend__table">
-
-                            <thead id="monthlyTrendHead"></thead>
-
-                            <tbody id="monthlyTrendBody"></tbody>
-
-                            <tfoot id="monthlyTrendFoot"></tfoot>
-
-                        </table>
-
-                    </div>
+                        <thead id="detailTableHead"></thead>
+                        <tbody id="detailTableBody"></tbody>
+                        <tfoot id="detailTableFoot"></tfoot>
+                    </table>
 
                 </div>
 
-            </section>
+                <nav
+                    class="pagination"
+                    aria-label="Detailed data pagination"
+                >
 
+                    <div class="pagination__left">
 
-            <!-- =================================================
-                 MAKER SUMMARY
-                 ================================================= -->
+                        <label for="detailPageSize">Rows</label>
 
-            <section
-                class="content-section"
-                aria-labelledby="maker-summary-title"
-            >
-
-                <div class="table-card">
-
-
-                    <!-- Table header -->
-
-                    <div class="section-heading section-heading--table">
-
-                        <div>
-
-                            <span class="section-eyebrow">
-                                DETAILS
-                            </span>
-
-                            <h2 id="maker-summary-title">
-                                Registrations by Maker
-                            </h2>
-
-                        </div>
+                        <select id="detailPageSize">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
 
                     </div>
 
+                    <div class="pagination__right">
 
-                    <!-- Table toolbar -->
-
-                    <div class="table-toolbar">
-
-                        <div class="table-toolbar__left">
-
-                            <div
-                                id="makerSearchList"
-                                class="search-list"
-                            ></div>
-
-                        </div>
-
-                        <div class="table-toolbar__right">
-
-                            <span
-                                id="resultCount"
-                                class="result-count"
-                            ></span>
-
-                            <!--
-                                 Every filtered row, not the page on
-                                 screen - see exportDetailsTable.
-                            -->
-                            <button
-                                type="button"
-                                id="detailsDownloadButton"
-                                class="download-button"
-                                disabled
-                                title="Download all filtered rows as an Excel file"
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    width="15"
-                                    height="15"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.9"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M12 3v11"></path>
-                                    <path d="M8 11l4 4 4-4"></path>
-                                    <path d="M4 19h16"></path>
-                                </svg>
-
-                                Excel
-                            </button>
-
-                            <button
-                                type="button"
-                                id="detailsPdfButton"
-                                class="download-button"
-                                title="Download as a PDF"
-                                disabled
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    width="15"
-                                    height="15"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.9"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M12 3v11"></path>
-                                    <path d="M8 11l4 4 4-4"></path>
-                                    <path d="M4 19h16"></path>
-                                </svg>
-
-                                PDF
-                            </button>
-
-                        </div>
-
-                    </div>
-
-
-                    <!-- Table states -->
-
-                    <div
-                        id="tableLoading"
-                        class="table-state table-state--loading"
-                        role="status"
-                        aria-live="polite"
-                        hidden
-                    >
+                        <button
+                            type="button"
+                            class="pagination-button"
+                            data-page="detail-prev"
+                            disabled
+                        >
+                            Previous
+                        </button>
 
                         <span
-                            class="loading-spinner loading-spinner--small"
-                            aria-hidden="true"
-                        ></span>
-
-                        <span>
-                            Loading data...
+                            id="detailPageIndicator"
+                            class="page-indicator"
+                        >
+                            Page 1 of 1
                         </span>
 
-                    </div>
-
-
-                    <div
-                        id="tableEmpty"
-                        class="table-state table-state--empty"
-                        role="status"
-                        aria-live="polite"
-                        hidden
-                    >
-
-                        <div class="table-state__icon">
-                            <svg
-                                viewBox="0 0 24 24"
-                                width="32"
-                                height="32"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.7"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true"
-                            >
-                                <circle
-                                    cx="12"
-                                    cy="12"
-                                    r="9"
-                                ></circle>
-
-                                <path d="M8 12h8"></path>
-                            </svg>
-                        </div>
-
-                        <p id="tableEmptyText">
-                            No data found for the selected filters.
-                        </p>
-
-                    </div>
-
-
-                    <div
-                        id="tableError"
-                        class="table-state table-state--error"
-                        role="alert"
-                        hidden
-                    >
-
-                        <div class="table-state__icon">
-                            !
-                        </div>
-
-                        <p id="tableErrorText">
-                            Unable to load data. Please try again.
-                        </p>
-
-                    </div>
-
-
-                    <!-- Actual table -->
-
-                    <div
-                        id="tableContent"
-                        class="table-wrapper"
-                    >
-
-                        <table
-                            id="makerSummaryTable"
-                            class="data-table"
+                        <button
+                            type="button"
+                            class="pagination-button"
+                            data-page="detail-next"
+                            disabled
                         >
-
-                            <caption class="visually-hidden">
-                                Vehicle registrations summarized by maker
-                            </caption>
-
-                            <!--
-                                Head, body and foot are all
-                                rendered by script.js, because the
-                                column set changes with the
-                                selected table.
-                            -->
-
-                            <thead id="makerSummaryTableHead"></thead>
-
-                            <tbody id="makerSummaryTableBody">
-
-                                <tr class="table-placeholder-row">
-
-                                    <td>
-                                        Loading...
-                                    </td>
-
-                                </tr>
-
-                            </tbody>
-
-                            <tfoot id="makerSummaryTableFoot"></tfoot>
-
-                        </table>
+                            Next
+                        </button>
 
                     </div>
 
-
-                    <!-- Pagination -->
-
-                    <nav
-                        class="pagination"
-                        aria-label="Maker summary pagination"
-                    >
-
-                        <div class="pagination__left">
-
-                            <label for="pageSizeSelect">
-                                Rows per page
-                            </label>
-
-                            <select
-                                id="pageSizeSelect"
-                                aria-label="Rows per page"
-                            >
-
-                                <option value="25">
-                                    25
-                                </option>
-
-                                <option value="50">
-                                    50
-                                </option>
-
-                                <option value="100">
-                                    100
-                                </option>
-
-                            </select>
-
-                        </div>
-
-
-                        <div class="pagination__right">
-
-                            <button
-                                type="button"
-                                id="previousPageButton"
-                                class="pagination-button"
-                                aria-label="Previous page"
-                                disabled
-                            >
-                                Previous
-                            </button>
-
-                            <span
-                                id="pageIndicator"
-                                class="page-indicator"
-                            >
-                                Page 1 of 1
-                            </span>
-
-                            <button
-                                type="button"
-                                id="nextPageButton"
-                                class="pagination-button"
-                                aria-label="Next page"
-                                disabled
-                            >
-                                Next
-                            </button>
-
-                        </div>
-
-                    </nav>
-
-                </div>
+                </nav>
 
             </section>
 
         </section>
 
+
+        <!-- =====================================================
+             QUICK SUMMARY RAIL
+             ===================================================== -->
+
+        <aside
+            class="summary-rail"
+            aria-labelledby="summaryRailTitle"
+        >
+
+            <div class="summary-rail__head">
+
+                <span class="summary-rail__icon" aria-hidden="true">
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="17"
+                        height="17"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.9"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <rect x="4" y="3" width="16" height="18" rx="2"></rect>
+                        <path d="M8 8h8"></path>
+                        <path d="M8 12h8"></path>
+                        <path d="M8 16h4"></path>
+                    </svg>
+                </span>
+
+                <h2 id="summaryRailTitle">
+                    QUICK SUMMARY
+                </h2>
+
+            </div>
+
+
+            <section class="summary-panel">
+
+                <h3 class="summary-panel__title summary-panel__title--blue">
+                    TOP 5 MAKERS (BY MARKET SHARE)
+                </h3>
+
+                <ol
+                    id="topMakersList"
+                    class="summary-list"
+                ></ol>
+
+                <button
+                    type="button"
+                    class="view-all-button"
+                    data-view-all="makers"
+                >
+                    View All
+                </button>
+
+            </section>
+
+
+            <section class="summary-panel">
+
+                <h3 class="summary-panel__title summary-panel__title--violet">
+                    TOP 5 RTOS (BY REGISTRATION)
+                </h3>
+
+                <ol
+                    id="topRtosList"
+                    class="summary-list"
+                ></ol>
+
+                <button
+                    type="button"
+                    class="view-all-button"
+                    data-view-all="rtos"
+                >
+                    View All
+                </button>
+
+            </section>
+
+
+            <section class="summary-panel">
+
+                <h3
+                    id="growthPanelTitle"
+                    class="summary-panel__title summary-panel__title--green"
+                >
+                    HIGHEST GROWTH
+                </h3>
+
+                <ol
+                    id="topGrowthList"
+                    class="summary-list"
+                ></ol>
+
+                <button
+                    type="button"
+                    class="view-all-button"
+                    data-view-all="growth"
+                >
+                    View All
+                </button>
+
+            </section>
+
+
+            <section class="summary-panel">
+
+                <h3 class="summary-panel__title summary-panel__title--amber">
+                    DATA SUMMARY
+                </h3>
+
+                <ul
+                    id="dataSummaryList"
+                    class="summary-facts"
+                ></ul>
+
+            </section>
+
+        </aside>
+
     </main>
 
 
     <!-- =========================================================
-         MAKER SEARCH ROW TEMPLATE
+         VIEW ALL DIALOG
 
-         Cloned by script.js for each search bar. The add and
-         remove buttons are toggled per row: the first row adds,
-         every other row removes.
+         The rail shows five of each; this shows the rest without
+         sending the reader back to a table to look for them.
          ========================================================= -->
 
-    <template id="searchRowTemplate">
+    <div
+        id="viewAllOverlay"
+        class="modal-overlay"
+        hidden
+    >
 
         <div
-            class="search-row"
-            data-search-row
+            class="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="viewAllTitle"
         >
 
-            <label class="search-box">
+            <div class="modal__head">
 
-                <svg
-                    viewBox="0 0 24 24"
-                    width="17"
-                    height="17"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    <circle
-                        cx="11"
-                        cy="11"
-                        r="7"
-                    ></circle>
-
-                    <path
-                        d="m20 20-4-4"
-                    ></path>
-                </svg>
-
-                <input
-                    type="search"
-                    class="maker-search"
-                    data-maker-search
-                    placeholder="Search maker..."
-                    autocomplete="off"
-                >
+                <h2 id="viewAllTitle">All</h2>
 
                 <button
                     type="button"
-                    class="search-box__clear"
-                    data-clear-search
-                    aria-label="Clear this search"
-                    hidden
+                    id="viewAllClose"
+                    class="modal__close"
+                    aria-label="Close"
                 >
                     &times;
                 </button>
 
-            </label>
+            </div>
 
-            <button
-                type="button"
-                class="search-row__button search-row__button--add"
-                data-add-search
-                aria-label="Add another maker search"
-                title="Add another maker search"
-            >
-                +
-            </button>
+            <div class="modal__body">
 
-            <button
-                type="button"
-                class="search-row__button search-row__button--remove"
-                data-remove-search
-                aria-label="Remove this search"
-                title="Remove this search"
-            >
-                &minus;
-            </button>
+                <ol
+                    id="viewAllList"
+                    class="summary-list summary-list--modal"
+                ></ol>
+
+            </div>
 
         </div>
 
-    </template>
+    </div>
 
 
     <!-- =========================================================
@@ -1337,10 +1602,7 @@
          ========================================================= -->
 
     <!-- Bump v in step with the stylesheet above. -->
-    <script
-        type="module"
-        src="script.js?v=22"
-    ></script>
+    <script src="script.js?v=23"></script>
 
 </body>
 </html>

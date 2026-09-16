@@ -24,3 +24,8 @@ local/data/
 # Never commit the Supabase management token
 .env
 local/.env
+
+# The sample design mock-up this rebuild was matched against.
+# It carries invented figures for years the data does not have, so
+# it stays local rather than shipping in a public repo.
+Dashboard Semple.png
