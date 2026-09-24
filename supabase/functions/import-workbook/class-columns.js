@@ -4,7 +4,7 @@
  *
  * The Node CLI path (tools/build-month-tables.js) and this Deno Edge
  * Function both validate an uploaded workbook against the exact same
- * 75 class names and order, read from that one file, so an upload
+ * 76 class names and order, read from that one file, so an upload
  * and an offline import can never quietly diverge on what a class is
  * called or where it belongs.
  *

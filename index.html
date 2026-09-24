@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=24"
+        href="style.css?v=25"
     >
 
 </head>
@@ -383,10 +383,11 @@
                 <!-- ---------------------------------------------
                      SCOPE
 
-                     The sample has no scope control because it is
-                     Gujarat-only. This database also holds All
-                     India and Gujarat, which no RTO selection can
-                     reconstruct, so the control stays.
+                     Picks which of the three tables the dashboard
+                     reads: All_India_Class_Wise, Gujarat_RTO_Class_Wise
+                     or Maharashtra_RTO_Class_Wise. The RTO filter
+                     narrows within whichever of the two RTO-wise
+                     tables is active - it no longer overrides Scope.
                      --------------------------------------------- -->
 
                 <div class="filter-block">
@@ -420,9 +421,7 @@
                     >
                         <option value="all_india">All India</option>
                         <option value="gujarat">Gujarat</option>
-
-                        <!-- GJ01 + GJ27 + GJ38, summed per maker -->
-                        <option value="ahmedabad">Ahmedabad</option>
+                        <option value="maharashtra">Maharashtra</option>
                     </select>
 
                 </div>
@@ -1675,9 +1674,11 @@
             <div class="modal__body modal__body--flush">
 
                 <p class="import-card__intro">
-                    Upload a Vahan <code>maker_vehicleClass_&lt;year&gt;_&lt;Mon&gt;&lt;YY&gt;.xlsx</code>
-                    export. It is checked first and nothing is written until you
-                    confirm - see
+                    Upload a Vahan <code>maker_vehicleClass_All RTO_&lt;Mon&gt;&lt;YY&gt;.xlsx</code>
+                    (All India), <code>maker_vehicleClass_GJ01_&lt;Mon&gt;&lt;YY&gt;.xlsx</code>
+                    (Gujarat RTO) or <code>maker_vehicleClass_MH01_&lt;Mon&gt;&lt;YY&gt;.xlsx</code>
+                    (Maharashtra RTO) export. It is checked first and nothing is
+                    written until you confirm - see
                     <button
                         type="button"
                         id="importChecksToggle"
@@ -1709,7 +1710,7 @@
                             </tr>
                             <tr>
                                 <td>Title cross-check</td>
-                                <td>Filename's month/year disagreeing with the sheet's own printed date range - how 2024 data would end up filed as 2025</td>
+                                <td>Filename's month/year disagreeing with the sheet's own printed date range - how 2024 data would end up filed as 2025. For a Gujarat/Maharashtra file, the RTO named in the filename is also checked against the RTO named in the sheet's own title row</td>
                                 <td>Blocked</td>
                             </tr>
                             <tr>
@@ -1738,8 +1739,8 @@
                                 <td>Reported, not blocked - shown before you confirm</td>
                             </tr>
                             <tr>
-                                <td>Single month, single year</td>
-                                <td>Only the uploaded month/year is touched - every other month table and every other year in this one are left exactly as they are</td>
+                                <td>Single month, single year (single RTO)</td>
+                                <td>Only the uploaded month/year is touched - for a Gujarat/Maharashtra file, only that one RTO too. Every other row in the table is left exactly as it was</td>
                                 <td>&mdash;</td>
                             </tr>
                         </tbody>
@@ -1905,7 +1906,7 @@
          ========================================================= -->
 
     <!-- Bump v in step with the stylesheet above. -->
-    <script src="script.js?v=24"></script>
+    <script src="script.js?v=25"></script>
 
 </body>
 </html>

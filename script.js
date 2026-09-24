@@ -7,53 +7,38 @@
    ------------------------------------------------------------
    SCHEMA (Supabase project ytgoonducepylslknkag)
 
-   YEAR GRAIN - all WIDE, Maker x Vehicle Class, year a column:
+   Three tables, one per source - see
+   supabase/migrations/20260924140000_create_new_schema.sql. Every
+   row already carries both year and month: there is no separate
+   year-grain table any more, a year total is these summed client
+   side (see aggregateToYear()), not something pre-computed.
 
-       MAKER_WISE                 3,994 rows   74 classes
-       Gujarat_Class_Wise           862 rows   61 classes
-       Ahmedabad_Class_Wise         414 rows   49 classes  (view)
-       Maker_Class_Wise_GJ01        278 rows   43 classes
-       Maker_Class_Wise_GJ13        229 rows   32 classes
-       Maker_Class_Wise_GJ27        275 rows   38 classes
-       Maker_Class_Wise_GJ38        292 rows   31 classes
+       All_India_Class_Wise        year, month, Maker, <76 classes>, Total, uploaded_at
+       Gujarat_RTO_Class_Wise      + rto_code, rto_name - all 37 Gujarat RTOs
+       Maharashtra_RTO_Class_Wise  + rto_code, rto_name - all 58 Maharashtra RTOs
 
-   Each holds 2025 and 2026. Ahmedabad is GJ01 + GJ27 + GJ38
-   summed PER MAKER.
-
-   MONTH GRAIN - one view over 36 month tables:
-
-       trend_by_maker   54,019 rows
-       scope | year | month (1-12) | Maker | <75 classes> | Total
-
-   Its six scopes are all_india, gujarat, ahmedabad, gj01, gj27
-   and gj38. EVERY read must filter on scope, or six scopes sum
-   together. It carries 2024 as well as 2025 and 2026.
+   The 76 classes are VEHICLE_CLASS_COLUMNS below, copied from
+   tools/class-columns.js - kept as a literal rather than detected
+   from a sample row, since a table can still be empty (nothing
+   imported for it yet) and this project controls the schema
+   outright now, rather than adapting to one an external source
+   happened to send.
 
    ------------------------------------------------------------
-   WHAT THE DATA CAN AND CANNOT DO
+   GRAIN
 
-   maker x class          yes, per scope, per year
-   maker x class x month  yes, per scope - except GJ13, which has
-                          no month tables at all
-   maker x rto            only GJ01, GJ13, GJ27, GJ38 exist. There
-                          is no table for the other 48 Gujarat
-                          RTOs, and none for RTOs outside Gujarat
-   state x class          NO TABLE EXISTS
-   years before 2025      NO TABLE EXISTS at year grain; the month
-                          view reaches back to 2024 and no further
+   One rule decides how a scope's already-fetched rows get turned
+   into records (see grainFor(), loadRecords()):
 
-   ------------------------------------------------------------
-   GRAIN SWITCH
+       Month filter on "all"  ->  year grain: rows for the matched
+                                  months are summed into one record
+                                  per year/RTO/maker
+       Month filter narrowed  ->  month grain: one record per row,
+                                  kept apart rather than summed
 
-   One rule decides which of the two sources every card reads:
-
-       Month filter on "all"  ->  year grain (the scope tables)
-       Month filter narrowed  ->  month grain (trend_by_maker)
-
-   The two disagree on 2026 by about 5 lakh units at All India -
-   the scope tables are a mid-August snapshot, the month tables
-   close on 31 August - so the switch is stated on screen rather
-   than left to be discovered. 2025 reconciles to single digits.
+   Both read the exact same table and the exact same fetch - grain
+   is purely how the result gets aggregated afterward, not which
+   source it came from the way it once was.
 
    Reads page with .range() in 1,000-row chunks.
    ============================================================ */
@@ -91,68 +76,124 @@ const IMPORT_FUNCTION_URL =
    2. TABLE CONFIGURATION
    ============================================================ */
 
+/*
+ * Three tables, one per source - see
+ * supabase/migrations/20260924140000_create_new_schema.sql. Every
+ * row in Gujarat's and Maharashtra's tables already carries its own
+ * rto_code/rto_name, so there is no per-RTO table any more: the RTO
+ * filter narrows within one of these two, it does not pick between
+ * fifty-odd tables the way it once picked between four.
+ */
 const SCOPE_TABLES = {
-    all_india: "MAKER_WISE",
-    gujarat:   "Gujarat_Class_Wise",
-    ahmedabad: "Ahmedabad_Class_Wise",
-    gj01:      "Maker_Class_Wise_GJ01",
-    gj13:      "Maker_Class_Wise_GJ13",
-    gj27:      "Maker_Class_Wise_GJ27",
-    gj38:      "Maker_Class_Wise_GJ38"
+    all_india:   "All_India_Class_Wise",
+    gujarat:     "Gujarat_RTO_Class_Wise",
+    maharashtra: "Maharashtra_RTO_Class_Wise"
 };
 
 
-/*
- * The scopes the sidebar offers as a universe. The four RTOs are
- * not here - they are the RTO filter's job, and selecting one
- * there overrides whichever of these is set.
- */
 const SCOPES = [
-    { id: "all_india", label: "All India" },
-    { id: "gujarat",   label: "Gujarat" },
-    { id: "ahmedabad", label: "Ahmedabad" }
+    { id: "all_india",   label: "All India" },
+    { id: "gujarat",     label: "Gujarat" },
+    { id: "maharashtra", label: "Maharashtra" }
 ];
 
 
-/*
- * Every RTO the database holds. Four, not the fifty-two a full
- * Gujarat listing would have: Vahan was pulled for these codes
- * only. Names follow the published Gujarat RTO register; the
- * workbooks carry the code alone, so they are set here and are
- * the one thing on this screen not read from the data.
- *
- * GJ13 has a year-grain table but no month tables, so it drops
- * out whenever the Month filter is narrowed. Known and accepted.
- */
-const RTOS = [
-    { code: "GJ01", name: "AHMEDABAD", scope: "gj01", months: true },
-    { code: "GJ13", name: "SURENDRANAGAR", scope: "gj13", months: false },
-    { code: "GJ27", name: "AHMEDABAD (EAST)", scope: "gj27", months: true },
-    { code: "GJ38", name: "AHMEDABAD (RURAL) BAVLA", scope: "gj38", months: true }
-];
+/* The two scopes whose table has an RTO breakdown at all - Card 2
+   and the RTO filter both mean nothing for all_india. */
+const RTO_SCOPES = new Set(["gujarat", "maharashtra"]);
 
 
-function rtoByCode(code) {
-
-    return RTOS.find(rto => rto.code === code) || null;
-}
-
-
-/*
- * The month-grain view and the column that must narrow every
- * read of it. Without the scope filter a single request sums six
- * scopes together and inflates every figure by about a tenth.
- */
-const MONTH_VIEW = "trend_by_maker";
-
-const SCOPE_COLUMN = "scope";
 const MONTH_COLUMN = "month";
 
 
-/* Only three of the six month scopes are an RTO. */
-const MONTH_SCOPES = new Set([
-    "all_india", "gujarat", "ahmedabad", "gj01", "gj27", "gj38"
-]);
+/*
+ * The 76 vehicle-class columns every one of the three tables
+ * carries - copied verbatim from tools/class-columns.js (that
+ * file's own comment has the order/history). Kept as a literal
+ * rather than detected from a sample row: a table can still be
+ * empty (nothing imported yet, or nothing imported for this scope
+ * yet), and this project now controls the schema outright rather
+ * than adapting to one an external source happened to send, so
+ * there is nothing left to discover live.
+ */
+const VEHICLE_CLASS_COLUMNS = [
+    "Three Wheeler (Goods)",
+    "Three Wheeler (Passenger)",
+    "e-Rickshaw with Cart (G)",
+    "e-Rickshaw(P)",
+    "Tractor-Trolley(Commercial)",
+    "Trailer (Agricultural)",
+    "Harvester",
+    "Goods Carrier",
+    "M-Cycle/Scooter",
+    "Trailer (Commercial)",
+    "Construction Equipment Vehicle",
+    "Crane Mounted Vehicle",
+    "Agricultural Tractor",
+    "Construction Equipment Vehicle (Commercial)",
+    "Earth Moving Equipment",
+    "Excavator (Commercial)",
+    "Excavator (NT)",
+    "Fork Lift",
+    "Road Roller",
+    "Tractor (Commercial)",
+    "Motorised Cycle (CC  25cc)",
+    "Bus",
+    "Semi-Trailer (Commercial)",
+    "Motor Car",
+    "Vehicle Fitted With Rig",
+    "Moped",
+    "Armoured/Specialised Vehicle",
+    "Ambulance",
+    "Animal Ambulance",
+    "Articulated Vehicle",
+    "Auxiliary Trailer",
+    "Camper Van / Trailer",
+    "Camper Van / Trailer (Private Use)",
+    "Dumper",
+    "Educational Institution Bus",
+    "Fire Fighting Vehicle",
+    "Fire Tenders",
+    "Hearses",
+    "Maxi Cab",
+    "Mobile Canteen",
+    "Mobile Clinic",
+    "Mobile Workshop",
+    "Omni Bus",
+    "Private Service Vehicle",
+    "Private Service Vehicle (Individual Use)",
+    "Puller Tractor",
+    "Recovery Vehicle",
+    "School Bus",
+    "Snorked Ladders",
+    "Tow Truck",
+    "Tower Wagon",
+    "Tree Trimming Vehicle",
+    "Vehicle Fitted With Compressor",
+    "Vehicle Fitted With Generator",
+    "X-Ray Van",
+    "Adapted Vehicle",
+    "M-Cycle/Scooter-With Side Car",
+    "Motor Cycle/Scooter-Used For Hire",
+    "Three Wheeler (Personal)",
+    "Motor Cab",
+    "Motor Cycle/Scooter-SideCar(T)",
+    "Quadricycle (Commercial)",
+    "Quadricycle (Private)",
+    "Luxury Cab",
+    "Breakdown Van",
+    "Cash Van",
+    "Library Van",
+    "Omni Bus (Private Use)",
+    "Vintage Motor Vehicle",
+    "Trailer For Personal Use",
+    "Motor Caravan",
+    "Power Tiller",
+    "Modular Hydraulic Trailer",
+    "Bulldozer",
+    "Motor Cycle/Scooter-With Trailer",
+    "Power Tiller (Commercial)"
+];
 
 
 const MONTHS = [
@@ -169,24 +210,6 @@ const MONTHS = [
     { number: 11, key: "Nov", label: "November" },
     { number: 12, key: "Dec", label: "December" }
 ];
-
-
-/*
- * Year grain holds two; the month view reaches back one further.
- * Which of these the Year filter offers depends on the grain, so
- * both lists are kept rather than one merged one.
- */
-const YEARS_YEAR_GRAIN = ["2025", "2026"];
-
-const YEARS_MONTH_GRAIN = ["2024", "2025", "2026"];
-
-
-/*
- * When the six scope tables were last pulled from Vahan. Only the
- * part-year matters: 2025 and earlier are closed, but 2026 is a
- * snapshot taken part-way through August.
- */
-const DATA_AS_OF = { year: "2026", label: "20-Aug-2026" };
 
 
 function tableFor(scope) {
@@ -253,15 +276,6 @@ const CONFIG = {
      */
     MAX_DETAIL_ROWS: 50000
 };
-
-
-const METADATA_COLUMNS = [
-    "id", "sr no", "sr_no", "srno",
-    "maker", "maker name", "maker_name",
-    "state", "state name", "state_name",
-    "rto", "scope", "month",
-    "total", "grand total", "year"
-];
 
 
 /*
@@ -555,17 +569,20 @@ const state = {
     /* "year" or "month". See the GRAIN SWITCH note at the top. */
     grain: "year",
 
-    /* Which options each check list offers, rebuilt as scope moves. */
+    /*
+     * Which options each check list offers, rebuilt as scope moves.
+     * years and rtos start empty and are filled once the scope's
+     * table has actually been read - neither is a fixed list any
+     * more (a new year is just more rows; Gujarat and Maharashtra
+     * between them hold 95 RTOs, not four).
+     */
     options: {
         years: [],
         months: MONTHS.map(month => ({
             value: String(month.number),
             label: month.label
         })),
-        rtos: RTOS.map(rto => ({
-            value: rto.code,
-            label: `${rto.code} — ${rto.name}`
-        })),
+        rtos: [],
         makers: [],
         classes: []
     },
@@ -577,17 +594,23 @@ const state = {
      */
     classColumns: [],
 
+    /* When this scope's data was last loaded - see renderHeader(). */
+    dataRefreshedAt: null,
+
     /*
-     * Loaded records. `main` answers the Scope / RTO selection and
-     * feeds cards 1 and 3; `rto` is always the four RTO sources and
-     * feeds card 2, whatever Scope says.
+     * Loaded records answering the Scope/RTO/Year/Month selection -
+     * every card reads from this one set now. Card 2 (RTO
+     * Comparison) used to need its own separate fetch because it
+     * always meant Gujarat's 4 RTOs regardless of Scope; now that it
+     * means whichever RTO-wise scope is actually active, it is the
+     * same data Cards 1 and 3 already have.
      *
-     * A record is { rto, year, month, maker, raw } where raw is the
-     * API row - the class figures are read out of it on demand
-     * rather than copied into a second object per row.
+     * A record is { rto, rtoName, year, month, maker, raw } where raw
+     * is the API row - the class figures are read out of it on
+     * demand rather than copied into a second object per row. `rto`/
+     * `rtoName` are null for all_india, which has no RTO column.
      */
     main: { records: [], classColumns: [] },
-    rto: { records: [], classColumns: [] },
 
     /* Whole tables, keyed by name. */
     tableCache: new Map(),
@@ -815,16 +838,6 @@ function normalizeFilter(value) {
 }
 
 
-function isMetadataColumn(name) {
-
-    const key = normalizeKey(name);
-
-    return METADATA_COLUMNS.some(
-        candidate => normalizeKey(candidate) === key
-    );
-}
-
-
 function uniqueSorted(values) {
 
     return [
@@ -854,74 +867,6 @@ function sumColumns(row, columns) {
         (total, column) => total + toNumber(row[column]),
         0
     );
-}
-
-
-/* ============================================================
-   8. COLUMN RESOLUTION
-   ============================================================ */
-
-function findColumn(row, candidates) {
-
-    if (!row || typeof row !== "object") {
-        return null;
-    }
-
-    const keys = Object.keys(row);
-
-    for (const candidate of candidates) {
-        const exact = keys.find(key => key === candidate);
-        if (exact) {
-            return exact;
-        }
-    }
-
-    for (const candidate of candidates) {
-        const normalized = normalizeKey(candidate);
-        const match = keys.find(key => normalizeKey(key) === normalized);
-        if (match) {
-            return match;
-        }
-    }
-
-    return null;
-}
-
-
-function getEntityColumn(row, kind) {
-
-    return kind === "state"
-        ? findColumn(row, ["State", "STATE", "state", "State Name"])
-        : findColumn(row, ["Maker", "MAKER", "maker", "Maker Name", "maker_name"]);
-}
-
-
-function getTotalColumn(row) {
-
-    return findColumn(row, [
-        "Total", "TOTAL", "total", "Grand Total", "GRAND TOTAL"
-    ]);
-}
-
-
-/*
- * The scope tables carry every year, so this is what the year
- * selector filters on. It is already in METADATA_COLUMNS, so it
- * never reaches the class columns.
- */
-function getYearColumn(row) {
-
-    return findColumn(row, ["year", "Year", "YEAR"]);
-}
-
-
-/*
- * Month columns look like 2026-Jan.
- */
-function isMonthColumn(name) {
-
-    return /^\d{4}[-_ ](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i
-        .test(normalizeString(name));
 }
 
 
@@ -1020,21 +965,6 @@ async function fetchAllRows(table, columns, options = {}) {
 }
 
 
-async function fetchSampleRow(table) {
-
-    const { data, error } = await restClient
-        .from(table)
-        .select("*")
-        .limit(1);
-
-    if (error) {
-        throw apiError(table, error);
-    }
-
-    return Array.isArray(data) && data.length > 0 ? data[0] : null;
-}
-
-
 async function fetchRowCount(table, options = {}) {
 
     const { filters = [], signal = null } = options;
@@ -1065,13 +995,19 @@ async function fetchRowCount(table, options = {}) {
  * Whole small/medium tables are cached - the dashboard reads
  * the same ones repeatedly as filters change.
  */
+/*
+ * Every scope's whole table now, not a year-grain table's handful
+ * of rows - the concurrent pager, not the sequential one, is what
+ * keeps that from being a visible wait once a scope holds a few
+ * years of monthly data.
+ */
 function getCachedTable(table, columns, signal) {
 
     if (state.tableCache.has(table)) {
         return state.tableCache.get(table);
     }
 
-    const pending = fetchAllRows(table, columns, { signal });
+    const pending = fetchAllRowsFast(table, columns, { signal });
 
     state.tableCache.set(table, pending);
     pending.catch(() => state.tableCache.delete(table));
@@ -1081,68 +1017,18 @@ function getCachedTable(table, columns, signal) {
 
 
 /* ============================================================
-   11. SCHEMA DISCOVERY
-   ============================================================ */
-
-async function describeWideTable(table, entityKind) {
-
-    const sample = await fetchSampleRow(table);
-
-    if (!sample) {
-        return null;
-    }
-
-    const entityColumn = getEntityColumn(sample, entityKind);
-
-    if (!entityColumn) {
-        return null;
-    }
-
-    const totalColumn = getTotalColumn(sample);
-    const yearColumn = getYearColumn(sample);
-
-    /*
-     * The source row number. Using it rather than a positional
-     * counter keeps the on-screen Sr No. identical to the
-     * originating workbook.
-     */
-    const srNoColumn = findColumn(sample, [
-        "SR_NO", "Sr No", "sr_no", "SRNO", "srno", "Sr. No."
-    ]);
-
-    const valueColumns = Object.keys(sample).filter(
-        column =>
-            column !== entityColumn &&
-            column !== totalColumn &&
-            !isMetadataColumn(column)
-    );
-
-    return {
-        table,
-        entityColumn,
-        totalColumn,
-        yearColumn,
-        srNoColumn,
-        valueColumns,
-        monthColumns: valueColumns.filter(isMonthColumn),
-        classColumns: valueColumns.filter(column => !isMonthColumn(column))
-    };
-}
-
-
-/* ============================================================
    12. SOURCE RESOLUTION
 
-   Two questions decide every read: which grain, and which
-   scopes. Everything downstream asks these rather than looking
-   at the filters itself.
+   One question used to be two: which grain, and which table. Now
+   every scope is exactly one table, always carrying every month,
+   so there is only grain left to ask - whether the selected months
+   get summed into a whole year or kept apart.
    ============================================================ */
 
 /*
  * Month grain only once the Month filter actually narrows. All
- * twelve ticked is the same selection as none, and reading a
- * whole year out of the month view would be twelve times the
- * work for a figure the scope table already holds.
+ * twelve ticked reads the same rows as none ticked, but zero
+ * narrowing means "sum the year", not "show twelve separate rows".
  */
 function grainFor(filters) {
 
@@ -1154,76 +1040,7 @@ function grainFor(filters) {
 }
 
 
-function availableYears(grain) {
-
-    return grain === "month" ? YEARS_MONTH_GRAIN : YEARS_YEAR_GRAIN;
-}
-
-
-/*
- * The RTO filter overrides Scope when anything is ticked: an RTO
- * is a narrower universe than any scope on the list, so applying
- * both would either contradict or double-count.
- */
-function rtoOverrideActive(filters) {
-
-    return filters.rtos.length > 0;
-}
-
-
-/*
- * What the main cards read, as a list of sources. One entry per
- * table at year grain, one per scope at month grain; `rto` is the
- * code a row belongs to, or null when the source is not an RTO.
- */
-function mainSources(filters, grain) {
-
-    if (rtoOverrideActive(filters)) {
-        return rtoSources(filters.rtos, grain);
-    }
-
-    return [{ scope: filters.scope, rto: null }];
-}
-
-
-function rtoSources(codes, grain) {
-
-    const wanted = codes.length > 0
-        ? codes
-        : RTOS.map(rto => rto.code);
-
-    return wanted
-        .map(rtoByCode)
-        .filter(Boolean)
-        .filter(rto => grain !== "month" || rto.months)
-        .map(rto => ({ scope: rto.scope, rto: rto.code }));
-}
-
-
-/*
- * Codes asked for that the chosen grain cannot serve. Only GJ13
- * is ever in here, and only at month grain.
- */
-function rtosWithoutGrain(codes, grain) {
-
-    if (grain !== "month") {
-        return [];
-    }
-
-    const wanted = codes.length > 0 ? codes : RTOS.map(rto => rto.code);
-
-    return wanted
-        .map(rtoByCode)
-        .filter(rto => rto && !rto.months)
-        .map(rto => rto.code);
-}
-
-
 function scopeLabel(filters) {
-
-    if (rtoOverrideActive(filters)) {
-        return filters.rtos.join(" + ");
-    }
 
     const scope = SCOPES.find(entry => entry.id === filters.scope);
 
@@ -1312,73 +1129,34 @@ async function fetchAllRowsFast(table, columns, options = {}) {
    14. SCHEMA + CLASS TAXONOMY
    ============================================================ */
 
-const schemaCache = new Map();
-
-
 /*
- * One sample row per table tells us its class columns. Cached
- * for the session: a table's shape does not change between
- * filter applications.
+ * Every one of the three tables has a fixed, known shape - no
+ * sample row to sniff it from any more, and none needed. Still
+ * async (a Promise, cached the same way) purely so every call site
+ * built around "the schema arrives eventually" keeps working
+ * unchanged; nothing here actually waits on anything.
  */
-async function describeSource(table) {
+function schemaForTable(table) {
 
-    if (schemaCache.has(table)) {
-        return schemaCache.get(table);
-    }
+    const hasRto = table === SCOPE_TABLES.gujarat || table === SCOPE_TABLES.maharashtra;
 
-    const pending = describeWideTable(table, "maker").then(schema => {
-
-        if (!schema) {
-            throw new Error(
-                `${table} is unavailable, so its figures cannot be loaded.`
-            );
-        }
-
-        return schema;
-    });
-
-    schemaCache.set(table, pending);
-    pending.catch(() => schemaCache.delete(table));
-
-    return pending;
+    return {
+        table,
+        entityColumn: "Maker",
+        totalColumn: "Total",
+        yearColumn: "year",
+        monthColumn: MONTH_COLUMN,
+        rtoCodeColumn: hasRto ? "rto_code" : null,
+        rtoNameColumn: hasRto ? "rto_name" : null,
+        uploadedAtColumn: "uploaded_at",
+        classColumns: VEHICLE_CLASS_COLUMNS.slice()
+    };
 }
 
 
-/*
- * At year grain each source is its own table with its own column
- * set, so the class list is the union of them. At month grain
- * every scope shares the one view's columns.
- */
-async function describeSources(sources, grain) {
+async function describeSource(table) {
 
-    if (grain === "month") {
-
-        const schema = await describeSource(MONTH_VIEW);
-
-        return {
-            classColumns: schema.classColumns.slice(),
-            byScope: new Map(
-                sources.map(source => [source.scope, schema])
-            )
-        };
-    }
-
-    const schemas = await Promise.all(
-        sources.map(source => describeSource(tableFor(source.scope)))
-    );
-
-    const columns = new Set();
-
-    schemas.forEach(schema => {
-        schema.classColumns.forEach(column => columns.add(column));
-    });
-
-    return {
-        classColumns: uniqueSorted([...columns]),
-        byScope: new Map(
-            sources.map((source, at) => [source.scope, schemas[at]])
-        )
-    };
+    return schemaForTable(table);
 }
 
 
@@ -1559,6 +1337,16 @@ function monthLabel(number) {
     const month = MONTHS.find(entry => String(entry.number) === String(number));
 
     return month ? month.label : String(number);
+}
+
+
+/* The database stores month as "Jan".."Dec" (schema.monthColumn's
+   values), never as a number - toNumber() on those is useless. */
+function monthNumberOf(key) {
+
+    const month = MONTHS.find(entry => entry.key === key);
+
+    return month ? month.number : null;
 }
 
 
@@ -1798,104 +1586,76 @@ function pruneSelection(name) {
 }
 
 
+/*
+ * Distinct RTOs actually present in a fetch, code -> display name -
+ * the RTO filter's universe, read from the data itself rather than
+ * a maintained list, since Gujarat and Maharashtra between them
+ * cover 95 RTOs and a new one is just more rows, not a code change.
+ */
+function rtoOptionsFrom(rows, schema) {
+
+    const byCode = new Map();
+
+    rows.forEach(row => {
+
+        const code = row[schema.rtoCodeColumn];
+
+        if (code && !byCode.has(code)) {
+            byCode.set(code, row[schema.rtoNameColumn] || code);
+        }
+    });
+
+    return [...byCode.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+        .map(([code, name]) => ({ value: code, label: `${code} — ${name}` }));
+}
+
+
+/*
+ * One fetch of the active scope's whole table answers every filter
+ * list: years and RTOs are whatever is actually in the data, makers
+ * are its distinct entity column, classes are the fixed 76 (see
+ * schemaForTable()). loadRecords() below reads the same cached rows
+ * back out rather than fetching a second time.
+ */
 async function loadFilterOptions(signal) {
 
     const pending = state.pending;
-    const grain = grainFor(pending);
-
-    state.options.years = availableYears(grain).map(year => ({
-        value: year,
-        label: year
-    }));
-
-    pruneSelection("years");
-
-    const sources = mainSources(pending, grain);
-
-    if (sources.length === 0) {
-        state.options.makers = [];
-        state.options.classes = [];
-        return;
-    }
-
-    const schema = await describeSources(sources, grain);
+    const table = tableFor(pending.scope);
+    const schema = await describeSource(table);
 
     state.classColumns = schema.classColumns;
     state.options.classes = classOptionsFor(schema.classColumns);
 
     pruneSelection("classes");
 
-    state.options.makers = (await loadMakerOptions(sources, grain, signal))
-        .map(maker => ({ value: maker, label: maker }));
+    const rows = await getCachedTable(table, sourceColumns(schema), signal);
+
+    state.options.years = uniqueSorted(
+        rows.map(row => row[schema.yearColumn])
+    ).map(year => ({ value: year, label: year }));
+
+    pruneSelection("years");
+
+    state.options.rtos = schema.rtoCodeColumn
+        ? rtoOptionsFrom(rows, schema)
+        : [];
+
+    pruneSelection("rtos");
+
+    state.options.makers = uniqueSorted(
+        rows.map(row => row[schema.entityColumn])
+    ).map(maker => ({ value: maker, label: maker }));
 
     pruneSelection("makers");
 }
 
 
 /*
- * The maker list is read from whichever source is on screen. At
- * year grain that is the scope table itself, already cached; at
- * month grain it is the dedicated distinct-maker view, which is
- * a few hundred rows against the month view's tens of thousands.
- */
-const makerListCache = new Map();
-
-
-async function loadMakerOptions(sources, grain, signal) {
-
-    const key = grain + " " + sources.map(source => source.scope).join(",");
-
-    if (makerListCache.has(key)) {
-        return makerListCache.get(key);
-    }
-
-    const pending = (async () => {
-
-        if (grain === "month") {
-
-            const rows = await fetchAllRows(
-                "trend_makers",
-                ["Maker"],
-                {
-                    signal,
-                    filters: [{
-                        column: SCOPE_COLUMN,
-                        values: sources.map(source => source.scope)
-                    }]
-                }
-            );
-
-            return uniqueSorted(rows.map(row => row.Maker));
-        }
-
-        const lists = await Promise.all(sources.map(async source => {
-
-            const table = tableFor(source.scope);
-            const schema = await describeSource(table);
-
-            const rows = await getCachedTable(
-                table,
-                sourceColumns(schema),
-                signal
-            );
-
-            return rows.map(row => row[schema.entityColumn]);
-        }));
-
-        return uniqueSorted(lists.flat());
-    })();
-
-    makerListCache.set(key, pending);
-    pending.catch(() => makerListCache.delete(key));
-
-    return pending;
-}
-
-
-/*
- * Everything a year-grain read needs: the maker, the year, the
- * total and every class column. One select covers both the
- * option list and the figures, so the table is cached once.
+ * Everything a read needs: the maker, the year, the month, the
+ * RTO code/name where the scope has one, the total, every class
+ * column and when the row was uploaded. One select covers the
+ * option lists and the figures both, so the table is cached once.
  */
 function sourceColumns(schema) {
 
@@ -1905,6 +1665,22 @@ function sourceColumns(schema) {
         columns.unshift(schema.yearColumn);
     }
 
+    if (schema.monthColumn) {
+        columns.push(schema.monthColumn);
+    }
+
+    if (schema.rtoCodeColumn) {
+        columns.push(schema.rtoCodeColumn);
+    }
+
+    if (schema.rtoNameColumn) {
+        columns.push(schema.rtoNameColumn);
+    }
+
+    if (schema.uploadedAtColumn) {
+        columns.push(schema.uploadedAtColumn);
+    }
+
     return columns.concat(schema.classColumns);
 }
 
@@ -1912,9 +1688,10 @@ function sourceColumns(schema) {
 /* ============================================================
    17. FILTER NOTICE
 
-   Says the two things a reader cannot see for themselves: which
-   grain the figures came from, and which selections the data
-   could not honour.
+   Every scope reads one table, at month grain always - narrowing
+   the Month filter just changes which months get summed, rather
+   than switching to a different source the way it once did. The
+   only thing worth telling a reader here now is that narrowing.
    ============================================================ */
 
 function updateFilterNotice() {
@@ -1927,32 +1704,10 @@ function updateFilterNotice() {
     const grain = grainFor(pending);
     const messages = [];
 
-    if (rtoOverrideActive(pending)) {
-        messages.push(
-            "RTO is selected, so Scope is ignored: the figures cover " +
-            `${pending.rtos.join(", ")} only.`
-        );
-    }
-
-    const missing = rtosWithoutGrain(pending.rtos, grain);
-
-    if (missing.length > 0) {
-        messages.push(
-            `${missing.join(", ")} has no month tables, so it drops out ` +
-            "while a month is selected."
-        );
-    }
-
     if (grain === "month") {
         messages.push(
-            "Month grain: figures come from the monthly tables, which " +
-            "run to 2024 and close on 31 August 2026."
-        );
-    } else {
-        messages.push(
-            `Year grain: 2026 is as of ${DATA_AS_OF.label}. Selecting a ` +
-            "month switches to the monthly tables, whose 2026 totals are " +
-            "slightly higher."
+            `Showing ${pending.months.map(monthLabel).join(", ")} only - ` +
+            "tick \"All Months\" for whole-year totals."
         );
     }
 
@@ -1964,148 +1719,134 @@ function updateFilterNotice() {
 /* ============================================================
    18. LOADING RECORDS
 
-   A record is one row of one source, kept as it arrived:
+   A record is one row - or, at year grain, one year's worth of
+   rows summed together - kept as:
 
-       { rto, scope, year, month, maker, raw }
+       { rto, rtoName, year, month, maker, raw }
 
    The class figures stay inside `raw` and are summed on demand.
-   Copying 75 columns into a second object per row would triple
+   Copying 76 columns into a second object per row would triple
    the memory for no gain - every consumer wants a different
-   subset of them.
+   subset of them. `rto`/`rtoName` are null for all_india, which
+   carries no RTO column at all.
    ============================================================ */
 
-/*
- * Loads one year further back than asked for, so the detailed
- * table can show a year-on-year change on its first render
- * rather than after a second request.
- */
-function yearsToLoad(selected, grain) {
+function rowToRecord(row, schema, month) {
 
-    const available = availableYears(grain);
-
-    const wanted = selected.length > 0 ? selected : available;
-
-    const withPrior = new Set(wanted);
-
-    wanted.forEach(year => {
-        withPrior.add(String(Number(year) - 1));
-    });
-
-    return available.filter(year => withPrior.has(year));
-}
-
-
-async function loadRecords(sources, grain, years, months, signal) {
-
-    if (sources.length === 0) {
-        return { records: [], classColumns: [] };
-    }
-
-    const schema = await describeSources(sources, grain);
-
-    const records = grain === "month"
-        ? await loadMonthRecords(sources, years, months, signal)
-        : await loadYearRecords(sources, signal);
-
-    return { records, classColumns: schema.classColumns };
-}
-
-
-async function loadYearRecords(sources, signal) {
-
-    const perSource = await Promise.all(sources.map(async source => {
-
-        const table = tableFor(source.scope);
-        const schema = await describeSource(table);
-
-        const rows = await getCachedTable(
-            table,
-            sourceColumns(schema),
-            signal
-        );
-
-        return rows.map(row => ({
-            rto: source.rto,
-            scope: source.scope,
-            year: normalizeString(row[schema.yearColumn]),
-            month: null,
-            maker: normalizeString(row[schema.entityColumn]),
-            raw: row
-        }));
-    }));
-
-    return perSource.flat();
-}
-
-
-/*
- * One request for every scope at once - PostgREST takes a list -
- * narrowed by year and month in the database rather than by
- * reading the whole view and discarding most of it.
- */
-async function loadMonthRecords(sources, years, months, signal) {
-
-    const schema = await describeSource(MONTH_VIEW);
-
-    const columns = [
-        SCOPE_COLUMN,
-        schema.yearColumn,
-        MONTH_COLUMN,
-        schema.entityColumn,
-        schema.totalColumn,
-        ...schema.classColumns
-    ];
-
-    const filters = [
-        {
-            column: SCOPE_COLUMN,
-            values: sources.map(source => source.scope)
-        },
-        {
-            column: MONTH_COLUMN,
-            values: months.map(Number)
-        }
-    ];
-
-    if (years.length > 0) {
-        filters.push({ column: schema.yearColumn, values: years });
-    }
-
-    const rows = await fetchAllRowsFast(MONTH_VIEW, columns, {
-        signal,
-        filters
-    });
-
-    const rtoByScope = new Map(
-        sources.map(source => [source.scope, source.rto])
-    );
-
-    return rows.map(row => ({
-        rto: rtoByScope.get(row[SCOPE_COLUMN]) || null,
-        scope: row[SCOPE_COLUMN],
+    return {
+        rto: schema.rtoCodeColumn ? (row[schema.rtoCodeColumn] || null) : null,
+        rtoName: schema.rtoNameColumn ? (row[schema.rtoNameColumn] || null) : null,
         year: normalizeString(row[schema.yearColumn]),
-        month: toNumber(row[MONTH_COLUMN]),
+        month,
         maker: normalizeString(row[schema.entityColumn]),
         raw: row
-    }));
+    };
 }
 
 
 /*
- * Card 2 always reads all four RTO sources - whatever Scope says,
- * and whatever the RTO checklist says too. That checklist chooses
- * which RTO rows buildRtoTable() displays, not which are fetched:
- * an RTO's market share needs every RTO's total in hand to measure
- * against, the same reason buildMakerTable() reads every maker
- * regardless of the Maker checklist. Narrowing the fetch itself is
- * how a filtered-down RTO used to show 100% market share of
- * nothing but itself.
+ * One record per (year[, rto], maker), its class columns and Total
+ * summed across whichever months matched - every table is month
+ * grain now, so a year's total is arithmetic over its rows rather
+ * than something a separate table already held pre-summed. Grouped
+ * by RTO too, not just year+maker: two different RTOs' rows for the
+ * same maker and year must stay two rows, not collapse into one.
  */
-async function loadRtoRecords(grain, years, months, signal) {
+function aggregateToYear(rows, schema) {
 
-    const sources = rtoSources([], grain);
+    const numericColumns = [...schema.classColumns, schema.totalColumn];
+    const byKey = new Map();
 
-    return loadRecords(sources, grain, years, months, signal);
+    rows.forEach(row => {
+
+        const year = normalizeString(row[schema.yearColumn]);
+        const maker = normalizeString(row[schema.entityColumn]);
+        const rto = schema.rtoCodeColumn ? (row[schema.rtoCodeColumn] || null) : null;
+
+        const key = JSON.stringify([year, rto, normalizeKey(maker)]);
+
+        let record = byKey.get(key);
+
+        if (!record) {
+
+            record = {
+                rto,
+                rtoName: schema.rtoNameColumn ? (row[schema.rtoNameColumn] || null) : null,
+                year,
+                month: null,
+                maker,
+                raw: {}
+            };
+
+            byKey.set(key, record);
+        }
+
+        numericColumns.forEach(column => {
+            record.raw[column] = (record.raw[column] || 0) + toNumber(row[column]);
+        });
+    });
+
+    return [...byKey.values()];
+}
+
+
+/*
+ * The active scope's whole table, already cached by
+ * loadFilterOptions() having read it first - narrowed to the
+ * selected months and, at year grain, summed into one row per
+ * year/maker; at month grain, kept one row per month exactly as
+ * fetched.
+ */
+/*
+ * The most recent uploaded_at across a fetch - read from the raw
+ * rows, not from state.main.records: aggregateToYear() builds a
+ * fresh raw object per year/maker holding only the summed class
+ * figures, so uploaded_at would not survive into it.
+ */
+function latestUploadedAt(rows, schema) {
+
+    let latest = null;
+
+    if (!schema.uploadedAtColumn) {
+        return latest;
+    }
+
+    rows.forEach(row => {
+
+        const value = row[schema.uploadedAtColumn];
+
+        if (value && (!latest || value > latest)) {
+            latest = value;
+        }
+    });
+
+    return latest;
+}
+
+
+async function loadRecords(scope, grain, months, signal) {
+
+    const table = tableFor(scope);
+    const schema = await describeSource(table);
+    const rows = await getCachedTable(table, sourceColumns(schema), signal);
+
+    const monthSet = new Set(months);
+
+    const matched = rows.filter(row =>
+        monthSet.has(monthNumberOf(row[schema.monthColumn]))
+    );
+
+    const records = grain === "month"
+        ? matched.map(row =>
+            rowToRecord(row, schema, monthNumberOf(row[schema.monthColumn]))
+        )
+        : aggregateToYear(matched, schema);
+
+    return {
+        records,
+        classColumns: schema.classColumns,
+        refreshedAt: latestUploadedAt(rows, schema)
+    };
 }
 
 
@@ -2115,7 +1856,7 @@ async function loadRtoRecords(grain, years, months, signal) {
 
 function selectedYears() {
 
-    const available = availableYears(state.grain);
+    const available = state.options.years.map(option => option.value);
     const chosen = state.filters.years;
 
     const wanted = chosen.length > 0
@@ -2151,8 +1892,9 @@ function makerFilterSet() {
 
 /*
  * RTO codes need no normalizeKey the way maker names do - they are
- * short, fixed, already-consistent strings (rtoByCode() and
- * state.filters.rtos both use the exact same "GJ01" form).
+ * short, fixed, already-consistent strings straight from the
+ * database's own rto_code column, in the same "GJ01" form
+ * state.filters.rtos holds.
  */
 function rtoFilterSet() {
 
@@ -2286,16 +2028,19 @@ function buildMakerTable() {
 function buildRtoTable() {
 
     const years = new Set(selectedYears());
-    const columns = activeClassColumns(state.rto.classColumns);
+    const columns = activeClassColumns(state.main.classColumns);
     const allowed = makerFilterSet();
 
     /*
      * The RTO checklist chooses which RTO ROWS this card displays -
      * it plays the same role here that the Maker checklist plays in
      * Maker Comparison, choosing which of the thing being compared
-     * to show. state.rto.records now always holds all four RTOs
-     * (see loadRtoRecords()), so this filter is applied here, at
+     * to show. state.main.records holds every RTO the active scope
+     * has (see loadRecords()), so this filter is applied here, at
      * display time, rather than by never having fetched the rest.
+     * For all_india, every record.rto is null, so this card is
+     * naturally empty - see renderRtoCard()'s own guard for the
+     * message shown instead of a blank table.
      */
     const rtoAllowed = rtoFilterSet();
 
@@ -2303,7 +2048,7 @@ function buildRtoTable() {
     const byRto = new Map();
     const makerTotals = new Map();
 
-    state.rto.records.forEach(record => {
+    state.main.records.forEach(record => {
 
         if (!record.rto || !years.has(record.year)) {
             return;
@@ -2319,11 +2064,9 @@ function buildRtoTable() {
 
         if (!row) {
 
-            const rto = rtoByCode(record.rto);
-
             row = {
                 code: record.rto,
-                name: rto ? rto.name : record.rto,
+                name: record.rtoName || record.rto,
                 total: 0,
                 byMaker: new Map()
             };
@@ -2536,8 +2279,6 @@ function buildDetailTable() {
             continue;
         }
 
-        const rto = record.rto ? rtoByCode(record.rto) : null;
-
         for (const column of columns) {
 
             const value = toNumber(record.raw[column]);
@@ -2559,7 +2300,7 @@ function buildDetailTable() {
                 year: record.year,
                 month: record.month,
                 rtoCode: record.rto || "—",
-                rtoName: rto ? rto.name : "—",
+                rtoName: record.rtoName || "—",
                 maker: record.maker,
                 vehicleClass: column,
                 registration: value,
@@ -2634,7 +2375,6 @@ function measureYear(year) {
     }
 
     const columns = activeClassColumns(state.main.classColumns);
-    const rtoColumns = activeClassColumns(state.rto.classColumns);
     const allowed = makerFilterSet();
     const rtoAllowed = rtoFilterSet();
 
@@ -2653,7 +2393,7 @@ function measureYear(year) {
 
         /*
          * The total and the classes that carry a figure come out
-         * of the same pass - a second sweep over 75 columns per
+         * of the same pass - a second sweep over 76 columns per
          * row is the difference between a fast render and a
          * noticeable one on the All India table.
          */
@@ -2682,29 +2422,15 @@ function measureYear(year) {
             makers.add(normalizeKey(record.maker));
             present.forEach(column => classes.add(column));
         }
-    });
-
-    state.rto.records.forEach(record => {
-
-        if (!record.rto || record.year !== year) {
-            return;
-        }
 
         /*
-         * state.rto.records now always holds all four RTOs (see
-         * loadRtoRecords()), so this KPI - unlike buildRtoTable()'s
-         * own count of RTOs it displays - needs its own explicit
-         * check to keep respecting the RTO checklist.
+         * Same record set Card 2 reads (state.main, one table per
+         * scope now) - unlike buildRtoTable()'s own count of RTOs it
+         * displays, this KPI still needs its own explicit RTO-
+         * checklist check. record.rto is null for all_india, so this
+         * naturally counts zero RTOs there.
          */
-        if (rtoAllowed && !rtoAllowed.has(record.rto)) {
-            return;
-        }
-
-        if (allowed && !allowed.has(normalizeKey(record.maker))) {
-            return;
-        }
-
-        if (sumColumns(record.raw, rtoColumns) > 0) {
+        if (record.rto && value > 0 && (!rtoAllowed || rtoAllowed.has(record.rto))) {
             rtos.add(record.rto);
         }
     });
@@ -2758,7 +2484,7 @@ function buildKpis() {
 
     const hasPrevious =
         latest !== undefined &&
-        availableYears(state.grain).includes(previousYear);
+        state.options.years.some(option => option.value === previousYear);
 
     const previous = hasPrevious ? measure([previousYear]) : null;
     const latestOnly = hasPrevious ? measure([latest]) : null;
@@ -3448,7 +3174,7 @@ function renderRtoCard() {
 
     if (dom.rtoCardMeta) {
         dom.rtoCardMeta.textContent =
-            `${rows.length} of ${RTOS.length} RTOs`;
+            `${rows.length} of ${state.options.rtos.length} RTOs`;
     }
 
     if (dom.rtoCardNote) {
@@ -3891,6 +3617,28 @@ function closeViewAll() {
    31. HEADER + SHELL CHROME
    ============================================================ */
 
+/*
+ * "Refreshed" is when this scope's rows were last uploaded
+ * (uploaded_at, set by import_maker_month()/import_rto_month()),
+ * not a hand-maintained date - it moves on its own as new months
+ * get imported, instead of going stale the way a written-down date
+ * always eventually does.
+ */
+function formatRefreshedDate(iso) {
+
+    const date = new Date(iso);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = date.toLocaleString("en-US", { month: "short" });
+
+    return `${day}-${month}-${date.getFullYear()}`;
+}
+
+
 function renderHeader() {
 
     if (dom.dashboardTitle) {
@@ -3902,9 +3650,11 @@ function renderHeader() {
 
     if (dom.dataRefreshedOn) {
 
-        dom.dataRefreshedOn.textContent = state.grain === "month"
-            ? "31-Aug-2026 (monthly tables)"
-            : `${DATA_AS_OF.label} (yearly tables)`;
+        const formatted = state.dataRefreshedAt
+            ? formatRefreshedDate(state.dataRefreshedAt)
+            : null;
+
+        dom.dataRefreshedOn.textContent = formatted || "No data imported yet";
     }
 }
 
@@ -5315,18 +5065,18 @@ function cloneFilters(filters) {
 }
 
 
-function buildNotices(grain, sources) {
+function buildNotices(scope) {
 
-    const dropped = rtosWithoutGrain(state.filters.rtos, grain);
+    const noRtoData = !RTO_SCOPES.has(scope);
 
-    state.notices.rto = dropped.length > 0
-        ? `${dropped.join(", ")} has no monthly tables, so it is absent ` +
-          "while a month is selected."
+    state.notices.rto = noRtoData
+        ? "All India has no RTO breakdown - switch Scope to Gujarat or " +
+          "Maharashtra to see RTO Comparison."
         : "";
 
-    state.notices.detail = sources.some(source => source.rto === null)
-        ? "RTO Code and RTO Name read “—” because the selection is a " +
-          "scope rather than an RTO. Tick an RTO to fill them."
+    state.notices.detail = noRtoData
+        ? "RTO Code and RTO Name read “—” here - All India has no RTO " +
+          "breakdown."
         : "";
 }
 
@@ -5353,28 +5103,27 @@ async function applyFilters({ global = false } = {}) {
     markDirty();
     renderHeader();
 
-    const grain = state.grain;
-    const sources = mainSources(state.filters, grain);
-    const years = yearsToLoad(state.filters.years, grain);
     const months = selectedMonthNumbers();
 
-    buildNotices(grain, sources);
+    buildNotices(state.filters.scope);
 
     showLoading({ global });
 
     try {
 
-        const [main, rto] = await Promise.all([
-            loadRecords(sources, grain, years, months, controller.signal),
-            loadRtoRecords(grain, years, months, controller.signal)
-        ]);
+        const main = await loadRecords(
+            state.filters.scope,
+            state.grain,
+            months,
+            controller.signal
+        );
 
         if (requestId !== state.requestId) {
             return false;
         }
 
         state.main = main;
-        state.rto = rto;
+        state.dataRefreshedAt = main.refreshedAt;
 
         deriveAll();
         renderAll();
@@ -5390,7 +5139,6 @@ async function applyFilters({ global = false } = {}) {
         console.error("Dashboard data error:", error);
 
         state.main = { records: [], classColumns: [] };
-        state.rto = { records: [], classColumns: [] };
 
         deriveAll();
         renderAll();
