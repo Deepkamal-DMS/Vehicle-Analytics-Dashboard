@@ -1,9 +1,13 @@
 # Source data exports (large, not code)
 RTO/
 Vahan New/
+RTO Vehicle Maker/
 
-# Local Supabase scaffolding and generated migrations
-supabase/
+# Only the Supabase CLI's own local scratch state - everything else
+# under supabase/ (config.toml, migrations/, functions/) is real,
+# hand-written source for the Import feature and must stay tracked.
+supabase/.branches/
+supabase/.temp/
 
 # Node
 node_modules/

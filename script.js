@@ -77,6 +77,15 @@ const API_HEADERS = {
     Authorization: `Bearer ${API_KEY}`
 };
 
+/*
+ * The Import card's one door to the database. Nothing about this
+ * URL grants write access on its own - see supabase/functions/
+ * import-workbook/index.ts's header comment for why calling it is
+ * safe even before the dashboard has a login.
+ */
+const IMPORT_FUNCTION_URL =
+    "https://ytgoonducepylslknkag.supabase.co/functions/v1/import-workbook";
+
 
 /* ============================================================
    2. TABLE CONFIGURATION
@@ -606,7 +615,19 @@ const state = {
     searchTimer: null,
 
     /* Notes the loader raises for the cards to print. */
-    notices: { rto: "", detail: "" }
+    notices: { rto: "", detail: "" },
+
+    /*
+     * The Import card. `report` is the last preview this file was
+     * checked against - commit re-sends the same File object rather
+     * than trusting a copy of this, but the confirm button stays
+     * disabled unless a report with no blocking problems is here.
+     */
+    import: {
+        file: null,
+        report: null,
+        busy: false
+    }
 };
 
 
@@ -658,6 +679,13 @@ function cacheDOM() {
         "detailTable", "detailTableHead", "detailTableBody", "detailTableFoot",
         "detailCardMeta", "detailCardState", "detailCardNote",
         "detailSearch", "detailPageSize", "detailPageIndicator",
+
+        /* Import dialog */
+        "importOpenButton", "importOverlay", "importClose",
+        "importChecksToggle", "importChecksPanel",
+        "importForm", "importFileInput", "importFileLabel",
+        "importValidateButton", "importCommitButton",
+        "importState", "importReport", "importResult",
 
         /* Quick summary */
         "topMakersList",
@@ -2045,13 +2073,18 @@ async function loadMonthRecords(sources, years, months, signal) {
 
 
 /*
- * Card 2 always reads the four RTO sources, whatever Scope says -
- * an RTO breakdown of All India would need RTO tables that do not
- * exist, so the card answers the one question the data can.
+ * Card 2 always reads all four RTO sources - whatever Scope says,
+ * and whatever the RTO checklist says too. That checklist chooses
+ * which RTO rows buildRtoTable() displays, not which are fetched:
+ * an RTO's market share needs every RTO's total in hand to measure
+ * against, the same reason buildMakerTable() reads every maker
+ * regardless of the Maker checklist. Narrowing the fetch itself is
+ * how a filtered-down RTO used to show 100% market share of
+ * nothing but itself.
  */
-async function loadRtoRecords(filters, grain, years, months, signal) {
+async function loadRtoRecords(grain, years, months, signal) {
 
-    const sources = rtoSources(filters.rtos, grain);
+    const sources = rtoSources([], grain);
 
     return loadRecords(sources, grain, years, months, signal);
 }
@@ -2097,6 +2130,21 @@ function makerFilterSet() {
 }
 
 
+/*
+ * RTO codes need no normalizeKey the way maker names do - they are
+ * short, fixed, already-consistent strings (rtoByCode() and
+ * state.filters.rtos both use the exact same "GJ01" form).
+ */
+function rtoFilterSet() {
+
+    const chosen = state.filters.rtos;
+
+    return chosen.length === 0
+        ? null
+        : new Set(chosen);
+}
+
+
 function activeClassColumns(classColumns) {
 
     return resolveClassColumns(state.filters.classes, classColumns);
@@ -2126,17 +2174,33 @@ function buildMakerTable() {
 
     const byMaker = new Map();
 
+    /*
+     * The industry total - every record in the current Scope / Year
+     * / RTO / Class selection, regardless of which makers the Maker
+     * checklist has chosen to display. Share is measured against
+     * this, not against the rows on screen: narrowing which makers
+     * you're looking at must not inflate their share of a market
+     * that hasn't actually shrunk. This is the same principle the
+     * KPI strip's own Market Share figure already follows - see
+     * measureYear()'s "industry" - card 1 just wasn't following it.
+     */
+    const industryByYear = {};
+    let industryTotal = 0;
+
     state.main.records.forEach(record => {
 
         if (!yearSet.has(record.year)) {
             return;
         }
 
+        const value = sumColumns(record.raw, columns);
+
+        industryByYear[record.year] = (industryByYear[record.year] || 0) + value;
+        industryTotal += value;
+
         if (allowed && !allowed.has(normalizeKey(record.maker))) {
             return;
         }
-
-        const value = sumColumns(record.raw, columns);
 
         let row = byMaker.get(record.maker);
 
@@ -2158,7 +2222,7 @@ function buildMakerTable() {
 
     rows.forEach(row => {
 
-        row.share = grandTotal > 0 ? (row.total / grandTotal) * 100 : null;
+        row.share = industryTotal > 0 ? (row.total / industryTotal) * 100 : null;
 
         row.growth = years.length > 1
             ? growthBetween(row.byYear[first] || 0, row.byYear[last] || 0)
@@ -2169,8 +2233,16 @@ function buildMakerTable() {
         maker: `Total (${formatIndianNumber(rows.length)})`,
         byYear: {},
         total: grandTotal,
-        share: grandTotal > 0 ? 100 : null,
-        growth: null
+        /*
+         * 100% only when every maker is on screen (no Maker filter).
+         * Filtered down to a handful of makers, this is genuinely
+         * their combined share of the whole market - not a
+         * restatement of the arithmetic, so it is no longer
+         * suppressed the way it used to be (see makerColumns()).
+         */
+        share: industryTotal > 0 ? (grandTotal / industryTotal) * 100 : null,
+        growth: null,
+        isTotals: true
     };
 
     years.forEach(year => {
@@ -2184,7 +2256,7 @@ function buildMakerTable() {
         totals.growth = growthBetween(totals.byYear[first], totals.byYear[last]);
     }
 
-    state.makerTable = { rows, years, totals, first, last };
+    state.makerTable = { rows, years, totals, first, last, industryByYear, industryTotal };
 }
 
 
@@ -2198,6 +2270,16 @@ function buildRtoTable() {
     const columns = activeClassColumns(state.rto.classColumns);
     const allowed = makerFilterSet();
 
+    /*
+     * The RTO checklist chooses which RTO ROWS this card displays -
+     * it plays the same role here that the Maker checklist plays in
+     * Maker Comparison, choosing which of the thing being compared
+     * to show. state.rto.records now always holds all four RTOs
+     * (see loadRtoRecords()), so this filter is applied here, at
+     * display time, rather than by never having fetched the rest.
+     */
+    const rtoAllowed = rtoFilterSet();
+
     /* code -> { code, name, total, byMaker: Map } */
     const byRto = new Map();
     const makerTotals = new Map();
@@ -2205,10 +2287,6 @@ function buildRtoTable() {
     state.rto.records.forEach(record => {
 
         if (!record.rto || !years.has(record.year)) {
-            return;
-        }
-
-        if (allowed && !allowed.has(normalizeKey(record.maker))) {
             return;
         }
 
@@ -2234,7 +2312,23 @@ function buildRtoTable() {
             byRto.set(record.rto, row);
         }
 
+        /*
+         * Every maker at this RTO matching Scope / Year / Class,
+         * regardless of the Maker checklist AND regardless of the
+         * RTO checklist - the denominator for both this row's own
+         * share of the whole market and for each maker cell's share
+         * of this RTO. Neither filter should be able to shrink it
+         * (same principle as buildMakerTable()'s industry total).
+         */
         row.total += value;
+
+        if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            return;
+        }
+
+        if (rtoAllowed && !rtoAllowed.has(record.rto)) {
+            return;
+        }
 
         row.byMaker.set(
             record.maker,
@@ -2252,11 +2346,25 @@ function buildRtoTable() {
         .slice(0, CONFIG.RTO_MAKER_COLUMNS)
         .map(entry => entry[0]);
 
-    const rows = [...byRto.values()].sort((a, b) => b.total - a.total);
+    /*
+     * marketTotal is every RTO the fetch holds, whatever the RTO
+     * checklist says - the true whole-market denominator. displayed
+     * is just the RTOs the checklist chose to show; its own total is
+     * what the footer's "Total Registration" sums (what's on
+     * screen), kept separate from marketTotal (what a share is
+     * measured against) exactly as buildMakerTable() keeps its
+     * displayed grandTotal separate from its industryTotal.
+     */
+    const marketTotal = [...byRto.values()]
+        .reduce((sum, row) => sum + row.total, 0);
 
-    const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
+    const displayed = [...byRto.values()]
+        .filter(row => !rtoAllowed || rtoAllowed.has(row.code))
+        .sort((a, b) => b.total - a.total);
 
-    rows.forEach(row => {
+    const grandTotal = displayed.reduce((sum, row) => sum + row.total, 0);
+
+    displayed.forEach(row => {
 
         row.values = {};
 
@@ -2270,27 +2378,35 @@ function buildRtoTable() {
             named += value;
         });
 
+        /*
+         * row.total is the whole market at this RTO; named is only
+         * the shown top-N maker columns, still narrowed by the
+         * Maker checklist. Others is everyone else - minor makers
+         * and any the checklist excluded alike - never negative,
+         * never hidden by a filter that only changes which columns
+         * are broken out.
+         */
         row.others = row.total - named;
-        row.share = grandTotal > 0 ? (row.total / grandTotal) * 100 : null;
+        row.share = marketTotal > 0 ? (row.total / marketTotal) * 100 : null;
     });
 
     const totals = {
         code: "TOTAL",
-        name: `${rows.length} RTO${rows.length === 1 ? "" : "s"}`,
+        name: `${displayed.length} RTO${displayed.length === 1 ? "" : "s"}`,
         values: {},
-        others: rows.reduce((sum, row) => sum + row.others, 0),
+        others: displayed.reduce((sum, row) => sum + row.others, 0),
         total: grandTotal,
-        share: grandTotal > 0 ? 100 : null
+        share: marketTotal > 0 ? (grandTotal / marketTotal) * 100 : null
     };
 
     makerColumns.forEach(maker => {
-        totals.values[maker] = rows.reduce(
+        totals.values[maker] = displayed.reduce(
             (sum, row) => sum + row.values[maker],
             0
         );
     });
 
-    state.rtoTable = { rows, makerColumns, totals };
+    state.rtoTable = { rows: displayed, makerColumns, totals };
 }
 
 
@@ -2332,6 +2448,27 @@ function buildDetailTable() {
     const yearSet = new Set(years);
     const columns = activeClassColumns(state.main.classColumns);
     const allowed = makerFilterSet();
+
+    /*
+     * Every record matching Year/Scope/RTO/Class, regardless of the
+     * Maker checklist - the same industry-total principle already
+     * applied to Maker Comparison and RTO Comparison. Every Market
+     * Share % in this card is measured against this, including the
+     * "TOTAL (Selected Data)" footer row (see detailTotalsRow()) -
+     * one consistent meaning for the column, top to bottom: share
+     * of the true whole market, never of just what a filter or a
+     * search happens to be showing right now.
+     */
+    let industryTotal = 0;
+
+    state.main.records.forEach(record => {
+
+        if (!yearSet.has(record.year)) {
+            return;
+        }
+
+        industryTotal += sumColumns(record.raw, columns);
+    });
 
     /*
      * The year before each selected one. A year can be both a row
@@ -2437,7 +2574,7 @@ function buildDetailTable() {
     );
 
     rows.forEach(row => {
-        row.share = grandTotal > 0 ? (row.registration / grandTotal) * 100 : null;
+        row.share = industryTotal > 0 ? (row.registration / industryTotal) * 100 : null;
         row.rank = ranks.get(row.maker) || null;
     });
 
@@ -2446,7 +2583,8 @@ function buildDetailTable() {
         truncated,
         totals: {
             registration: grandTotal,
-            share: grandTotal > 0 ? 100 : null,
+            industryTotal,
+            share: industryTotal > 0 ? (grandTotal / industryTotal) * 100 : null,
             rows: rows.length
         }
     };
@@ -2479,6 +2617,7 @@ function measureYear(year) {
     const columns = activeClassColumns(state.main.classColumns);
     const rtoColumns = activeClassColumns(state.rto.classColumns);
     const allowed = makerFilterSet();
+    const rtoAllowed = rtoFilterSet();
 
     const makers = new Set();
     const classes = new Set();
@@ -2529,6 +2668,16 @@ function measureYear(year) {
     state.rto.records.forEach(record => {
 
         if (!record.rto || record.year !== year) {
+            return;
+        }
+
+        /*
+         * state.rto.records now always holds all four RTOs (see
+         * loadRtoRecords()), so this KPI - unlike buildRtoTable()'s
+         * own count of RTOs it displays - needs its own explicit
+         * check to keep respecting the RTO checklist.
+         */
+        if (rtoAllowed && !rtoAllowed.has(record.rto)) {
             return;
         }
 
@@ -2724,20 +2873,39 @@ function deriveAll() {
    26. TABLE RENDERING
 
    All three cards share one painter. A column descriptor
-   carries three functions:
+   carries three functions, and may carry a fourth:
 
        raw(row)   the value to sort and to write into a sheet
        text(row)  what the cell shows
        cls(row)   an optional class, for growth arrows and zeros
+       sub(row)   an optional second reading, set to the right of
+                  text(row) inside the same cell and in a lighter
+                  ink - the share that one cell holds
 
    The totals row is an ordinary row shaped to answer the same
-   three, so the head, the body, the foot and the exports can
+   four, so the head, the body, the foot and the exports can
    never drift apart.
    ============================================================ */
 
 function numberText(value) {
 
     return formatIndianNumber(value);
+}
+
+
+/*
+ * The share one cell holds of its own market, for the lighter
+ * figure printed beside the count. Zero is left without one:
+ * "0" next to "0.00%" says nothing twice, and the empty cells
+ * read better quiet.
+ */
+function cellShareText(value, denominator) {
+
+    if (toNumber(value) === 0 || toNumber(denominator) <= 0) {
+        return "";
+    }
+
+    return formatShare(value, denominator);
 }
 
 
@@ -2833,6 +3001,49 @@ function headClassFor(column) {
 }
 
 
+/*
+ * A cell is plain text unless the column offers a share, in
+ * which case it becomes two readings side by side: the count
+ * against the left edge of the cell, the share against the
+ * right. Both are written as text nodes, never as markup.
+ *
+ * The flex layout lives on an inner wrapper, not the td itself -
+ * a table cell with its own display overridden to flex stops
+ * taking part in the table's column layout, which is what left
+ * every share cell stacked under its neighbour instead of lined
+ * up with its header.
+ */
+function fillCell(cell, column, row) {
+
+    const text = column.text(row);
+    const share = column.sub ? column.sub(row) : "";
+
+    if (!share) {
+
+        cell.textContent = text;
+        return;
+    }
+
+    cell.classList.add("has-share");
+
+    const wrap = document.createElement("span");
+    wrap.className = "cell-share-wrap";
+
+    const value = document.createElement("span");
+    value.className = "cell-value";
+    value.textContent = text;
+
+    const note = document.createElement("span");
+    note.className = "cell-share";
+    note.textContent = share;
+
+    wrap.appendChild(value);
+    wrap.appendChild(note);
+    cell.appendChild(wrap);
+    cell.title = `${text}  ·  ${share} of ${column.shareOf || "the total"}`;
+}
+
+
 function cellClassFor(column, row) {
 
     return [
@@ -2860,7 +3071,8 @@ function paintRows(bodyEl, columns, rows) {
             const td = document.createElement("td");
 
             td.className = cellClassFor(column, row);
-            td.textContent = column.text(row);
+
+            fillCell(td, column, row);
 
             if (!column.numeric) {
                 td.title = td.textContent;
@@ -2891,7 +3103,8 @@ function paintFoot(footEl, columns, totals) {
         const cell = document.createElement("td");
 
         cell.className = cellClassFor(column, totals);
-        cell.textContent = column.text(totals);
+
+        fillCell(cell, column, totals);
 
         tr.appendChild(cell);
     });
@@ -3021,7 +3234,7 @@ function paintPagination(card, total, view) {
 
 function makerColumns() {
 
-    const { years, first, last } = state.makerTable;
+    const { years, first, last, industryByYear } = state.makerTable;
 
     const columns = [
         {
@@ -3034,14 +3247,31 @@ function makerColumns() {
         }
     ];
 
+    /*
+     * Each year cell carries the maker's share of that year's whole
+     * market - value over industryByYear, every maker matching
+     * Scope/Year/RTO/Class for that year, whether or not the Maker
+     * checklist has chosen to display it. Selecting fewer makers to
+     * look at must not inflate the shares of the ones still shown,
+     * so this denominator does not move when only the Maker filter
+     * changes - see buildMakerTable(). The totals row gets a share
+     * too now: with the Maker filter narrowing which rows appear,
+     * it is no longer always 100% - it is what the displayed makers
+     * cover of the whole market, which is worth printing.
+     */
     years.forEach(year => {
         columns.push({
             key: `year:${year}`,
             label: year,
             numeric: true,
             sortable: true,
+            shareOf: String(year),
             raw: row => row.byYear[year] || 0,
             text: row => numberText(row.byYear[year] || 0),
+            sub: row => cellShareText(
+                row.byYear[year] || 0,
+                industryByYear ? industryByYear[year] : 0
+            ),
             cls: row => (row.byYear[year] ? "" : "is-zero")
         });
     });
@@ -3142,13 +3372,20 @@ function rtoColumns() {
         }
     ];
 
+    /*
+     * Each maker cell carries that maker's share of the RTO on
+     * the row - value over the row's own total, so a row of
+     * shares, Others included, sums to 100%.
+     */
     makers.forEach(maker => {
         columns.push({
             key: `maker:${maker}`,
             label: maker,
             numeric: true,
+            shareOf: "this RTO",
             raw: row => row.values[maker] || 0,
             text: row => numberText(row.values[maker] || 0),
+            sub: row => cellShareText(row.values[maker] || 0, row.total),
             cls: row => (row.values[maker] ? "" : "is-zero")
         });
     });
@@ -3158,8 +3395,10 @@ function rtoColumns() {
             key: "__others",
             label: "Others",
             numeric: true,
+            shareOf: "this RTO",
             raw: row => row.others,
             text: row => numberText(row.others),
+            sub: row => cellShareText(row.others, row.total),
             cls: row => (row.others ? "" : "is-zero")
         },
         {
@@ -3351,11 +3590,15 @@ function detailTotalsRow(rows) {
         vehicleClass: `${formatIndianNumber(rows.length)} rows`,
         registration,
         /*
-         * Against the unsearched total, so searching for one maker
-         * shows what it holds rather than 100%.
+         * Against the true whole-market total, same as every row
+         * above it - not against totals.registration (the maker
+         * filter's own sum), which used to make this read a flat,
+         * meaningless 100% no matter how narrow the Maker filter
+         * was. Typing a search still narrows the numerator exactly
+         * as before; only the denominator changed.
          */
-        share: state.detailTable.totals.registration > 0
-            ? (registration / state.detailTable.totals.registration) * 100
+        share: state.detailTable.totals.industryTotal > 0
+            ? (registration / state.detailTable.totals.industryTotal) * 100
             : null,
         yoy: null,
         rank: null
@@ -5104,7 +5347,7 @@ async function applyFilters({ global = false } = {}) {
 
         const [main, rto] = await Promise.all([
             loadRecords(sources, grain, years, months, controller.signal),
-            loadRtoRecords(state.filters, grain, years, months, controller.signal)
+            loadRtoRecords(grain, years, months, controller.signal)
         ]);
 
         if (requestId !== state.requestId) {
@@ -5418,7 +5661,440 @@ function setupRetry() {
 
 
 /* ============================================================
-   38. INITIALIZATION
+   38. IMPORT (UPLOAD)
+
+   The one card in this file that writes rather than reads. The
+   two-step shape mirrors the Edge Function on the other end:
+   "Check File" only ever asks it to parse and validate a
+   workbook - nothing is written yet. "Confirm & Import" re-sends
+   the exact same File object a second time, and only then can
+   anything reach the database. See supabase/functions/
+   import-workbook/index.ts for the server side of this contract,
+   and tools/IMPORT-CHECKS.md for what every check does.
+   ============================================================ */
+
+function importFormData(mode, file) {
+
+    const form = new FormData();
+
+    form.append("mode", mode);
+    form.append("file", file, file.name);
+
+    return form;
+}
+
+
+async function callImportFunction(mode, file) {
+
+    let response;
+
+    try {
+
+        response = await fetch(IMPORT_FUNCTION_URL, {
+            method: "POST",
+            body: importFormData(mode, file)
+        });
+
+    } catch (error) {
+        throw new Error(`Could not reach the import service: ${error.message}`);
+    }
+
+    let body;
+
+    try {
+        body = await response.json();
+    } catch (error) {
+        throw new Error(
+            `Import service sent back something unreadable (HTTP ${response.status}).`
+        );
+    }
+
+    if (!response.ok || body.ok === false) {
+
+        const failure = new Error(body.error || `Import failed (HTTP ${response.status}).`);
+        failure.report = body.report || null;
+
+        throw failure;
+    }
+
+    return body;
+}
+
+
+/* Mirrors setCardState()'s table-state classes and markup exactly,
+   so the Import card's status line looks like every other card's. */
+function setImportState(mode, message) {
+
+    if (!dom.importState) {
+        return;
+    }
+
+    if (mode === "data") {
+        dom.importState.hidden = true;
+        dom.importState.className = "table-state";
+        return;
+    }
+
+    dom.importState.hidden = false;
+    dom.importState.className = `table-state table-state--${mode}`;
+    dom.importState.innerHTML = "";
+
+    if (mode === "loading") {
+
+        const spinner = document.createElement("span");
+
+        spinner.className = "loading-spinner loading-spinner--small";
+        spinner.setAttribute("aria-hidden", "true");
+
+        dom.importState.appendChild(spinner);
+    }
+
+    const text = document.createElement("span");
+    text.textContent = message || "";
+    dom.importState.appendChild(text);
+}
+
+
+function resetImportOutcome() {
+
+    if (dom.importReport) {
+        dom.importReport.hidden = true;
+        dom.importReport.innerHTML = "";
+    }
+
+    if (dom.importResult) {
+        dom.importResult.hidden = true;
+        dom.importResult.innerHTML = "";
+    }
+
+    if (dom.importCommitButton) {
+        dom.importCommitButton.hidden = true;
+    }
+
+    state.import.report = null;
+}
+
+
+function renderImportReport(report) {
+
+    if (!dom.importReport) {
+        return;
+    }
+
+    const coverage = report.partialMonth
+        ? ` &middot; partial month, through day ${report.coverageEndDay}`
+        : "";
+
+    const parts = [
+        `<div class="import-report__head">
+            <strong>${escapeHtml(report.fileName)}</strong>
+            <span>${escapeHtml(report.month)} ${report.year}${coverage}</span>
+        </div>`,
+        `<ul class="import-report__stats">
+            <li><strong>${formatIndianNumber(report.rowCount)}</strong> makers</li>
+            <li><strong>${formatIndianNumber(report.units)}</strong> total registrations</li>
+            <li>${formatIndianNumber(report.blankRowsSkipped)} blank row(s) skipped</li>
+        </ul>`
+    ];
+
+    if (report.structuralProblems.length > 0) {
+
+        parts.push(
+            `<div class="import-report__problems">
+                <strong>${report.structuralProblems.length} problem(s) - ` +
+                    `this file cannot be imported:</strong>
+                <ul>${report.structuralProblems.map(
+                    problem => `<li>${escapeHtml(problem)}</li>`
+                ).join("")}</ul>
+            </div>`
+        );
+
+    } else {
+        parts.push(`<p class="import-report__ok">No blocking problems found.</p>`);
+    }
+
+    if (report.sumMismatches.shown.length > 0) {
+
+        const rows = report.sumMismatches.shown.map(mismatch =>
+            `<li>${escapeHtml(mismatch.maker)}: Total is ` +
+            `${formatIndianNumber(mismatch.total)}, class columns sum to ` +
+            `${formatIndianNumber(mismatch.summed)}</li>`
+        ).join("");
+
+        const omitted = report.sumMismatches.omitted > 0
+            ? `<li>&hellip; and ${formatIndianNumber(report.sumMismatches.omitted)} more</li>`
+            : "";
+
+        parts.push(
+            `<div class="import-report__warnings">
+                <strong>Total doesn't match its own class columns for these ` +
+                    `makers - not blocked, but worth a look:</strong>
+                <ul>${rows}${omitted}</ul>
+            </div>`
+        );
+    }
+
+    dom.importReport.innerHTML = parts.join("");
+    dom.importReport.hidden = false;
+}
+
+
+function renderImportResult(write) {
+
+    if (!dom.importResult) {
+        return;
+    }
+
+    dom.importResult.innerHTML = `
+        <div class="import-result__ok">
+            <strong>Imported.</strong>
+            ${escapeHtml(write.table || "")} now holds
+            ${formatIndianNumber(write.inserted || 0)} maker(s) for ${write.year},
+            ${formatIndianNumber(write.units || 0)} total registrations
+            (replacing ${formatIndianNumber(write.deleted || 0)} previous row(s) for that year).
+        </div>
+    `;
+
+    dom.importResult.hidden = false;
+}
+
+
+function importErrorMessage(error) {
+    return error && error.message ? error.message : "Something went wrong.";
+}
+
+
+async function runImportCheck() {
+
+    const file = state.import.file;
+
+    if (!file || state.import.busy) {
+        return;
+    }
+
+    state.import.busy = true;
+    resetImportOutcome();
+    setImportState("loading", `Checking ${file.name}...`);
+
+    if (dom.importValidateButton) {
+        dom.importValidateButton.disabled = true;
+    }
+
+    try {
+
+        const body = await callImportFunction("preview", file);
+
+        setImportState("data");
+        renderImportReport(body.report);
+        state.import.report = body.report;
+
+        if (dom.importCommitButton) {
+            dom.importCommitButton.hidden = body.report.structuralProblems.length > 0;
+        }
+
+    } catch (error) {
+
+        setImportState("error", importErrorMessage(error));
+
+        if (error.report) {
+            renderImportReport(error.report);
+        }
+
+    } finally {
+
+        state.import.busy = false;
+
+        if (dom.importValidateButton) {
+            dom.importValidateButton.disabled = false;
+        }
+    }
+}
+
+
+async function runImportCommit() {
+
+    const file = state.import.file;
+    const report = state.import.report;
+
+    if (!file || state.import.busy || !report) {
+        return;
+    }
+
+    const monthYear = `${report.month} ${report.year}`;
+
+    if (!window.confirm(
+        `This replaces every existing row for ${monthYear} in ` +
+        `Maker_Class_Wise_${report.month}. Continue?`
+    )) {
+        return;
+    }
+
+    state.import.busy = true;
+    setImportState("loading", `Importing ${monthYear}...`);
+
+    if (dom.importCommitButton) {
+        dom.importCommitButton.disabled = true;
+    }
+
+    try {
+
+        const body = await callImportFunction("commit", file);
+
+        setImportState("data");
+        renderImportResult(body.write || {});
+
+        /* Done - clear the form so a stale file can't be re-confirmed. */
+        state.import.file = null;
+        state.import.report = null;
+
+        if (dom.importFileInput) {
+            dom.importFileInput.value = "";
+        }
+
+        if (dom.importFileLabel) {
+            dom.importFileLabel.textContent = "Choose a workbook, or drop it here";
+        }
+
+        if (dom.importValidateButton) {
+            dom.importValidateButton.disabled = true;
+        }
+
+        if (dom.importCommitButton) {
+            dom.importCommitButton.hidden = true;
+        }
+
+    } catch (error) {
+
+        setImportState("error", importErrorMessage(error));
+
+    } finally {
+
+        state.import.busy = false;
+
+        if (dom.importCommitButton) {
+            dom.importCommitButton.disabled = false;
+        }
+    }
+}
+
+
+function handleImportFileChosen(file) {
+
+    state.import.file = file || null;
+
+    resetImportOutcome();
+    setImportState("data");
+
+    if (dom.importFileLabel) {
+        dom.importFileLabel.textContent = file
+            ? file.name
+            : "Choose a workbook, or drop it here";
+    }
+
+    if (dom.importValidateButton) {
+        dom.importValidateButton.disabled = !file;
+    }
+}
+
+
+/*
+ * The dialog itself: identical open/hide mechanics to
+ * openViewAll()/closeViewAll(), a separate pair rather than a
+ * shared one because closing never needs to clear the file/report
+ * the way switching between view-all lists needs to swap content -
+ * reopening picks up exactly where the last check or import left
+ * off.
+ */
+function openImportModal() {
+
+    if (dom.importOverlay) {
+        dom.importOverlay.hidden = false;
+    }
+}
+
+
+function closeImportModal() {
+
+    if (dom.importOverlay) {
+        dom.importOverlay.hidden = true;
+    }
+}
+
+
+function setupImportListeners() {
+
+    if (dom.importOpenButton) {
+        dom.importOpenButton.addEventListener("click", openImportModal);
+    }
+
+    if (dom.importClose) {
+        dom.importClose.addEventListener("click", closeImportModal);
+    }
+
+    if (dom.importOverlay) {
+
+        dom.importOverlay.addEventListener("click", event => {
+
+            if (event.target === dom.importOverlay) {
+                closeImportModal();
+            }
+        });
+    }
+
+    document.addEventListener("keydown", event => {
+
+        if (event.key === "Escape" && dom.importOverlay && !dom.importOverlay.hidden) {
+            closeImportModal();
+        }
+    });
+
+    if (dom.importChecksToggle && dom.importChecksPanel) {
+
+        dom.importChecksToggle.addEventListener("click", () => {
+
+            const open = dom.importChecksPanel.hidden;
+
+            dom.importChecksPanel.hidden = !open;
+            dom.importChecksToggle.setAttribute("aria-expanded", String(open));
+        });
+    }
+
+    if (dom.importFileInput) {
+
+        dom.importFileInput.addEventListener("change", () => {
+            handleImportFileChosen(dom.importFileInput.files[0] || null);
+        });
+    }
+
+    if (dom.importForm) {
+
+        /* The whole card is a drop target, not just the dropzone label. */
+        ["dragover", "dragleave", "drop"].forEach(name => {
+            dom.importForm.addEventListener(name, event => event.preventDefault());
+        });
+
+        dom.importForm.addEventListener("drop", event => {
+
+            const file = event.dataTransfer?.files?.[0];
+
+            if (file) {
+                handleImportFileChosen(file);
+            }
+        });
+    }
+
+    if (dom.importValidateButton) {
+        dom.importValidateButton.addEventListener("click", runImportCheck);
+    }
+
+    if (dom.importCommitButton) {
+        dom.importCommitButton.addEventListener("click", runImportCommit);
+    }
+}
+
+
+/* ============================================================
+   39. INITIALIZATION
    ============================================================ */
 
 async function initializeDashboard({ force = false } = {}) {
@@ -5452,6 +6128,7 @@ async function initializeDashboard({ force = false } = {}) {
             setupTableListeners();
             setupExportListeners();
             setupSummaryListeners();
+            setupImportListeners();
             state.wired = true;
         }
 
@@ -5477,7 +6154,7 @@ async function initializeDashboard({ force = false } = {}) {
 
 
 /* ============================================================
-   39. GLOBAL API
+   40. GLOBAL API
    ============================================================ */
 
 window.vehicleDashboard = {
@@ -5490,7 +6167,7 @@ window.vehicleDashboard = {
 
 
 /* ============================================================
-   40. DOM READY
+   41. DOM READY
    ============================================================ */
 
 if (document.readyState === "loading") {

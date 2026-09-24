@@ -1,0 +1,13 @@
+# Only what the Import feature needs - this repo has no other
+# Supabase-CLI-managed local dev workflow (local/ + docker-compose.yml
+# is its own, older stand-in, unrelated to this file).
+
+project_id = "vehicle-analytics-dashboard"
+
+[functions.import-workbook]
+# No login exists in the dashboard yet (tracked as a follow-up - see
+# index.js's requireAuth()), so there is no Supabase Auth JWT for a
+# browser call to present. Once login is added, remove this line -
+# the deployed function will then require a valid JWT before Deno
+# even runs index.js, as a second layer in front of requireAuth().
+verify_jwt = false

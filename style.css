@@ -1261,6 +1261,47 @@ svg {
 }
 
 
+/* ---- Count and its share, in one cell ----
+
+   A year cell in card 1 and a maker cell in card 2 each read
+   twice: the count against the left of the cell, the share it
+   holds of that column's year or of that row's RTO against the
+   right of the cell in a lighter ink. Both halves inherit
+   the cell's colour, so a zero stays grey, the totals row stays
+   navy, and nothing needs a second palette.
+
+   The flex lives on an inner wrapper span, never on the td: a
+   table cell whose own display is overridden to flex drops out
+   of the table's column layout, which is what left every share
+   cell stacked under its neighbour instead of lined up with its
+   header. */
+
+.data-table td.has-share {
+    text-align: left;
+}
+
+.data-table .cell-share-wrap {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    width: 100%;
+}
+
+.data-table .cell-value {
+    flex: 0 0 auto;
+}
+
+.data-table .cell-share {
+    flex: 0 0 auto;
+
+    color: inherit;
+    opacity: 0.58;
+    font-size: 10.5px;
+    font-weight: 400;
+}
+
+
 /* ---- Sortable headings ---- */
 
 .table-sort-button {
@@ -1600,6 +1641,13 @@ svg {
     overflow: hidden;
 }
 
+/* The Import dialog: a form and a checks table need more room than
+   a summary list does. */
+.modal--wide {
+    width: min(640px, 100%);
+    max-height: min(680px, 88vh);
+}
+
 .modal__head {
     display: flex;
     align-items: center;
@@ -1642,9 +1690,284 @@ svg {
     overflow-y: auto;
 }
 
+/* The Import dialog's own sections (intro, checks table, form,
+   report) each carry their own edge-to-edge padding and dividers,
+   the way they did as a table-card's direct children - the body's
+   usual padding would just double up on top of that. */
+.modal__body--flush {
+    padding: 0;
+}
+
 
 /* =========================================================
-   14. RESPONSIVE
+   14. IMPORT DIALOG
+
+   Lives inside the modal shell (section 13) now, not its own
+   table-card - .modal--wide and .modal__body--flush below are
+   the only two things that shell needed added for it.
+   ========================================================= */
+
+.import-card__intro {
+    margin: 0;
+    padding: 10px 13px;
+
+    border-bottom: 1px solid var(--border-soft);
+
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.import-card__intro code {
+    padding: 1px 5px;
+
+    background: var(--surface-muted);
+    border-radius: 4px;
+
+    font-size: 11px;
+}
+
+.import-card__checks-link {
+    padding: 0;
+
+    background: none;
+    border: 0;
+
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.import-checks {
+    padding: 10px 13px;
+    border-bottom: 1px solid var(--border-soft);
+
+    background: var(--surface-soft);
+
+    overflow-x: auto;
+}
+
+.import-checks__table {
+    width: 100%;
+    border-collapse: collapse;
+
+    font-size: 11.5px;
+}
+
+.import-checks__table th,
+.import-checks__table td {
+    padding: 6px 9px;
+
+    border-bottom: 1px solid var(--border-soft);
+
+    text-align: left;
+    vertical-align: top;
+}
+
+.import-checks__table th {
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.import-checks__table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+
+/* ---- Upload form ---- */
+
+.import-form {
+    padding: 13px;
+}
+
+.import-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+
+    padding: 22px 14px;
+
+    background: var(--surface-soft);
+    border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-md);
+
+    color: var(--text-muted);
+    font-size: 12.5px;
+    text-align: center;
+    cursor: pointer;
+
+    transition:
+        border-color var(--transition-fast),
+        background var(--transition-fast);
+}
+
+.import-dropzone:hover {
+    background: var(--primary-soft);
+    border-color: var(--primary-border);
+    color: var(--primary-dark);
+}
+
+.import-form__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    margin-top: 12px;
+}
+
+.import-button {
+    padding: 8px 16px;
+
+    border-radius: var(--radius-sm);
+
+    font-size: 12.5px;
+    font-weight: 700;
+
+    transition:
+        background var(--transition-fast),
+        border-color var(--transition-fast),
+        opacity var(--transition-fast);
+}
+
+.import-button--primary {
+    background: var(--primary);
+    border: 1px solid var(--primary);
+
+    color: #ffffff;
+}
+
+.import-button--primary:hover:not(:disabled) {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+}
+
+.import-button--primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.import-button--commit {
+    background: var(--success);
+    border: 1px solid var(--success);
+
+    color: #ffffff;
+}
+
+.import-button--commit:hover:not(:disabled) {
+    filter: brightness(0.92);
+}
+
+
+/* ---- Report + result ---- */
+
+.import-report {
+    margin: 0 13px 13px;
+    padding: 12px 14px;
+
+    background: var(--surface-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+
+    font-size: 12px;
+}
+
+.import-report__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+
+    margin-bottom: 8px;
+}
+
+.import-report__head strong {
+    color: var(--text);
+    font-size: 12.5px;
+}
+
+.import-report__head span {
+    color: var(--text-muted);
+}
+
+.import-report__stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+
+    margin: 0 0 8px;
+    padding: 0;
+
+    list-style: none;
+
+    color: var(--text-secondary);
+}
+
+.import-report__ok {
+    margin: 0;
+    color: var(--success);
+    font-weight: 600;
+}
+
+.import-report__problems,
+.import-report__warnings {
+    margin-top: 8px;
+    padding: 9px 11px;
+
+    border-radius: var(--radius-sm);
+
+    font-size: 11.5px;
+}
+
+.import-report__problems {
+    background: var(--danger-soft);
+    border: 1px solid var(--danger-border);
+    color: #912018;
+}
+
+.import-report__warnings {
+    background: var(--warning-soft);
+    border: 1px solid #fde68a;
+    color: #92400e;
+}
+
+.import-report__problems ul,
+.import-report__warnings ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.import-report__problems li,
+.import-report__warnings li {
+    margin-top: 2px;
+}
+
+.import-result {
+    margin: 0 13px 13px;
+}
+
+.import-result__ok {
+    padding: 10px 13px;
+
+    background: #ecfdf3;
+    border: 1px solid #abefc6;
+    border-radius: var(--radius-md);
+
+    color: #05603a;
+    font-size: 12.5px;
+}
+
+.import-result__ok strong {
+    margin-right: 4px;
+}
+
+
+/* =========================================================
+   15. RESPONSIVE
    ========================================================= */
 
 @media (max-width: 1500px) {

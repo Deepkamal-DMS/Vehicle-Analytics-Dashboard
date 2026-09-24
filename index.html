@@ -154,6 +154,36 @@
 
 
             <!--
+                 Import first, Export second - matching action goes
+                 before the button that undoes it, and this is the
+                 side of the header where you'd look for either.
+            -->
+            <button
+                type="button"
+                id="importOpenButton"
+                class="export-button"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M12 16V4"></path>
+                    <path d="M6 10l6-6 6 6"></path>
+                    <path d="M4 18v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+                </svg>
+
+                Import
+            </button>
+
+
+            <!--
                  One menu for every download on the page. The
                  per-table buttons stay too - this is the shortcut
                  for someone who wants the lot.
@@ -1589,6 +1619,197 @@
                     id="viewAllList"
                     class="summary-list summary-list--modal"
                 ></ol>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================================================
+         IMPORT DIALOG
+
+         Preview first, always - nothing in here writes to the
+         database until the report has been read and "Confirm &
+         Import" is clicked. See tools/IMPORT-CHECKS.md for what
+         every check does.
+         ========================================================= -->
+
+    <div
+        id="importOverlay"
+        class="modal-overlay"
+        hidden
+    >
+
+        <div
+            class="modal modal--wide"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="importModalTitle"
+        >
+
+            <div class="modal__head">
+
+                <h2 id="importModalTitle">Import Registration Data</h2>
+
+                <button
+                    type="button"
+                    id="importClose"
+                    class="modal__close"
+                    aria-label="Close"
+                >
+                    &times;
+                </button>
+
+            </div>
+
+            <div class="modal__body modal__body--flush">
+
+                <p class="import-card__intro">
+                    Upload a Vahan <code>maker_vehicleClass_&lt;year&gt;_&lt;Mon&gt;&lt;YY&gt;.xlsx</code>
+                    export. It is checked first and nothing is written until you
+                    confirm - see
+                    <button
+                        type="button"
+                        id="importChecksToggle"
+                        class="import-card__checks-link"
+                        aria-expanded="false"
+                        aria-controls="importChecksPanel"
+                    >what gets checked</button>.
+                </p>
+
+                <div
+                    id="importChecksPanel"
+                    class="import-checks"
+                    hidden
+                >
+                    <table class="import-checks__table">
+                        <caption class="visually-hidden">Checks run on every uploaded workbook</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Check</th>
+                                <th scope="col">What it catches</th>
+                                <th scope="col">If it fails</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Filename pattern</td>
+                                <td>Anything not named like a Vahan monthly export</td>
+                                <td>Blocked</td>
+                            </tr>
+                            <tr>
+                                <td>Title cross-check</td>
+                                <td>Filename's month/year disagreeing with the sheet's own printed date range - how 2024 data would end up filed as 2025</td>
+                                <td>Blocked</td>
+                            </tr>
+                            <tr>
+                                <td>Header shape</td>
+                                <td>First column isn't Maker, or last isn't Total</td>
+                                <td>Blocked</td>
+                            </tr>
+                            <tr>
+                                <td>Known vehicle classes</td>
+                                <td>A column Vahan hasn't sent before</td>
+                                <td>Blocked</td>
+                            </tr>
+                            <tr>
+                                <td>Duplicate maker</td>
+                                <td>The same maker listed twice in one sheet</td>
+                                <td>Blocked</td>
+                            </tr>
+                            <tr>
+                                <td>Newline in a name</td>
+                                <td>A stray line break inside a maker name</td>
+                                <td>Blocked</td>
+                            </tr>
+                            <tr>
+                                <td>Class columns sum to Total</td>
+                                <td>A row whose printed Total doesn't match its own class counts</td>
+                                <td>Reported, not blocked - shown before you confirm</td>
+                            </tr>
+                            <tr>
+                                <td>Single month, single year</td>
+                                <td>Only the uploaded month/year is touched - every other month table and every other year in this one are left exactly as they are</td>
+                                <td>&mdash;</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <form id="importForm" class="import-form">
+
+                    <label for="importFileInput" class="import-dropzone">
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="26"
+                            height="26"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M12 15V3"></path>
+                            <path d="M7 8l5-5 5 5"></path>
+                            <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"></path>
+                        </svg>
+
+                        <span id="importFileLabel">
+                            Choose a workbook, or drop it here
+                        </span>
+
+                        <input
+                            type="file"
+                            id="importFileInput"
+                            accept=".xlsx"
+                            hidden
+                        >
+                    </label>
+
+                    <div class="import-form__actions">
+
+                        <button
+                            type="button"
+                            id="importValidateButton"
+                            class="import-button import-button--primary"
+                            disabled
+                        >
+                            Check File
+                        </button>
+
+                        <button
+                            type="button"
+                            id="importCommitButton"
+                            class="import-button import-button--commit"
+                            hidden
+                        >
+                            Confirm &amp; Import
+                        </button>
+
+                    </div>
+
+                </form>
+
+                <div
+                    id="importState"
+                    class="table-state"
+                    hidden
+                ></div>
+
+                <div
+                    id="importReport"
+                    class="import-report"
+                    hidden
+                ></div>
+
+                <div
+                    id="importResult"
+                    class="import-result"
+                    hidden
+                ></div>
 
             </div>
 
