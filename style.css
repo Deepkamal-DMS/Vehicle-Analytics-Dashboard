@@ -368,6 +368,23 @@ svg {
     border-color: rgba(255, 255, 255, 0.5);
 }
 
+.logout-button {
+    padding: 4px 2px;
+
+    background: none;
+    border: 0;
+
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.logout-button:hover {
+    color: #ffffff;
+}
+
 .export-button__caret {
     width: 0;
     height: 0;
@@ -1860,6 +1877,55 @@ svg {
 
 .import-button--commit:hover:not(:disabled) {
     filter: brightness(0.92);
+}
+
+
+/* =========================================================
+   15. LOGIN DIALOG
+   ========================================================= */
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.login-form__field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.login-form__field input {
+    padding: 7px 10px;
+
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.login-form__field input:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -1px;
+}
+
+.login-form__error {
+    margin: 0;
+    padding: 7px 10px;
+
+    background: var(--danger-soft);
+    border-radius: var(--radius-sm);
+
+    color: var(--danger);
+    font-size: 12px;
 }
 
 

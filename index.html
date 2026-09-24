@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=23"
+        href="style.css?v=24"
     >
 
 </head>
@@ -303,6 +303,14 @@
                 </ul>
 
             </div>
+
+
+            <button
+                type="button"
+                id="logoutButton"
+                class="logout-button"
+                hidden
+            >Log Out</button>
 
         </div>
 
@@ -1819,11 +1827,85 @@
 
 
     <!-- =========================================================
+         LOGIN DIALOG
+
+         The whole dashboard's front door - nothing behind it
+         (initializeDashboard(), and every card's own data fetch)
+         runs until a username/password has been sent to
+         import-workbook's mode=ping and accepted; see requireAuth()
+         there for what "accepted" checks. No close button on
+         purpose: unlike the old Import-only version of this dialog,
+         there is nothing to fall back to behind it now.
+         ========================================================= -->
+
+    <div
+        id="loginOverlay"
+        class="modal-overlay"
+        hidden
+    >
+
+        <div
+            class="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="loginModalTitle"
+        >
+
+            <div class="modal__head">
+
+                <h2 id="loginModalTitle">Log In</h2>
+
+            </div>
+
+            <div class="modal__body">
+
+                <form id="loginForm" class="login-form">
+
+                    <label class="login-form__field">
+                        Username
+                        <input
+                            type="text"
+                            id="loginUser"
+                            autocomplete="username"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Password
+                        <input
+                            type="password"
+                            id="loginPass"
+                            autocomplete="current-password"
+                            required
+                        >
+                    </label>
+
+                    <p id="loginError" class="login-form__error" hidden></p>
+
+                    <button
+                        type="submit"
+                        id="loginSubmit"
+                        class="import-button import-button--primary"
+                    >
+                        Log In
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================================================
          JAVASCRIPT
          ========================================================= -->
 
     <!-- Bump v in step with the stylesheet above. -->
-    <script src="script.js?v=23"></script>
+    <script src="script.js?v=24"></script>
 
 </body>
 </html>

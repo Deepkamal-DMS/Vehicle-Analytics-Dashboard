@@ -39,8 +39,21 @@ story. This file is just how to get it running.
    it to `service_role` - see that file's own header for exactly what
    it does and does not touch.
 
-4. **Deploy the function**, with JWT verification off (the dashboard
-   has no login yet - see `index.ts`'s header):
+4. **Set the login credential** the dashboard's login form is checked
+   against (see `requireAuth()` in `index.ts`):
+
+   ```
+   npx supabase secrets set IMPORT_ADMIN_USER=admin
+   npx supabase secrets set IMPORT_ADMIN_PASSWORD=admin
+   ```
+
+   Neither value lives anywhere in this repo - change them to
+   whatever you like, any time, with the same command. Until both
+   are set, every import request is refused.
+
+5. **Deploy the function**, with JWT verification off (this function
+   does its own login check - see `index.ts`'s header - so Supabase's
+   own JWT gate would only get in the way):
 
    ```
    npx supabase functions deploy import-workbook --no-verify-jwt
@@ -50,7 +63,7 @@ story. This file is just how to get it running.
    set by hand - Supabase injects both into every deployed function
    automatically.
 
-5. **Optional**: restrict which origin can call it (defaults to `*`,
+6. **Optional**: restrict which origin can call it (defaults to `*`,
    i.e. any site):
 
    ```
