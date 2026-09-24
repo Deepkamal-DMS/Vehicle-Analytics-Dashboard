@@ -19,9 +19,13 @@ const TOTAL_COLUMN = "Total";
 /*
  * Canonical class order: the 73 columns of the live MAKER_WISE_2026
  * table in its own order, then Bulldozer (which only MAKER_WISE_2025
- * has), then the one class the workbooks carry that neither live
- * table does. Names are the raw Vahan headers, verbatim - the
- * dashboard's CLASS_GROUPS regexes in script.js match on the spaces.
+ * has), then "Motor Cycle/Scooter-With Trailer" (a class the workbooks
+ * carried that neither live table did), then "Power Tiller
+ * (Commercial)" - found 2026-09-24 scanning every workbook in
+ * maker_vehicleClass_All RTO/, MH/ and RTO Vehicle Maker/ (7,854
+ * files); it only ever appears in the All India source. 76 total.
+ * Names are the raw Vahan headers, verbatim - the dashboard's
+ * CLASS_GROUPS regexes in script.js match on the spaces.
  */
 const CLASS_COLUMNS = [
     "Three Wheeler (Goods)",
@@ -98,7 +102,8 @@ const CLASS_COLUMNS = [
     "Power Tiller",
     "Modular Hydraulic Trailer",
     "Bulldozer",
-    "Motor Cycle/Scooter-With Trailer"
+    "Motor Cycle/Scooter-With Trailer",
+    "Power Tiller (Commercial)"
 ];
 
 const TABLE_COLUMNS = ["year", ENTITY_COLUMN, ...CLASS_COLUMNS, TOTAL_COLUMN];

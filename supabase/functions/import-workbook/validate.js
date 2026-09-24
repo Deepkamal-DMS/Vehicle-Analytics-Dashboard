@@ -18,15 +18,54 @@
  * original behaviour: reported, not blocking, because the row is
  * still real registration data with an arithmetic discrepancy worth
  * a human's eyes, not a parsing failure.
+ *
+ * Covers all three sources the dashboard reads, not All India alone:
+ * describeFile() reads which one a filename names, and an RTO-wise
+ * file also gets its RTO cross-checked against the sheet's own title
+ * row (verifyTitle()'s rtoName), the same way month/year already
+ * were. index.ts picks import_maker_month() or import_rto_month()
+ * from stamp.scope at commit time.
  */
 
 import { ENTITY_COLUMN, TOTAL_COLUMN, KNOWN_CLASSES, CLASS_COLUMNS, MONTHS } from "./class-columns.js";
 
-const FILE_PATTERN = /^maker_vehicleClass_\d{4}_([A-Z][a-z]{2})(\d{2})\.xlsx$/;
+/*
+ * The real Vahan export names, across all three sources this
+ * dashboard reads: maker_vehicleClass_<scope>_<Mon><YY>.xlsx, where
+ * <scope> is "All RTO" (nationwide), "GJ01".."GJ39" (Gujarat), or
+ * "MH01".."MH58" (Maharashtra) - never a year, despite the name this
+ * pattern used to require (maker_vehicleClass_<year>_<Mon><YY>.xlsx),
+ * which no real file was ever named.
+ */
+const FILE_PATTERN = /^maker_vehicleClass_(All RTO|GJ\d{2}|MH\d{2})_([A-Z][a-z]{2})(\d{2})\.xlsx$/;
 const TITLE_PATTERN = /\((\d{2}) ([A-Z][a-z]{2}) (\d{4}) to (\d{2}) ([A-Z][a-z]{2}) (\d{4})\)/;
 
+/*
+ * The sheet's own title row for an RTO-wise file, e.g.
+ * "RTO (AHMEDABAD - GJ1) Wise Maker and Vehicle Class Data for
+ * Gujarat (...)" or "RTO (MUMBAI (CENTRAL) - MH1) Wise ...". The
+ * nested parentheses in a name like "MUMBAI (CENTRAL)" are why this
+ * anchors on " - <code>) Wise" rather than trying to balance parens -
+ * greedy .+ still finds the right split because that suffix occurs
+ * exactly once.
+ */
+const RTO_TITLE_PATTERN = /^RTO \((.+) - ([A-Z]{2}\d+)\)\s+Wise/;
 
-/* Filename -> { month, year } | null. Mirrors describeFile() exactly. */
+
+/*
+ * The title spells a code with no leading zero ("GJ1"), the filename
+ * always has one ("GJ01") - both names for the same RTO, normalized
+ * here so the cross-check compares like with like.
+ */
+function normalizeRtoCode(code) {
+
+    const match = /^([A-Z]{2})0*(\d+)$/.exec(code);
+
+    return match ? `${match[1]}${match[2]}` : code;
+}
+
+
+/* Filename -> { scope, rtoCode, month, year } | null. */
 export function describeFile(fileName) {
 
     const match = FILE_PATTERN.exec(fileName);
@@ -35,19 +74,29 @@ export function describeFile(fileName) {
         return null;
     }
 
-    const month = match[1];
+    const scopeToken = match[1];
+    const month = match[2];
 
     if (!MONTHS.includes(month)) {
         return null;
     }
 
-    return { month, year: 2000 + Number(match[2]) };
+    const year = 2000 + Number(match[3]);
+
+    if (scopeToken === "All RTO") {
+        return { scope: "all_india", rtoCode: null, month, year };
+    }
+
+    const scope = scopeToken.startsWith("GJ") ? "gujarat" : "maharashtra";
+
+    return { scope, rtoCode: scopeToken, month, year };
 }
 
 
 function verifyTitle(title, expected) {
 
-    const match = TITLE_PATTERN.exec(String(title || ""));
+    const text = String(title || "");
+    const match = TITLE_PATTERN.exec(text);
 
     if (match === null) {
         return { ok: false, reason: "no date range found in the title row" };
@@ -65,7 +114,30 @@ function verifyTitle(title, expected) {
         };
     }
 
-    return { ok: true, endDay };
+    if (expected.rtoCode === null) {
+        return { ok: true, endDay, rtoName: null };
+    }
+
+    const rtoMatch = RTO_TITLE_PATTERN.exec(text.trim());
+
+    if (rtoMatch === null) {
+        return {
+            ok: false,
+            reason: `filename names an RTO (${expected.rtoCode}) but the sheet's ` +
+                `title row does not look like an RTO-wise export`
+        };
+    }
+
+    const [, rtoName, titleCode] = rtoMatch;
+
+    if (normalizeRtoCode(titleCode) !== normalizeRtoCode(expected.rtoCode)) {
+        return {
+            ok: false,
+            reason: `filename says RTO ${expected.rtoCode} but the sheet says ${titleCode}`
+        };
+    }
+
+    return { ok: true, endDay, rtoName: rtoName.trim() };
 }
 
 
@@ -102,7 +174,7 @@ function toCount(value) {
 
 /*
  * sheet: rows as returned by xlsx-reader.js's readSheet().
- * stamp: { month, year } from describeFile(fileName).
+ * stamp: { scope, rtoCode, month, year } from describeFile(fileName).
  *
  * Returns:
  *   fatal            string | null - unrecoverable, no rows produced
@@ -110,8 +182,11 @@ function toCount(value) {
  *   sumMismatches      {maker,total,summed}[] - reported, never blocks
  *   blanks            number
  *   endDay            number | null
- *   rows              {Maker, Total, ...classCounts}[] - ready for the
- *                     import_maker_month RPC's p_rows
+ *   rtoName           string | null - from the title row, only when
+ *                     stamp.rtoCode is set; what import_rto_month()'s
+ *                     p_rto_name gets
+ *   rows              {Maker, Total, ...classCounts}[] - ready for
+ *                     import_maker_month/import_rto_month's p_rows
  *   units             sum of Total across all rows
  */
 export function validateWorkbook(fileName, stamp, sheet) {
@@ -122,7 +197,7 @@ export function validateWorkbook(fileName, stamp, sheet) {
     if (sheet.length < 3) {
         return {
             fatal: "fewer than three rows",
-            structural, sumMismatches, blanks: 0, endDay: null, rows: [], units: 0
+            structural, sumMismatches, blanks: 0, endDay: null, rtoName: null, rows: [], units: 0
         };
     }
 
@@ -131,7 +206,7 @@ export function validateWorkbook(fileName, stamp, sheet) {
     if (!title.ok) {
         return {
             fatal: title.reason,
-            structural, sumMismatches, blanks: 0, endDay: null, rows: [], units: 0
+            structural, sumMismatches, blanks: 0, endDay: null, rtoName: null, rows: [], units: 0
         };
     }
 
@@ -141,14 +216,14 @@ export function validateWorkbook(fileName, stamp, sheet) {
         return {
             fatal: `header starts with ${JSON.stringify(header[0])}, ` +
                 `expected ${JSON.stringify(ENTITY_COLUMN)}`,
-            structural, sumMismatches, blanks: 0, endDay: title.endDay, rows: [], units: 0
+            structural, sumMismatches, blanks: 0, endDay: title.endDay, rtoName: title.rtoName, rows: [], units: 0
         };
     }
 
     if (header[header.length - 1] !== TOTAL_COLUMN) {
         return {
             fatal: `header does not end with ${TOTAL_COLUMN}`,
-            structural, sumMismatches, blanks: 0, endDay: title.endDay, rows: [], units: 0
+            structural, sumMismatches, blanks: 0, endDay: title.endDay, rtoName: title.rtoName, rows: [], units: 0
         };
     }
 
@@ -231,6 +306,7 @@ export function validateWorkbook(fileName, stamp, sheet) {
         sumMismatches,
         blanks,
         endDay: title.endDay,
+        rtoName: title.rtoName,
         rows,
         units
     };

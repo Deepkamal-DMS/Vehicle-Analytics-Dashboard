@@ -1,0 +1,93 @@
+Master vehicle-class list for the planned table rebuild
+Compiled 2026-09-24 from tools/class-columns.js (75) plus a scan of every
+workbook in maker_vehicleClass_All RTO/, MH/, and RTO Vehicle Maker/
+(7,854 files total, headers only, see conversation for the scan).
+
+76 classes total. All 76 are used somewhere in the source files; no
+source file uses anything outside this list.
+
+1   Three Wheeler (Goods)
+2   Three Wheeler (Passenger)
+3   e-Rickshaw with Cart (G)
+4   e-Rickshaw(P)
+5   Tractor-Trolley(Commercial)
+6   Trailer (Agricultural)
+7   Harvester
+8   Goods Carrier
+9   M-Cycle/Scooter
+10  Trailer (Commercial)
+11  Construction Equipment Vehicle
+12  Crane Mounted Vehicle
+13  Agricultural Tractor
+14  Construction Equipment Vehicle (Commercial)
+15  Earth Moving Equipment
+16  Excavator (Commercial)
+17  Excavator (NT)
+18  Fork Lift
+19  Road Roller
+20  Tractor (Commercial)
+21  Motorised Cycle (CC  25cc)
+22  Bus
+23  Semi-Trailer (Commercial)
+24  Motor Car
+25  Vehicle Fitted With Rig
+26  Moped
+27  Armoured/Specialised Vehicle
+28  Ambulance
+29  Animal Ambulance
+30  Articulated Vehicle
+31  Auxiliary Trailer
+32  Camper Van / Trailer
+33  Camper Van / Trailer (Private Use)
+34  Dumper
+35  Educational Institution Bus
+36  Fire Fighting Vehicle
+37  Fire Tenders
+38  Hearses
+39  Maxi Cab
+40  Mobile Canteen
+41  Mobile Clinic
+42  Mobile Workshop
+43  Omni Bus
+44  Private Service Vehicle
+45  Private Service Vehicle (Individual Use)
+46  Puller Tractor
+47  Recovery Vehicle
+48  School Bus
+49  Snorked Ladders
+50  Tow Truck
+51  Tower Wagon
+52  Tree Trimming Vehicle
+53  Vehicle Fitted With Compressor
+54  Vehicle Fitted With Generator
+55  X-Ray Van
+56  Adapted Vehicle
+57  M-Cycle/Scooter-With Side Car
+58  Motor Cycle/Scooter-Used For Hire
+59  Three Wheeler (Personal)
+60  Motor Cab
+61  Motor Cycle/Scooter-SideCar(T)
+62  Quadricycle (Commercial)
+63  Quadricycle (Private)
+64  Luxury Cab
+65  Breakdown Van
+66  Cash Van
+67  Library Van
+68  Omni Bus (Private Use)
+69  Vintage Motor Vehicle
+70  Trailer For Personal Use
+71  Motor Caravan
+72  Power Tiller
+73  Modular Hydraulic Trailer
+74  Bulldozer
+75  Motor Cycle/Scooter-With Trailer
+76  Power Tiller (Commercial)     <- new, only seen in maker_vehicleClass_All RTO/; not yet in tools/class-columns.js or the live DB
+
+Per-source subsets (how many of the 76 each source actually uses):
+  All India (maker_vehicleClass_All RTO/): 76 - all of them, incl. #76
+  Maharashtra (MH/, 58 RTOs):               71
+  Gujarat (RTO Vehicle Maker/, 37 RTOs):     67
+
+Row shape for any new table: year, Maker, [applicable subset of the
+above], Total. RTO-wise tables (Gujarat, Maharashtra) also need
+rto_code/rto_name; month-grain tables also need month.

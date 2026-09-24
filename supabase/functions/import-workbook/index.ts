@@ -47,16 +47,19 @@
  * admin and is why the blast radius of getting it wrong stays
  * bounded on top of it:
  *
- *   - This function only ever calls import_maker_month(), never
- *     arbitrary SQL.
- *   - import_maker_month() only accepts one of the 12 literal month
- *     names and only ever touches that one (month, year) pair.
+ *   - This function only ever calls import_maker_month() or
+ *     import_rto_month(), never arbitrary SQL.
+ *   - Both only accept one of the 12 literal month names and only
+ *     ever touch that one (month, year[, rto_code]) slice - the
+ *     latter also only ever writes to Gujarat_RTO_Class_Wise or
+ *     Maharashtra_RTO_Class_Wise, chosen from a fixed two-value
+ *     allow-list, never a caller-supplied table name.
  *   - The publishable key already shipped in script.js cannot call
- *     import_maker_month() itself even by hand-crafting a REST
- *     request - it is granted to service_role only (see the
- *     migration). This function's service-role key is the only key
- *     that can, and it lives in this function's Supabase secrets,
- *     never in any client-visible code.
+ *     either itself even by hand-crafting a REST request - both are
+ *     granted to service_role only (see the migrations). This
+ *     function's service-role key is the only key that can, and it
+ *     lives in this function's Supabase secrets, never in any
+ *     client-visible code.
  *
  * Upgrading to real per-person accounts later (Supabase Auth JWT +
  * an allow-list of emails) means replacing requireAuth()'s body
@@ -163,6 +166,9 @@ function buildReport(fileName, stamp, result) {
 
     return {
         fileName,
+        scope: stamp.scope,
+        rtoCode: stamp.rtoCode,
+        rtoName: result.rtoName,
         month: stamp.month,
         year: stamp.year,
         partialMonth: result.endDay !== null && result.endDay < 28,
@@ -235,7 +241,8 @@ async function handle(req) {
         return json({
             ok: false,
             error: `"${fileName}" does not look like a Vahan monthly export. ` +
-                `Expected a name like maker_vehicleClass_2025_Apr24.xlsx.`
+                `Expected a name like maker_vehicleClass_All RTO_Apr24.xlsx, ` +
+                `maker_vehicleClass_GJ01_Apr24.xlsx, or maker_vehicleClass_MH01_Apr24.xlsx.`
         }, 422);
     }
 
@@ -297,11 +304,25 @@ async function handle(req) {
         auth: { persistSession: false }
     });
 
-    const { data, error } = await supabase.rpc("import_maker_month", {
-        p_month: stamp.month,
-        p_year: stamp.year,
-        p_rows: result.rows
-    });
+    /*
+     * All India writes through import_maker_month(); Gujarat and
+     * Maharashtra both go through the one import_rto_month(), told
+     * which table by p_scope - see stamp.scope from describeFile().
+     */
+    const { data, error } = stamp.scope === "all_india"
+        ? await supabase.rpc("import_maker_month", {
+            p_month: stamp.month,
+            p_year: stamp.year,
+            p_rows: result.rows
+        })
+        : await supabase.rpc("import_rto_month", {
+            p_scope: stamp.scope,
+            p_rto_code: stamp.rtoCode,
+            p_rto_name: result.rtoName,
+            p_month: stamp.month,
+            p_year: stamp.year,
+            p_rows: result.rows
+        });
 
     if (error) {
         return json({

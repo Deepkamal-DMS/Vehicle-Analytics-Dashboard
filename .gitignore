@@ -2,6 +2,8 @@
 RTO/
 Vahan New/
 RTO Vehicle Maker/
+MH/
+maker_vehicleClass_All RTO/
 
 # Only the Supabase CLI's own local scratch state - everything else
 # under supabase/ (config.toml, migrations/, functions/) is real,

@@ -91,7 +91,8 @@ export const CLASS_COLUMNS = [
         "Power Tiller",
         "Modular Hydraulic Trailer",
         "Bulldozer",
-        "Motor Cycle/Scooter-With Trailer"
+        "Motor Cycle/Scooter-With Trailer",
+        "Power Tiller (Commercial)"
     ];
 
 export const KNOWN_CLASSES = new Set(CLASS_COLUMNS);
