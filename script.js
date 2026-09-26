@@ -2683,9 +2683,33 @@ function sortIconFor(column, sort) {
 }
 
 
+/*
+ * Every column the same width (see .data-table's table-layout:
+ * fixed) only stays readable if that width has a floor - a table
+ * with a dozen columns dividing 100% of a card evenly gives each
+ * one less room than a single stacked count+share cell needs (see
+ * .cell-share-wrap in style.css) and starts truncating the count
+ * itself, not just long labels. Setting min-width here rather than
+ * in CSS is what lets it scale with however many columns THIS
+ * table actually has - year-wise is 7 to 13 columns, month-wise
+ * can be more - instead of one fixed number that is wrong for most
+ * of them. table-wrapper's own overflow-x: auto (already in place
+ * for the header-wrapping fix) is what turns "wider than the card"
+ * into a horizontal scrollbar instead of a fixed table forcing
+ * itself back down to the card's width.
+ */
+const MIN_COLUMN_WIDTH_PX = 96;
+
+
 function paintHead(headEl, columns, sort, sortGroup) {
 
     headEl.innerHTML = "";
+
+    const table = headEl.closest("table");
+
+    if (table) {
+        table.style.minWidth = `${columns.length * MIN_COLUMN_WIDTH_PX}px`;
+    }
 
     const tr = document.createElement("tr");
 

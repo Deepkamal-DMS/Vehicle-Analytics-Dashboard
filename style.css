@@ -1300,11 +1300,16 @@ svg {
 /* ---- Count and its share, in one cell ----
 
    A year cell in card 1 and a maker cell in card 2 each read
-   twice: the count against the left of the cell, the share it
-   holds of that column's year or of that row's RTO against the
-   right of the cell in a lighter ink. Both halves inherit
-   the cell's colour, so a zero stays grey, the totals row stays
-   navy, and nothing needs a second palette.
+   twice: the count, and the share it holds of that column's year
+   or of that row's RTO in a lighter ink underneath. Both halves
+   inherit the cell's colour, so a zero stays grey, the totals row
+   stays navy, and nothing needs a second palette.
+
+   Stacked on two lines rather than side by side - these columns
+   are all `numeric: true` (see fillCell()'s callers), narrow
+   enough under the equal-width column layout that count and share
+   side by side never both fit without one of them getting cut
+   off. One value per line always fits its own column width.
 
    The flex lives on an inner wrapper span, never on the td: a
    table cell whose own display is overridden to flex drops out
@@ -1313,34 +1318,32 @@ svg {
    header. */
 
 .data-table td.has-share {
-    text-align: left;
+    text-align: right;
 }
 
 .data-table .cell-share-wrap {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 14px;
+    flex-direction: column;
+    align-items: flex-end;
     width: 100%;
 }
 
 .data-table .cell-value {
-    /* Shrinks first when the column is too narrow for both halves -
-       the share on the right (see .cell-share) never gives up its
-       space and disappears; the count on the left truncates instead. */
-    flex: 1 1 auto;
-    min-width: 0;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .data-table .cell-share {
-    flex: 0 0 auto;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 
     color: inherit;
     opacity: 0.58;
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 400;
+    line-height: 1.3;
 }
 
 
