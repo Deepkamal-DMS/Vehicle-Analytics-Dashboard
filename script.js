@@ -62,14 +62,9 @@ const API_HEADERS = {
     Authorization: `Bearer ${API_KEY}`
 };
 
-/*
- * The Import card's one door to the database. Nothing about this
- * URL grants write access on its own - see supabase/functions/
- * import-workbook/index.ts's header comment for why calling it is
- * safe even before the dashboard has a login.
- */
-const IMPORT_FUNCTION_URL =
-    "https://ytgoonducepylslknkag.supabase.co/functions/v1/import-workbook";
+/* IMPORT_FUNCTION_URL and everything about auth (login state,
+   verifyCredentials(), goToLogin()) now live in auth.js, loaded
+   before this file on both index.html and login.html. */
 
 
 /* ============================================================
@@ -650,19 +645,10 @@ const state = {
         file: null,
         report: null,
         busy: false
-    },
-
-    /*
-     * The credentials the login form last collected, sent as Basic
-     * auth on every import-workbook call. Held in sessionStorage,
-     * not localStorage - a closed tab should not leave them sitting
-     * around - and never in state.import above, which is cleared on
-     * every successful commit while a login should not be.
-     */
-    auth: {
-        user: null,
-        pass: null
     }
+
+    /* Login state (the `auth` object) lives in auth.js now, shared
+       with login.html rather than duplicated per page. */
 };
 
 
@@ -722,11 +708,8 @@ function cacheDOM() {
         "importValidateButton", "importCommitButton",
         "importState", "importReport", "importResult",
 
-        /* Login dialog - gates the whole dashboard, see bootstrapApp() */
-        "loginOverlay", "loginForm",
-        "loginUser", "loginPass", "loginError", "loginSubmit",
-
-        /* Sits in the header, outside every card - shown once logged in */
+        /* Sits in the header, outside every card - shown once logged in.
+           Login itself is a separate page now - see login.html/login.js. */
         "logoutButton",
 
         /* Quick summary */
@@ -5456,157 +5439,6 @@ function setupRetry() {
    and tools/IMPORT-CHECKS.md for what every check does.
    ============================================================ */
 
-const AUTH_STORAGE_KEY = "vad_import_auth";
-
-
-/* sessionStorage, not localStorage - see state.auth's own comment. */
-function loadStoredAuth() {
-
-    let raw;
-
-    try {
-        raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
-    } catch {
-        return;
-    }
-
-    if (!raw) {
-        return;
-    }
-
-    try {
-
-        const parsed = JSON.parse(raw);
-
-        state.auth.user = parsed.user || null;
-        state.auth.pass = parsed.pass || null;
-
-    } catch {
-        /* Corrupt entry - treat as logged out rather than throwing. */
-    }
-}
-
-
-function saveAuth(user, pass) {
-
-    state.auth.user = user;
-    state.auth.pass = pass;
-
-    try {
-        sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user, pass }));
-    } catch {
-        /* Private browsing, storage full, etc. - the login still
-           works for this page load, it just will not survive a
-           refresh. Not worth surfacing to the user. */
-    }
-}
-
-
-function clearAuth() {
-
-    state.auth.user = null;
-    state.auth.pass = null;
-
-    try {
-        sessionStorage.removeItem(AUTH_STORAGE_KEY);
-    } catch {
-        /* Nothing to do if storage is unavailable. */
-    }
-}
-
-
-function isLoggedIn() {
-    return Boolean(state.auth.user);
-}
-
-
-const LOGIN_NOTICE_KEY = "vad_login_notice";
-
-
-/* Survives the reload logoutAndReload() below does, so the login
-   screen can say why it is showing again instead of an empty form. */
-function setLoginNotice(message) {
-
-    try {
-        sessionStorage.setItem(LOGIN_NOTICE_KEY, message);
-    } catch {
-        /* Nothing to do if storage is unavailable - the reload still
-           happens, it just lands on a plain login screen. */
-    }
-}
-
-
-function consumeLoginNotice() {
-
-    let message = null;
-
-    try {
-        message = sessionStorage.getItem(LOGIN_NOTICE_KEY);
-        sessionStorage.removeItem(LOGIN_NOTICE_KEY);
-    } catch {
-        /* Nothing stored, or storage unavailable - either way, no notice. */
-    }
-
-    return message;
-}
-
-
-/*
- * The one call that can actually confirm a username/password without
- * uploading anything - mode=ping short-circuits in import-workbook's
- * handle() right after requireAuth(), before any file is required.
- * This is what login (not just Import) checks credentials against.
- */
-async function verifyCredentials(user, pass) {
-
-    const form = new FormData();
-    form.append("mode", "ping");
-
-    let response;
-
-    try {
-
-        response = await fetch(IMPORT_FUNCTION_URL, {
-            method: "POST",
-            headers: { Authorization: `Basic ${btoa(`${user}:${pass}`)}` },
-            body: form
-        });
-
-    } catch (error) {
-        throw new Error(`Could not reach the login service: ${error.message}`);
-    }
-
-    if (response.status === 401) {
-        return false;
-    }
-
-    if (!response.ok) {
-        throw new Error(`Login service returned an unexpected error (HTTP ${response.status}).`);
-    }
-
-    return true;
-}
-
-
-/*
- * Full reload rather than resetting state by hand - login gates
- * everything now (see bootstrapApp()), so "logged out" and "freshly
- * loaded, not yet logged in" are the same state. `message`, if
- * given, survives the reload via sessionStorage and greets the user
- * on the login screen that comes back.
- */
-function logoutAndReload(message) {
-
-    clearAuth();
-
-    if (message) {
-        setLoginNotice(message);
-    }
-
-    location.reload();
-}
-
-
 function importFormData(mode, file) {
 
     const form = new FormData();
@@ -5623,7 +5455,7 @@ async function callImportFunction(mode, file) {
     const headers = {};
 
     if (isLoggedIn()) {
-        headers.Authorization = `Basic ${btoa(`${state.auth.user}:${state.auth.pass}`)}`;
+        headers.Authorization = `Basic ${btoa(`${auth.user}:${auth.pass}`)}`;
     }
 
     let response;
@@ -5641,7 +5473,7 @@ async function callImportFunction(mode, file) {
     }
 
     if (response.status === 401) {
-        logoutAndReload("Your session ended - please log in again.");
+        goToLogin("Your session ended - please log in again.");
         throw new Error("Your session ended - please log in again.");
     }
 
@@ -5952,14 +5784,14 @@ function handleImportFileChosen(file) {
  * off.
  *
  * The login gate now sits in front of the whole dashboard (see
- * bootstrapApp()), so by the time this can be clicked state.auth is
+ * bootstrapApp()), so by the time this can be clicked `auth` is
  * already populated - the isLoggedIn() check is just a defensive
  * fallback, not the normal path in here.
  */
 function openImportModal() {
 
     if (!isLoggedIn()) {
-        requireLogin();
+        goToLogin();
         return;
     }
 
@@ -5973,107 +5805,6 @@ function closeImportModal() {
 
     if (dom.importOverlay) {
         dom.importOverlay.hidden = true;
-    }
-}
-
-
-/*
- * Shows the login screen with nothing to dismiss it - there is no
- * "cancel" once the dashboard itself is gated, only "log in" or
- * "leave the page". See bootstrapApp() for the one legitimate caller
- * (nothing was ever logged in) and logoutAndReload() (a fresh page
- * load lands here again after Log Out).
- */
-function requireLogin() {
-
-    if (dom.loginOverlay) {
-        dom.loginOverlay.hidden = false;
-    }
-
-    if (dom.loginUser) {
-        dom.loginUser.focus();
-    }
-}
-
-
-/*
- * verifyCredentials() is the only thing that can actually confirm a
- * username/password - this just relays what it found onto the form.
- */
-async function handleLoginSubmit(event) {
-
-    event.preventDefault();
-
-    const user = dom.loginUser ? dom.loginUser.value.trim() : "";
-    const pass = dom.loginPass ? dom.loginPass.value : "";
-
-    if (!user || !pass) {
-        return;
-    }
-
-    if (dom.loginError) {
-        dom.loginError.hidden = true;
-    }
-
-    if (dom.loginSubmit) {
-        dom.loginSubmit.disabled = true;
-        dom.loginSubmit.textContent = "Logging in...";
-    }
-
-    try {
-
-        const accepted = await verifyCredentials(user, pass);
-
-        if (!accepted) {
-
-            if (dom.loginError) {
-                dom.loginError.textContent = "Incorrect username or password.";
-                dom.loginError.hidden = false;
-            }
-
-            return;
-        }
-
-        saveAuth(user, pass);
-
-        if (dom.loginOverlay) {
-            dom.loginOverlay.hidden = true;
-        }
-
-        if (dom.logoutButton) {
-            dom.logoutButton.hidden = false;
-        }
-
-        await initializeDashboard();
-
-    } catch (error) {
-
-        if (dom.loginError) {
-            dom.loginError.textContent = error.message || "Could not log in - try again.";
-            dom.loginError.hidden = false;
-        }
-
-    } finally {
-
-        if (dom.loginSubmit) {
-            dom.loginSubmit.disabled = false;
-            dom.loginSubmit.textContent = "Log In";
-        }
-    }
-}
-
-
-function setupLoginListeners() {
-
-    if (dom.loginForm) {
-        dom.loginForm.addEventListener("submit", handleLoginSubmit);
-    }
-
-    if (dom.logoutButton) {
-
-        dom.logoutButton.addEventListener("click", () => {
-            logoutAndReload();
-        });
     }
 }
 
@@ -6212,34 +5943,33 @@ async function initializeDashboard({ force = false } = {}) {
 
 /*
  * The dashboard's actual front door. Every card here reads with the
- * publishable key and has no login of its own to check - the login
- * screen is the only thing standing between a fresh page load and
- * initializeDashboard() ever running at all. A session already
- * holding credentials (this page's own earlier login, still in
+ * publishable key and has no login of its own to check - login.html
+ * is the only thing standing between a fresh visit and
+ * initializeDashboard() ever running at all; a visit that arrives
+ * here without a session is sent straight there. A session already
+ * holding credentials (that page's own earlier login, still in
  * sessionStorage) skips straight past it; nothing re-verifies them
  * against the server until the first real import-workbook call
- * (Import), which is what 401-triggers logoutAndReload() for.
+ * (Import), which is what a 401 sends back to login.html for.
  */
 function bootstrapApp() {
 
-    cacheDOM();
     loadStoredAuth();
-    setupLoginListeners();
-
-    const notice = consumeLoginNotice();
-
-    if (notice && dom.loginError) {
-        dom.loginError.textContent = notice;
-        dom.loginError.hidden = false;
-    }
 
     if (!isLoggedIn()) {
-        requireLogin();
+        location.href = "login.html";
         return;
     }
 
+    cacheDOM();
+
     if (dom.logoutButton) {
+
         dom.logoutButton.hidden = false;
+
+        dom.logoutButton.addEventListener("click", () => {
+            goToLogin();
+        });
     }
 
     initializeDashboard();

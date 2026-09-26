@@ -1325,7 +1325,13 @@ svg {
 }
 
 .data-table .cell-value {
-    flex: 0 0 auto;
+    /* Shrinks first when the column is too narrow for both halves -
+       the share on the right (see .cell-share) never gives up its
+       space and disappears; the count on the left truncates instead. */
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .data-table .cell-share {
