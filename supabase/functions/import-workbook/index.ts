@@ -9,6 +9,14 @@
  *   mode=commit   parses and validates the SAME uploaded file again
  *                 from scratch, and only if it still passes, calls
  *                 import_maker_month() to write it.
+ *   mode=bulk     one HTTP request, many files (repeated "file"
+ *                 fields) - the historical-backfill path, not the
+ *                 dashboard's own Import card. Each file is parsed,
+ *                 validated and committed exactly as mode=commit
+ *                 would, independently - one bad file in the batch
+ *                 does not stop the rest - and the response is one
+ *                 result per file rather than one report. See
+ *                 processFile() and tools/bulk-upload.js.
  *   mode=ping     checks requireAuth() and nothing else - no file
  *                 required. This is what the dashboard's login
  *                 screen calls to confirm a username/password before
@@ -182,6 +190,87 @@ function buildReport(fileName, stamp, result) {
 }
 
 
+/*
+ * mode=bulk's whole job, one file: parse, validate, commit - exactly
+ * what mode=commit does, just returning a small {fileName, ok, ...}
+ * instead of the full report shape the dashboard's preview screen
+ * wants. Never throws - every failure becomes {ok: false, error},
+ * so one bad file in a batch of hundreds cannot abort the rest.
+ */
+async function processFile(file, supabase) {
+
+    if (!(file instanceof File)) {
+        return { fileName: null, ok: false, error: "not a file" };
+    }
+
+    const fileName = file.name;
+
+    if (file.size === 0) {
+        return { fileName, ok: false, error: "file is empty" };
+    }
+
+    if (file.size > MAX_FILE_BYTES) {
+        return {
+            fileName,
+            ok: false,
+            error: `file is ${(file.size / 1024 / 1024).toFixed(1)} MB, ` +
+                `over the ${MAX_FILE_BYTES / 1024 / 1024} MB limit`
+        };
+    }
+
+    const stamp = describeFile(fileName);
+
+    if (stamp === null) {
+        return { fileName, ok: false, error: "does not look like a Vahan monthly export" };
+    }
+
+    let sheet;
+
+    try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        sheet = await readSheet(bytes, fileName);
+    } catch (error) {
+        return { fileName, ok: false, error: `could not be read as an Excel workbook: ${error.message}` };
+    }
+
+    const result = validateWorkbook(fileName, stamp, sheet);
+
+    if (result.fatal !== null) {
+        return { fileName, ok: false, error: result.fatal };
+    }
+
+    if (result.structural.length > 0) {
+        return {
+            fileName,
+            ok: false,
+            error: `${result.structural.length} structural problem(s)`,
+            structural: result.structural
+        };
+    }
+
+    const { data, error } = stamp.scope === "all_india"
+        ? await supabase.rpc("import_maker_month", {
+            p_month: stamp.month,
+            p_year: stamp.year,
+            p_rows: result.rows
+        })
+        : await supabase.rpc("import_rto_month", {
+            p_scope: stamp.scope,
+            p_rto_code: stamp.rtoCode,
+            p_rto_name: result.rtoName,
+            p_month: stamp.month,
+            p_year: stamp.year,
+            p_rows: result.rows
+        });
+
+    if (error) {
+        return { fileName, ok: false, error: `database rejected the import: ${error.message}` };
+    }
+
+    return { fileName, ok: true, write: data };
+}
+
+
 async function handle(req) {
 
     if (req.method === "OPTIONS") {
@@ -212,8 +301,41 @@ async function handle(req) {
         return json({ ok: true, mode: "ping" });
     }
 
+    if (mode === "bulk") {
+
+        const files = form.getAll("file").filter(entry => entry instanceof File);
+
+        if (files.length === 0) {
+            return json({ ok: false, error: "no files uploaded" }, 400);
+        }
+
+        const supabaseUrl = env("SUPABASE_URL");
+        const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+
+        if (!supabaseUrl || !serviceRoleKey) {
+            return json({
+                ok: false,
+                error: "server is missing its Supabase service credentials"
+            }, 500);
+        }
+
+        const { createClient } = await import("npm:@supabase/supabase-js@2");
+
+        const supabase = createClient(supabaseUrl, serviceRoleKey, {
+            auth: { persistSession: false }
+        });
+
+        const results = [];
+
+        for (const file of files) {
+            results.push(await processFile(file, supabase));
+        }
+
+        return json({ ok: true, mode: "bulk", results });
+    }
+
     if (mode !== "preview" && mode !== "commit") {
-        return json({ ok: false, error: `mode must be "preview", "commit", or "ping"` }, 400);
+        return json({ ok: false, error: `mode must be "preview", "commit", "bulk", or "ping"` }, 400);
     }
 
     const file = form.get("file");

@@ -1932,6 +1932,7 @@ function buildMakerTable() {
     const yearSet = new Set(years);
     const columns = activeClassColumns(state.main.classColumns);
     const allowed = makerFilterSet();
+    const rtoAllowed = rtoFilterSet();
 
     const byMaker = new Map();
 
@@ -1960,6 +1961,10 @@ function buildMakerTable() {
         industryTotal += value;
 
         if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            return;
+        }
+
+        if (rtoAllowed && record.rto && !rtoAllowed.has(record.rto)) {
             return;
         }
 
@@ -2210,6 +2215,7 @@ function buildDetailTable() {
     const yearSet = new Set(years);
     const columns = activeClassColumns(state.main.classColumns);
     const allowed = makerFilterSet();
+    const rtoAllowed = rtoFilterSet();
 
     /*
      * Every record matching Year/Scope/RTO/Class, regardless of the
@@ -2254,6 +2260,10 @@ function buildDetailTable() {
             return;
         }
 
+        if (rtoAllowed && record.rto && !rtoAllowed.has(record.rto)) {
+            return;
+        }
+
         columns.forEach(column => {
 
             const value = toNumber(record.raw[column]);
@@ -2276,6 +2286,10 @@ function buildDetailTable() {
         }
 
         if (allowed && !allowed.has(normalizeKey(record.maker))) {
+            continue;
+        }
+
+        if (rtoAllowed && record.rto && !rtoAllowed.has(record.rto)) {
             continue;
         }
 
@@ -2416,6 +2430,10 @@ function measureYear(year) {
             return;
         }
 
+        if (rtoAllowed && record.rto && !rtoAllowed.has(record.rto)) {
+            return;
+        }
+
         registrations += value;
 
         if (value > 0) {
@@ -2424,13 +2442,11 @@ function measureYear(year) {
         }
 
         /*
-         * Same record set Card 2 reads (state.main, one table per
-         * scope now) - unlike buildRtoTable()'s own count of RTOs it
-         * displays, this KPI still needs its own explicit RTO-
-         * checklist check. record.rto is null for all_india, so this
-         * naturally counts zero RTOs there.
+         * The RTO checklist already gated whether this record
+         * reached here at all - record.rto is null for all_india, so
+         * this naturally counts zero RTOs there.
          */
-        if (record.rto && value > 0 && (!rtoAllowed || rtoAllowed.has(record.rto))) {
+        if (record.rto && value > 0) {
             rtos.add(record.rto);
         }
     });

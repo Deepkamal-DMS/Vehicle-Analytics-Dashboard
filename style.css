@@ -1182,6 +1182,12 @@ svg {
 .data-table {
     width: 100%;
 
+    /* Every column the same width, dividing the table evenly, rather
+       than however wide its widest cell's unwrapped content happens
+       to be - the header wrapping below is what makes that survive
+       a long column name. */
+    table-layout: fixed;
+
     border-collapse: separate;
     border-spacing: 0;
 
@@ -1196,6 +1202,14 @@ svg {
     border-bottom: 1px solid var(--border-soft);
 
     text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Data cells stay one line (truncated with a tooltip, same as
+   before) - only the header label wraps. */
+.data-table tbody td,
+.data-table tfoot td {
     white-space: nowrap;
 }
 
@@ -1212,6 +1226,11 @@ svg {
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+
+    white-space: normal;
+    word-break: break-word;
+    vertical-align: bottom;
+    line-height: 1.35;
 }
 
 .data-table thead th.numeric,
@@ -1342,6 +1361,8 @@ svg {
 }
 
 .sort-icon {
+    flex-shrink: 0;
+
     opacity: 0.55;
     font-size: 9px;
 }
