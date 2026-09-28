@@ -2097,17 +2097,17 @@ function buildRtoTable() {
         .map(entry => entry[0]);
 
     /*
-     * marketTotal is every RTO the fetch holds, whatever the RTO
-     * checklist says - the true whole-market denominator. displayed
-     * is just the RTOs the checklist chose to show; its own total is
-     * what the footer's "Total Registration" sums (what's on
-     * screen), kept separate from marketTotal (what a share is
-     * measured against) exactly as buildMakerTable() keeps its
-     * displayed grandTotal separate from its industryTotal.
+     * A share here is measured against every filter that is
+     * currently narrowing what's on screen - Scope, Year, Month, RTO
+     * - except the Maker checklist, same as row.total itself above:
+     * picking a handful of makers should change what each row's
+     * bars add up to, not shrink the market they are a share of.
+     * That is different from Card 1/3's industry total, which the
+     * RTO checklist deliberately does NOT shrink there - this card's
+     * rows are the RTOs themselves, so narrowing to a handful of
+     * them should mean "100% is those RTOs together", not "100% is
+     * still the whole scope no filter would have shown anyway".
      */
-    const marketTotal = [...byRto.values()]
-        .reduce((sum, row) => sum + row.total, 0);
-
     const displayed = [...byRto.values()]
         .filter(row => !rtoAllowed || rtoAllowed.has(row.code))
         .sort((a, b) => b.total - a.total);
@@ -2137,7 +2137,7 @@ function buildRtoTable() {
          * are broken out.
          */
         row.others = row.total - named;
-        row.share = marketTotal > 0 ? (row.total / marketTotal) * 100 : null;
+        row.share = grandTotal > 0 ? (row.total / grandTotal) * 100 : null;
     });
 
     const totals = {
@@ -2146,7 +2146,7 @@ function buildRtoTable() {
         values: {},
         others: displayed.reduce((sum, row) => sum + row.others, 0),
         total: grandTotal,
-        share: marketTotal > 0 ? (grandTotal / marketTotal) * 100 : null
+        share: grandTotal > 0 ? 100 : null
     };
 
     makerColumns.forEach(maker => {
