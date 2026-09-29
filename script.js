@@ -235,7 +235,16 @@ const CONFIG = {
      */
     FETCH_PAGE_SIZE: 1000,
 
-    MAX_FETCH_PAGES: 200,
+    /*
+     * A hard ceiling, not a size to tune for today's data - it
+     * exists only so a runaway fetch can't page forever. It must
+     * stay comfortably above every table's actual row count or
+     * rows past it are silently never fetched at all: Maharashtra
+     * alone is already past 239,000 (2026-09), so 200 pages
+     * (200,000 rows) was quietly dropping its last ~40,000 rows on
+     * every load with no error anywhere.
+     */
+    MAX_FETCH_PAGES: 2000,
 
     /*
      * Pages after the first are fetched this many at a time. The
@@ -383,6 +392,13 @@ class RestQuery {
 
         this.headers["Range-Unit"] = "items";
         this.headers.Range = `${from}-${to}`;
+
+        return this;
+    }
+
+    order(clause) {
+
+        this.params.set("order", clause);
 
         return this;
     }
@@ -893,11 +909,37 @@ function apiError(table, error) {
 }
 
 
+/*
+ * Postgres makes no promise that two separate queries against the
+ * same table return rows in the same order unless one is asked for
+ * - without this, range(0,999) and range(1000,1999) fired as two
+ * independent requests (exactly what the concurrent pager below
+ * does) can each get a different query plan and disagree about
+ * which rows fall in which page, silently dropping some rows from
+ * both and duplicating others. Ordering by the table's own primary
+ * key columns (schemaForTable() already knows them) is what makes
+ * "page 3" mean the same 1,000 rows every time it is asked for.
+ */
+function stableOrderFor(table) {
+
+    const schema = schemaForTable(table);
+
+    return [schema.yearColumn, schema.monthColumn, schema.rtoCodeColumn, schema.entityColumn]
+        .filter(Boolean)
+        .map(quoteColumn)
+        .join(",");
+}
+
+
 async function fetchPage(table, select, from, to, options = {}) {
 
-    const { filters = [], signal = null } = options;
+    const { filters = [], signal = null, order = null } = options;
 
     let query = restClient.from(table).select(select).range(from, to);
+
+    if (order) {
+        query = query.order(order);
+    }
 
     filters.forEach(filter => {
         query = query.in(filter.column, filter.values);
@@ -924,6 +966,7 @@ async function fetchAllRows(table, columns, options = {}) {
 
     const select = buildSelect(columns);
     const rows = [];
+    const paged = { ...options, order: stableOrderFor(table) };
 
     for (let page = 0; page < CONFIG.MAX_FETCH_PAGES; page += 1) {
 
@@ -934,7 +977,7 @@ async function fetchAllRows(table, columns, options = {}) {
             select,
             from,
             from + CONFIG.FETCH_PAGE_SIZE - 1,
-            options
+            paged
         );
 
         rows.push(...data);
@@ -1044,13 +1087,14 @@ function scopeLabel(filters) {
 async function fetchAllRowsFast(table, columns, options = {}) {
 
     const select = buildSelect(columns);
+    const paged = { ...options, order: stableOrderFor(table) };
 
     const first = await fetchPage(
         table,
         select,
         0,
         CONFIG.FETCH_PAGE_SIZE - 1,
-        options
+        paged
     );
 
     if (first.length < CONFIG.FETCH_PAGE_SIZE) {
@@ -1097,7 +1141,7 @@ async function fetchAllRowsFast(table, columns, options = {}) {
                 select,
                 from,
                 from + CONFIG.FETCH_PAGE_SIZE - 1,
-                options
+                paged
             )
         ));
 
