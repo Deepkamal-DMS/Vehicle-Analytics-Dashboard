@@ -585,6 +585,65 @@ svg {
     color: var(--text-muted);
 }
 
+/* Sits inside the Year filter-block, above its checklist - one
+   global switch for how every year is bucketed (Jan-Dec vs
+   Apr-Mar), not a per-card setting. */
+.fy-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+
+    margin-bottom: 7px;
+    padding: 3px 4px;
+
+    font-size: 12px;
+    font-weight: 500;
+
+    cursor: pointer;
+}
+
+.fy-toggle:hover {
+    background: var(--primary-soft);
+    border-radius: 4px;
+}
+
+.fy-toggle input {
+    flex: none;
+
+    width: 13px;
+    height: 13px;
+
+    accent-color: var(--primary);
+}
+
+.fy-toggle__hint {
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+/* ---- Scope-split columns (Card 1, multiple Scopes ticked) ----
+
+   A thin colour strip along the top of a year/month column's own
+   header, so two or three states' worth of columns for the same
+   period read as distinct groups before a reader even looks at the
+   text - see makerColumns()'s scopeClass. Reuses the KPI cards'
+   existing accent palette rather than inventing new colours, and
+   stays off entirely (no class is ever applied) when only one scope
+   is active, so a single-scope table looks exactly as it always
+   has. */
+.data-table thead th.scope-all_india {
+    border-top: 3px solid var(--accent-blue);
+}
+
+.data-table thead th.scope-gujarat {
+    border-top: 3px solid var(--accent-amber);
+}
+
+.data-table thead th.scope-maharashtra {
+    border-top: 3px solid var(--accent-violet);
+}
+
+
 .filter-block__note {
     margin-top: 5px;
 
@@ -592,32 +651,6 @@ svg {
     line-height: 1.4;
 
     color: var(--text-muted);
-}
-
-
-/* ---- Scope select ---- */
-
-.filter-select {
-    width: 100%;
-
-    padding: 8px 28px 8px 10px;
-
-    background:
-        var(--surface)
-        url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238a97ab' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-        no-repeat right 10px center / 11px;
-
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
-
-    font-size: 12.5px;
-
-    appearance: none;
-}
-
-.filter-select:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 1px;
 }
 
 

@@ -10,7 +10,7 @@
 
     <meta
         name="description"
-        content="Vehicle Registration Analytics Dashboard"
+        content="DeepKamal Vehicle Analytics Dashboard"
     >
 
     <meta
@@ -18,7 +18,7 @@
         content="#0b1f4b"
     >
 
-    <title>Vehicle Registration Dashboard</title>
+    <title>DeepKamal Vehicle Analytics Dashboard</title>
 
     <!-- Google Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=28"
+        href="style.css?v=29"
     >
 
 </head>
@@ -99,7 +99,7 @@
             <div class="app-header__titles">
 
                 <h1 id="dashboardTitle">
-                    VEHICLE REGISTRATION DASHBOARD
+                    DEEPKAMAL VEHICLE ANALYTICS DASHBOARD
                 </h1>
 
                 <p class="app-header__crumbs">
@@ -305,6 +305,40 @@
             </div>
 
 
+            <!--
+                 Every live table's own columns, empty - a template
+                 for someone preparing data to import, not a data
+                 export. Beside Import/Export since it is the third
+                 thing this header downloads, just not a reading of
+                 the dashboard's current figures the way Export is.
+            -->
+            <button
+                type="button"
+                id="structureButton"
+                class="export-button"
+                data-export="structure"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                    <path d="M3 10h18"></path>
+                    <path d="M9 10v10"></path>
+                    <path d="M15 10v10"></path>
+                </svg>
+
+                Table Structure
+            </button>
+
+
             <button
                 type="button"
                 id="logoutButton"
@@ -385,12 +419,19 @@
 
                      Picks which of the three tables the dashboard
                      reads: All_India_Class_Wise, Gujarat_RTO_Class_Wise
-                     or Maharashtra_RTO_Class_Wise. The RTO filter
-                     narrows within whichever of the two RTO-wise
-                     tables is active - it no longer overrides Scope.
+                     or Maharashtra_RTO_Class_Wise - more than one at
+                     once to compare them. Card 1 splits each of its
+                     columns by scope when more than one is ticked
+                     (see buildMakerTable()); never summed into one
+                     blended figure. The RTO filter narrows within
+                     whichever RTO-wise scopes are active; it has
+                     nothing to narrow for All India.
                      --------------------------------------------- -->
 
-                <div class="filter-block">
+                <div
+                    class="filter-block"
+                    data-checklist="scopes"
+                >
 
                     <div class="filter-block__head">
 
@@ -412,17 +453,32 @@
                         </span>
 
                         <span class="filter-block__title">SCOPE</span>
+                        <span class="filter-block__hint">(Multi Select)</span>
                     </div>
 
-                    <select
-                        id="scopeFilter"
-                        class="filter-select"
-                        name="scope"
+                    <button
+                        type="button"
+                        class="filter-summary"
+                        data-checklist-toggle
+                        aria-expanded="true"
                     >
-                        <option value="all_india">All India</option>
-                        <option value="gujarat">Gujarat</option>
-                        <option value="maharashtra">Maharashtra</option>
-                    </select>
+                        <span data-checklist-label>All India</span>
+                        <span class="filter-summary__caret" aria-hidden="true"></span>
+                    </button>
+
+                    <div
+                        class="filter-panel"
+                        data-checklist-panel
+                    >
+                        <ul
+                            class="checklist checklist--grid"
+                            data-checklist-options
+                        ></ul>
+                    </div>
+
+                    <p class="filter-block__note">
+                        At least one scope stays ticked - comparing nothing is not a state.
+                    </p>
 
                 </div>
 
@@ -459,6 +515,14 @@
                         <span class="filter-block__title">YEAR</span>
                         <span class="filter-block__hint">(Multi Select)</span>
                     </div>
+
+                    <label class="fy-toggle">
+                        <input
+                            type="checkbox"
+                            id="financialYearToggle"
+                        >
+                        <span>Financial Year <span class="fy-toggle__hint">(Apr&nbsp;&ndash;&nbsp;Mar)</span></span>
+                    </label>
 
                     <button
                         type="button"
@@ -604,7 +668,7 @@
 
                     <p class="filter-block__note">
                         Ticking an RTO narrows every card to those
-                        RTOs and overrides Scope.
+                        RTOs, within whichever scopes are active.
                     </p>
 
                 </div>
@@ -1834,7 +1898,7 @@
     <!-- Login itself is a separate page now - see login.html. auth.js
          is the piece the two pages share, so it loads first. -->
     <script src="auth.js?v=1"></script>
-    <script src="script.js?v=30"></script>
+    <script src="script.js?v=31"></script>
 
 </body>
 </html>

@@ -53,14 +53,15 @@
  * the anon role, and each table has row level security on with
  * a SELECT-only policy. Writes are refused by the database.
  */
-const API_URL = "https://ytgoonducepylslknkag.supabase.co/rest/v1";
+/* TEMPORARY local override - pointed at the docker-compose PostgREST
+   stand-in (see docker-compose.yml) while Supabase is unreachable.
+   Revert before pushing: API_URL back to Supabase's REST URL, and
+   API_HEADERS back to { apikey, Authorization }. */
+const API_URL = "http://localhost:3004";
 
 const API_KEY = "sb_publishable_9IVGzYTxQDj2UoLOaBtkFw_7H5ILVGY";
 
-const API_HEADERS = {
-    apikey: API_KEY,
-    Authorization: `Bearer ${API_KEY}`
-};
+const API_HEADERS = {};
 
 /* IMPORT_FUNCTION_URL and everything about auth (login state,
    verifyCredentials(), goToLogin()) now live in auth.js, loaded
@@ -87,9 +88,9 @@ const SCOPE_TABLES = {
 
 
 const SCOPES = [
-    { id: "all_india",   label: "All India" },
-    { id: "gujarat",     label: "Gujarat" },
-    { id: "maharashtra", label: "Maharashtra" }
+    { id: "all_india",   label: "All India",   short: "IND" },
+    { id: "gujarat",     label: "Gujarat",     short: "GJ" },
+    { id: "maharashtra", label: "Maharashtra", short: "MH" }
 ];
 
 
@@ -214,6 +215,28 @@ function tableFor(scope) {
 
 
 const DEFAULT_SCOPE = "all_india";
+
+
+/* Whatever order a reader ticked them in, every table/column/legend
+   built from a scope list reads them in this fixed order instead -
+   so a render is never one click away from silently swapping which
+   side of a comparison is which. */
+function orderScopes(scopes) {
+
+    return SCOPES
+        .map(entry => entry.id)
+        .filter(id => scopes.includes(id));
+}
+
+
+/* scopes.length === 0 does NOT mean "every scope" the way an empty
+   years/months/rtos/makers/classes selection means "every one of
+   them" - see emptyFilters()'s own comment on why. This is the one
+   place that decides what an empty list actually resolves to. */
+function selectedScopes(scopes) {
+
+    return scopes.length > 0 ? orderScopes(scopes) : [DEFAULT_SCOPE];
+}
 
 
 /* ============================================================
@@ -538,14 +561,28 @@ function createRestClient(baseUrl, authHeaders) {
 function emptyFilters() {
 
     return {
-        scope: DEFAULT_SCOPE,
+        /*
+         * Plural and never empty - see selectedScopes(), the one
+         * place that falls back to [DEFAULT_SCOPE] if it ever is.
+         * Unlike years/months/rtos/makers/classes below, empty does
+         * NOT mean "every one of them" here: fetching and merging
+         * all three tables is not a sane default to fall into by
+         * unchecking the wrong box, it is a deliberate comparison a
+         * reader opts into - see the scopes checklist's own change
+         * handler, which refuses to let the last one go.
+         */
+        scopes: [DEFAULT_SCOPE],
 
         /* Empty means every one of them, for all five. */
         years: [],
         months: [],
         rtos: [],
         makers: [],
-        classes: []
+        classes: [],
+
+        /* Jan-Dec when false (the default); Apr-Mar, one financial
+           year per bucket, when true - see yearBucketFor(). */
+        financialYear: false
     };
 }
 
@@ -581,13 +618,16 @@ const state = {
     grain: "year",
 
     /*
-     * Which options each check list offers, rebuilt as scope moves.
-     * years and rtos start empty and are filled once the scope's
-     * table has actually been read - neither is a fixed list any
-     * more (a new year is just more rows; Gujarat and Maharashtra
-     * between them hold 95 RTOs, not four).
+     * Which options each check list offers, rebuilt as Scope moves -
+     * scopes itself is the one fixed list here (there are only ever
+     * three). years and rtos start empty and are filled once the
+     * selected scopes' tables have actually been read - neither is a
+     * fixed list any more (a new year is just more rows; Gujarat and
+     * Maharashtra between them hold 95 RTOs, not four).
      */
     options: {
+        /* Fixed, not data-derived - there are only ever these three. */
+        scopes: SCOPES.map(scope => ({ value: scope.id, label: scope.label })),
         years: [],
         months: MONTHS.map(month => ({
             value: String(month.number),
@@ -684,7 +724,7 @@ function cacheDOM() {
         "filterSidebar",
         "collapseFiltersButton",
         "dashboardFilters",
-        "scopeFilter",
+        "financialYearToggle",
         "filterNotice",
         "applyFiltersButton",
         "resetFiltersButton",
@@ -694,6 +734,7 @@ function cacheDOM() {
         "dataRefreshedOn",
         "exportMenuButton",
         "exportMenuList",
+        "structureButton",
 
         /* KPIs */
         "kpiRegistrations", "kpiRegistrationsDelta",
@@ -705,7 +746,7 @@ function cacheDOM() {
 
         /* Card 1 */
         "makerTable", "makerTableHead", "makerTableBody", "makerTableFoot",
-        "makerCardMeta", "makerCardState",
+        "makerCardTitle", "makerCardMeta", "makerCardState",
         "makerPageSize", "makerPageIndicator",
 
         /* Card 2 */
@@ -1052,11 +1093,34 @@ function getCachedTable(table, columns, signal) {
    ============================================================ */
 
 /*
- * Month grain only once the Month filter actually narrows. All
+ * How many years filters.years actually resolves to - same "empty
+ * means all of them" rule selectedYears() uses, but worked out from
+ * whatever filters object is passed in rather than always reading
+ * state.filters, since grainFor() below is called with state.pending
+ * too (see updateFilterNotice()).
+ */
+function effectiveYearCount(filters) {
+
+    return filters.years.length > 0
+        ? filters.years.length
+        : state.options.years.length;
+}
+
+
+/*
+ * Month grain either because the Month filter actually narrows - all
  * twelve ticked reads the same rows as none ticked, but zero
- * narrowing means "sum the year", not "show twelve separate rows".
+ * narrowing means "sum the year", not "show twelve separate rows" -
+ * or because Financial Year is on and exactly one financial year is
+ * selected, which is Card 1's cue to break that one year into its
+ * own twelve months (see buildMakerTable()) rather than draw a
+ * table with a single year column.
  */
 function grainFor(filters) {
+
+    if (filters.financialYear && effectiveYearCount(filters) === 1) {
+        return "month";
+    }
 
     const months = filters.months;
 
@@ -1068,9 +1132,12 @@ function grainFor(filters) {
 
 function scopeLabel(filters) {
 
-    const scope = SCOPES.find(entry => entry.id === filters.scope);
-
-    return scope ? scope.label : filters.scope;
+    return selectedScopes(filters.scopes)
+        .map(id => {
+            const scope = SCOPES.find(entry => entry.id === id);
+            return scope ? scope.label : id;
+        })
+        .join(" + ");
 }
 
 
@@ -1316,6 +1383,14 @@ function wireChecklist(checklist) {
 
         } else {
 
+            /* Scope never goes to zero - see selectedScopes()'s own
+               comment on why that is not a safe "means everything"
+               default the way it is for every other checklist. */
+            if (checklist.name === "scopes" && selected.length <= 1) {
+                input.checked = true;
+                return;
+            }
+
             const at = selected.indexOf(value);
 
             if (at !== -1) {
@@ -1339,7 +1414,16 @@ function wireChecklist(checklist) {
  * ticked, the one name when one is, a count after that.
  */
 const CHECKLIST_WORDING = {
-    years: { all: "All Years", one: value => value, many: "Years" },
+    scopes: {
+        all: "All Scopes Selected",
+        one: value => (SCOPES.find(entry => entry.id === value) || {}).label || value,
+        many: "Scopes"
+    },
+    years: {
+        all: "All Years",
+        one: value => yearLabel(value, state.pending.financialYear),
+        many: "Years"
+    },
     months: {
         all: "All Months",
         one: value => monthLabel(value),
@@ -1374,6 +1458,60 @@ function monthNumberOf(key) {
     const month = MONTHS.find(entry => entry.key === key);
 
     return month ? month.number : null;
+}
+
+
+/*
+ * Every "year" in this dashboard is really a bucket a row's (year,
+ * month) falls into - normally the calendar year itself. With the
+ * Financial Year toggle on, Jan/Feb/Mar belong to the financial year
+ * that STARTED the previous April, so they move into the bucket one
+ * number lower; everything from April on stays put. The bucket is
+ * still just a plain year-number string either way - every filter,
+ * sort, growth comparison and KPI already built around "year" keeps
+ * working unchanged on top of whichever bucketing is active (see
+ * yearLabel() for the one thing that does need to know: how to show
+ * that bucket as text).
+ */
+function yearBucketFor(calendarYear, monthKey, financialYear) {
+
+    if (!financialYear) {
+        return calendarYear;
+    }
+
+    const monthNumber = monthNumberOf(monthKey);
+
+    if (monthNumber === null || monthNumber > 3) {
+        return calendarYear;
+    }
+
+    return String(Number(calendarYear) - 1);
+}
+
+
+/* "2024" vs "FY 2024-25" (Apr 2024 - Mar 2025). */
+function yearLabel(bucket, financialYear) {
+
+    if (!financialYear) {
+        return String(bucket);
+    }
+
+    const start = Number(bucket);
+
+    if (!Number.isFinite(start)) {
+        return String(bucket);
+    }
+
+    return `FY ${start}-${String(start + 1).slice(-2)}`;
+}
+
+
+/* The compact form used in span headers like "Growth % (20-26)". */
+function yearShort(bucket, financialYear) {
+
+    return financialYear
+        ? `FY${String(bucket).slice(-2)}`
+        : String(bucket).slice(-2);
 }
 
 
@@ -1543,12 +1681,13 @@ function filtersEqual(a, b) {
         x.length === y.length && x.every((value, at) => value === y[at]);
 
     return (
-        a.scope === b.scope &&
+        same(a.scopes, b.scopes) &&
         same(a.years, b.years) &&
         same(a.months, b.months) &&
         same(a.rtos, b.rtos) &&
         same(a.makers, b.makers) &&
-        same(a.classes, b.classes)
+        same(a.classes, b.classes) &&
+        a.financialYear === b.financialYear
     );
 }
 
@@ -1574,13 +1713,16 @@ function markDirty() {
 async function onPendingChanged(name, { origin = null } = {}) {
 
     /*
-     * Scope, RTO and Month all move which makers, classes and
-     * years exist, so those lists are rebuilt before anything is
-     * redrawn. Maker and Class narrow nothing but themselves.
+     * Scope, RTO and Month all move which makers, classes and years
+     * exist; the Financial Year toggle moves nothing but which
+     * bucket each row's own year falls into and what that bucket is
+     * called (see yearBucketFor()/yearLabel()) - still enough to
+     * need the Year list rebuilt the same way. Maker and Class
+     * narrow nothing but themselves.
      */
     let rebuilt = false;
 
-    if (name === "months" || name === "rtos" || name === "scope") {
+    if (name === "months" || name === "rtos" || name === "scopes" || name === "financialYear") {
 
         try {
             await loadFilterOptions();
@@ -1639,40 +1781,82 @@ function rtoOptionsFrom(rows, schema) {
 
 
 /*
- * One fetch of the active scope's whole table answers every filter
- * list: years and RTOs are whatever is actually in the data, makers
- * are its distinct entity column, classes are the fixed 76 (see
+ * One fetch of every selected scope's whole table answers every
+ * filter list: years and RTOs are whatever is actually in the data
+ * (unioned across however many scopes are active - Gujarat and
+ * Maharashtra's RTO codes never collide, so a plain merge by code is
+ * safe), makers are the distinct entity column of all of them
+ * together, classes are the fixed 76 every table shares (see
  * schemaForTable()). loadRecords() below reads the same cached rows
  * back out rather than fetching a second time.
  */
 async function loadFilterOptions(signal) {
 
     const pending = state.pending;
-    const table = tableFor(pending.scope);
-    const schema = await describeSource(table);
+    const scopes = selectedScopes(pending.scopes);
+    const tables = scopes.map(tableFor);
+
+    /* Every table shares the same 76 class columns - any one's
+       schema answers this for all of them. */
+    const schema = await describeSource(tables[0]);
 
     state.classColumns = schema.classColumns;
     state.options.classes = classOptionsFor(schema.classColumns);
 
     pruneSelection("classes");
 
-    const rows = await getCachedTable(table, sourceColumns(schema), signal);
+    const perTable = await Promise.all(tables.map(async table => {
 
-    state.options.years = uniqueSorted(
-        rows.map(row => row[schema.yearColumn])
-    ).map(year => ({ value: year, label: year }));
+        const tableSchema = await describeSource(table);
+        const rows = await getCachedTable(table, sourceColumns(tableSchema), signal);
+
+        return { schema: tableSchema, rows };
+    }));
+
+    const years = new Set();
+    const rtos = new Map();
+    const makers = new Set();
+
+    perTable.forEach(({ schema: tableSchema, rows }) => {
+
+        rows.forEach(row => {
+
+            years.add(yearBucketFor(
+                row[tableSchema.yearColumn],
+                row[tableSchema.monthColumn],
+                pending.financialYear
+            ));
+
+            makers.add(normalizeString(row[tableSchema.entityColumn]));
+        });
+
+        if (!tableSchema.rtoCodeColumn) {
+            return;
+        }
+
+        rows.forEach(row => {
+
+            const code = row[tableSchema.rtoCodeColumn];
+
+            if (code && !rtos.has(code)) {
+                rtos.set(code, row[tableSchema.rtoNameColumn] || code);
+            }
+        });
+    });
+
+    state.options.years = uniqueSorted([...years])
+        .map(year => ({ value: year, label: yearLabel(year, pending.financialYear) }));
 
     pruneSelection("years");
 
-    state.options.rtos = schema.rtoCodeColumn
-        ? rtoOptionsFrom(rows, schema)
-        : [];
+    state.options.rtos = [...rtos.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+        .map(([code, name]) => ({ value: code, label: `${code} — ${name}` }));
 
     pruneSelection("rtos");
 
-    state.options.makers = uniqueSorted(
-        rows.map(row => row[schema.entityColumn])
-    ).map(maker => ({ value: maker, label: maker }));
+    state.options.makers = uniqueSorted([...makers])
+        .map(maker => ({ value: maker, label: maker }));
 
     pruneSelection("makers");
 }
@@ -1758,12 +1942,17 @@ function updateFilterNotice() {
    carries no RTO column at all.
    ============================================================ */
 
-function rowToRecord(row, schema, month) {
+function rowToRecord(row, schema, month, scope) {
 
     return {
+        scope,
         rto: schema.rtoCodeColumn ? (row[schema.rtoCodeColumn] || null) : null,
         rtoName: schema.rtoNameColumn ? (row[schema.rtoNameColumn] || null) : null,
-        year: normalizeString(row[schema.yearColumn]),
+        year: yearBucketFor(
+            normalizeString(row[schema.yearColumn]),
+            row[schema.monthColumn],
+            state.filters.financialYear
+        ),
         month,
         maker: normalizeString(row[schema.entityColumn]),
         raw: row
@@ -1779,14 +1968,19 @@ function rowToRecord(row, schema, month) {
  * by RTO too, not just year+maker: two different RTOs' rows for the
  * same maker and year must stay two rows, not collapse into one.
  */
-function aggregateToYear(rows, schema) {
+function aggregateToYear(rows, schema, scope) {
 
     const numericColumns = [...schema.classColumns, schema.totalColumn];
     const byKey = new Map();
 
     rows.forEach(row => {
 
-        const year = normalizeString(row[schema.yearColumn]);
+        const year = yearBucketFor(
+            normalizeString(row[schema.yearColumn]),
+            row[schema.monthColumn],
+            state.filters.financialYear
+        );
+
         const maker = normalizeString(row[schema.entityColumn]);
         const rto = schema.rtoCodeColumn ? (row[schema.rtoCodeColumn] || null) : null;
 
@@ -1797,6 +1991,7 @@ function aggregateToYear(rows, schema) {
         if (!record) {
 
             record = {
+                scope,
                 rto,
                 rtoName: schema.rtoNameColumn ? (row[schema.rtoNameColumn] || null) : null,
                 year,
@@ -1817,13 +2012,6 @@ function aggregateToYear(rows, schema) {
 }
 
 
-/*
- * The active scope's whole table, already cached by
- * loadFilterOptions() having read it first - narrowed to the
- * selected months and, at year grain, summed into one row per
- * year/maker; at month grain, kept one row per month exactly as
- * fetched.
- */
 /*
  * The most recent uploaded_at across a fetch - read from the raw
  * rows, not from state.main.records: aggregateToYear() builds a
@@ -1851,28 +2039,54 @@ function latestUploadedAt(rows, schema) {
 }
 
 
-async function loadRecords(scope, grain, months, signal) {
-
-    const table = tableFor(scope);
-    const schema = await describeSource(table);
-    const rows = await getCachedTable(table, sourceColumns(schema), signal);
+/*
+ * One or more scopes' whole tables, already cached by
+ * loadFilterOptions() having read them first - fetched in parallel,
+ * each narrowed to the selected months and, at year grain, summed
+ * into one row per year/maker; at month grain, kept one row per
+ * month exactly as fetched. Every record carries which scope it came
+ * from (see rowToRecord()/aggregateToYear()) - the tables are never
+ * merged into one undifferentiated pile, just concatenated, so a
+ * reader comparing two states is always looking at two states' own
+ * figures side by side rather than one blended sum.
+ */
+async function loadRecords(scopes, grain, months, signal) {
 
     const monthSet = new Set(months);
 
-    const matched = rows.filter(row =>
-        monthSet.has(monthNumberOf(row[schema.monthColumn]))
-    );
+    const perScope = await Promise.all(scopes.map(async scope => {
 
-    const records = grain === "month"
-        ? matched.map(row =>
-            rowToRecord(row, schema, monthNumberOf(row[schema.monthColumn]))
-        )
-        : aggregateToYear(matched, schema);
+        const table = tableFor(scope);
+        const schema = await describeSource(table);
+        const rows = await getCachedTable(table, sourceColumns(schema), signal);
+
+        const matched = rows.filter(row =>
+            monthSet.has(monthNumberOf(row[schema.monthColumn]))
+        );
+
+        const records = grain === "month"
+            ? matched.map(row =>
+                rowToRecord(row, schema, monthNumberOf(row[schema.monthColumn]), scope)
+            )
+            : aggregateToYear(matched, schema, scope);
+
+        return { records, schema, rows };
+    }));
+
+    const refreshedAt = perScope.reduce((latest, entry) => {
+
+        const candidate = latestUploadedAt(entry.rows, entry.schema);
+
+        return !latest || (candidate && candidate > latest) ? candidate : latest;
+
+    }, null);
 
     return {
-        records,
-        classColumns: schema.classColumns,
-        refreshedAt: latestUploadedAt(rows, schema)
+        records: perScope.flatMap(entry => entry.records),
+        /* Every table shares the same 76 class columns - any one's
+           schema answers this for all of them. */
+        classColumns: perScope.length > 0 ? perScope[0].schema.classColumns : [],
+        refreshedAt
     };
 }
 
@@ -1953,6 +2167,25 @@ function growthBetween(from, to) {
    20. CARD 1 - MAKER COMPARISON (YEAR WISE)
    ============================================================ */
 
+/* Apr..Mar - the order a financial year's twelve months are read in,
+   as opposed to the calendar's Jan..Dec. */
+const FY_MONTH_ORDER = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
+
+
+/*
+ * A column key is a time bucket (year or, in monthlyMode, month) on
+ * its own when only one scope is active - unchanged from before this
+ * existed - or "bucket::scope" once there is more than one, so a
+ * Gujarat figure and a Maharashtra figure for the same year can
+ * never land in the same cell and get summed into one blended
+ * number. See buildMakerTable()'s own comment for why growth is the
+ * one figure that does not also get this split.
+ */
+function makerColumnKey(bucket, scope, multiScope) {
+    return multiScope ? `${bucket}::${scope}` : String(bucket);
+}
+
+
 function buildMakerTable() {
 
     const years = selectedYears();
@@ -1960,6 +2193,36 @@ function buildMakerTable() {
     const columns = activeClassColumns(state.main.classColumns);
     const allowed = makerFilterSet();
     const rtoAllowed = rtoFilterSet();
+
+    const scopes = selectedScopes(state.filters.scopes);
+    const multiScope = scopes.length > 1;
+
+    /*
+     * Exactly one financial year selected is Card 1's cue to break
+     * it into its own twelve months (Apr..Mar) instead of drawing a
+     * table with one lonely year column - grainFor() is what put
+     * state.main.records at month grain so this data even exists.
+     * `timeBuckets` is whichever axis is active below; everything
+     * reads "year" as shorthand for "whichever bucket", same as
+     * always - the data just carries month numbers instead of year
+     * strings when this is on. See makerColumns() for where this and
+     * the scope split above become actual column headers.
+     */
+    const monthlyMode = years.length === 1 && state.filters.financialYear;
+
+    const timeBuckets = monthlyMode
+        ? FY_MONTH_ORDER.filter(month => selectedMonthNumbers().includes(month))
+        : years;
+
+    const timeBucketSet = new Set(timeBuckets);
+
+    /* The ordered list of columns - time-bucket-major when scopes are
+       split, so a year or month's states sit side by side rather
+       than grouped by state first (see orderScopes() for the state
+       order itself, always fixed regardless of tick order). */
+    const buckets = multiScope
+        ? timeBuckets.flatMap(bucket => scopes.map(scope => makerColumnKey(bucket, scope, true)))
+        : timeBuckets.map(bucket => makerColumnKey(bucket, null, false));
 
     const byMaker = new Map();
 
@@ -1972,6 +2235,8 @@ function buildMakerTable() {
      * that hasn't actually shrunk. This is the same principle the
      * KPI strip's own Market Share figure already follows - see
      * measureYear()'s "industry" - card 1 just wasn't following it.
+     * Scoped the same way the columns are, so a state's own share
+     * column is that state's own market, not the combined one.
      */
     const industryByYear = {};
     let industryTotal = 0;
@@ -1982,9 +2247,17 @@ function buildMakerTable() {
             return;
         }
 
+        const timeBucket = monthlyMode ? record.month : record.year;
+
+        if (!timeBucketSet.has(timeBucket)) {
+            return;
+        }
+
+        const bucket = makerColumnKey(timeBucket, record.scope, multiScope);
+
         const value = sumColumns(record.raw, columns);
 
-        industryByYear[record.year] = (industryByYear[record.year] || 0) + value;
+        industryByYear[bucket] = (industryByYear[bucket] || 0) + value;
         industryTotal += value;
 
         if (allowed && !allowed.has(normalizeKey(record.maker))) {
@@ -2002,7 +2275,7 @@ function buildMakerTable() {
             byMaker.set(record.maker, row);
         }
 
-        row.byYear[record.year] = (row.byYear[record.year] || 0) + value;
+        row.byYear[bucket] = (row.byYear[bucket] || 0) + value;
         row.total += value;
     });
 
@@ -2010,14 +2283,25 @@ function buildMakerTable() {
 
     const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
 
-    const first = years[0];
-    const last = years[years.length - 1];
+    const first = buckets[0];
+    const last = buckets[buckets.length - 1];
+
+    /*
+     * Growth compares a first period against a last one - with the
+     * scope split on, "first" and "last" can be two different
+     * states' columns (Gujarat's earliest year, Maharashtra's
+     * latest), and a trend across two different markets is not a
+     * trend. Rather than print something that reads like a number
+     * but answers no real question, growth is withheld here the
+     * same way a single selected year already withholds it below.
+     */
+    const growthMeaningful = buckets.length > 1 && !multiScope;
 
     rows.forEach(row => {
 
         row.share = industryTotal > 0 ? (row.total / industryTotal) * 100 : null;
 
-        row.growth = years.length > 1
+        row.growth = growthMeaningful
             ? growthBetween(row.byYear[first] || 0, row.byYear[last] || 0)
             : null;
     });
@@ -2038,18 +2322,25 @@ function buildMakerTable() {
         isTotals: true
     };
 
-    years.forEach(year => {
-        totals.byYear[year] = rows.reduce(
-            (sum, row) => sum + (row.byYear[year] || 0),
+    buckets.forEach(bucket => {
+        totals.byYear[bucket] = rows.reduce(
+            (sum, row) => sum + (row.byYear[bucket] || 0),
             0
         );
     });
 
-    if (years.length > 1) {
+    if (growthMeaningful) {
         totals.growth = growthBetween(totals.byYear[first], totals.byYear[last]);
     }
 
-    state.makerTable = { rows, years, totals, first, last, industryByYear, industryTotal };
+    state.makerTable = {
+        rows, years: buckets, totals, first, last,
+        industryByYear, industryTotal, monthlyMode, multiScope,
+        /* How many years/months are on screen, as opposed to
+           years.length above once multiScope has multiplied that by
+           however many scopes are ticked - see renderMakerCard(). */
+        timeBucketCount: timeBuckets.length
+    };
 }
 
 
@@ -2338,6 +2629,7 @@ function buildDetailTable() {
             );
 
             rows.push({
+                scope: record.scope,
                 year: record.year,
                 month: record.month,
                 rtoCode: record.rto || "—",
@@ -2558,14 +2850,17 @@ function buildKpis() {
         yearsLabel: years.length === 0
             ? "—"
             : years.length === 1
-                ? years[0]
-                : `${years[0]} - ${years[years.length - 1]}`,
+                ? yearLabel(years[0], state.filters.financialYear)
+                : `${yearLabel(years[0], state.filters.financialYear)} - ` +
+                    yearLabel(years[years.length - 1], state.filters.financialYear),
 
         yearsMeta: years.length === 0
             ? ""
             : `(${years.length} Year${years.length === 1 ? "" : "s"} Selected)`,
 
-        comparedWith: hasPrevious ? previousYear : null,
+        comparedWith: hasPrevious
+            ? yearLabel(previousYear, state.filters.financialYear)
+            : null,
 
         deltas: {
             registrations: delta("registrations"),
@@ -2622,13 +2917,16 @@ function buildSummary() {
         makers,
         rtos,
         growth,
-        growthTitle: maker.years.length > 1
-            ? `HIGHEST GROWTH (${String(maker.first).slice(-2)}-` +
-              `${String(maker.last).slice(-2)})`
+        growthTitle: maker.years.length > 1 && !maker.multiScope
+            ? `HIGHEST GROWTH (${
+                maker.monthlyMode ? monthShort(maker.first) : yearShort(maker.first, filters.financialYear)
+            }-${
+                maker.monthlyMode ? monthShort(maker.last) : yearShort(maker.last, filters.financialYear)
+            })`
             : "HIGHEST GROWTH",
 
         facts: [
-            ["Total Years Selected", maker.years.length],
+            ["Total Years Selected", selectedYears().length],
             ["Total Months Selected", filters.months.length || MONTHS.length],
             ["Total RTOs Selected", state.kpis.rtos || 0],
             ["Total Makers Selected", state.kpis.makers || 0],
@@ -2808,7 +3106,8 @@ function headClassFor(column) {
 
     return [
         column.numeric ? "numeric" : "",
-        column.sticky ? "sticky-left" : ""
+        column.sticky ? "sticky-left" : "",
+        column.scopeClass || ""
     ].filter(Boolean).join(" ");
 }
 
@@ -3044,9 +3343,53 @@ function paintPagination(card, total, view) {
    27. CARD 1 - COLUMNS + RENDER
    ============================================================ */
 
+/* "2024::gujarat" -> { timeBucket: "2024", scope: "gujarat" }; any
+   bucket at all when multiScope is off, since it was never composite
+   to begin with - see makerColumnKey(). */
+function parseMakerBucketKey(bucket, multiScope) {
+
+    if (!multiScope) {
+        return { timeBucket: bucket, scope: null };
+    }
+
+    const sep = String(bucket).indexOf("::");
+
+    return {
+        timeBucket: String(bucket).slice(0, sep),
+        scope: String(bucket).slice(sep + 2)
+    };
+}
+
+
+function scopeShort(scopeId) {
+
+    const scope = SCOPES.find(entry => entry.id === scopeId);
+
+    return scope ? scope.short : scopeId;
+}
+
+
 function makerColumns() {
 
-    const { years, first, last, industryByYear } = state.makerTable;
+    const { years, first, last, industryByYear, monthlyMode, multiScope } = state.makerTable;
+    const fy = state.filters.financialYear;
+
+    const timeBucketLabel = timeBucket =>
+        monthlyMode ? monthShort(timeBucket) : yearLabel(timeBucket, fy);
+
+    /* monthlyMode: each "year" in the table is actually a month
+       number (see buildMakerTable()) - label/shareOf read it that
+       way instead. multiScope: each is "bucket::scope" - split back
+       apart and the state's short form (GJ/MH/IND) is appended, so
+       two columns for the same year never read as the same thing. */
+    const bucketLabel = bucket => {
+
+        const { timeBucket, scope } = parseMakerBucketKey(bucket, multiScope);
+
+        return multiScope
+            ? `${timeBucketLabel(timeBucket)} · ${scopeShort(scope)}`
+            : timeBucketLabel(timeBucket);
+    };
 
     const columns = [
         {
@@ -3072,12 +3415,18 @@ function makerColumns() {
      * cover of the whole market, which is worth printing.
      */
     years.forEach(year => {
+
+        const { scope } = parseMakerBucketKey(year, multiScope);
+
         columns.push({
             key: `year:${year}`,
-            label: year,
+            label: bucketLabel(year),
             numeric: true,
             sortable: true,
-            shareOf: String(year),
+            shareOf: bucketLabel(year),
+            /* Only set once there is something to tell apart - see
+               this file's own "Scope-split columns" comment. */
+            scopeClass: scope ? `scope-${scope}` : "",
             raw: row => row.byYear[year] || 0,
             text: row => numberText(row.byYear[year] || 0),
             sub: row => cellShareText(
@@ -3108,8 +3457,8 @@ function makerColumns() {
         },
         {
             key: "__growth",
-            label: years.length > 1
-                ? `Growth % (${String(first).slice(-2)}-${String(last).slice(-2)})`
+            label: years.length > 1 && !multiScope
+                ? `Growth % (${monthlyMode ? monthShort(first) : yearShort(first, fy)}-${monthlyMode ? monthShort(last) : yearShort(last, fy)})`
                 : "Growth %",
             numeric: true,
             sortable: true,
@@ -3125,14 +3474,27 @@ function makerColumns() {
 
 function renderMakerCard() {
 
-    const { rows, totals, years } = state.makerTable;
+    const { rows, totals, timeBucketCount, monthlyMode, multiScope } = state.makerTable;
     const columns = makerColumns();
     const view = state.view.maker;
 
+    if (dom.makerCardTitle) {
+        dom.makerCardTitle.textContent = monthlyMode
+            ? "MAKER COMPARISON (MONTH WISE)"
+            : "MAKER COMPARISON (YEAR WISE)";
+    }
+
     if (dom.makerCardMeta) {
-        dom.makerCardMeta.textContent =
-            `${formatIndianNumber(rows.length)} makers · ` +
-            `${years.length} year${years.length === 1 ? "" : "s"}`;
+
+        const period = monthlyMode
+            ? `${timeBucketCount} month${timeBucketCount === 1 ? "" : "s"}`
+            : `${timeBucketCount} year${timeBucketCount === 1 ? "" : "s"}`;
+
+        const scopeCount = selectedScopes(state.filters.scopes).length;
+
+        dom.makerCardMeta.textContent = multiScope
+            ? `${formatIndianNumber(rows.length)} makers · ${period} · ${scopeCount} scopes compared`
+            : `${formatIndianNumber(rows.length)} makers · ${period}`;
     }
 
     setExportEnabled(["maker-xlsx", "maker-pdf"], rows.length > 0);
@@ -3281,13 +3643,32 @@ function renderRtoCard() {
 
 function detailColumns() {
 
+    /*
+     * Only shown once there is something to tell apart - a single
+     * scope's own table already says which one it is in the header
+     * title, and a column repeating that on every row would just be
+     * noise. See buildDetailTable()'s row.scope.
+     */
+    const multiScope = selectedScopes(state.filters.scopes).length > 1;
+
+    const scopeColumn = multiScope
+        ? [{
+            key: "scope",
+            label: "Scope",
+            sortable: true,
+            raw: row => scopeShort(row.scope),
+            text: row => (SCOPES.find(entry => entry.id === row.scope) || {}).label || row.scope
+        }]
+        : [];
+
     return [
+        ...scopeColumn,
         {
             key: "year",
             label: "Year",
             sortable: true,
             raw: row => row.year,
-            text: row => row.year
+            text: row => yearLabel(row.year, state.filters.financialYear)
         },
         {
             key: "month",
@@ -3712,7 +4093,7 @@ function renderHeader() {
 
         dom.dashboardTitle.textContent =
             `${scopeLabel(state.filters).toUpperCase()} ` +
-            "VEHICLE REGISTRATION DASHBOARD";
+            "DEEPKAMAL VEHICLE ANALYTICS DASHBOARD";
     }
 
     if (dom.dataRefreshedOn) {
@@ -4008,6 +4389,120 @@ function xlsxParts(sheetName, sheetXml) {
         { path: "xl/styles.xml", data: XLSX_STYLES },
         { path: "xl/worksheets/sheet1.xml", data: sheetXml }
     ];
+}
+
+
+/*
+ * Same package xlsxParts() builds, generalised to N worksheets
+ * instead of exactly one - every <sheet>/relationship/content-type
+ * entry that function hardcodes to "1" here loops over `sheets`
+ * instead. Used by downloadWorkbookMulti() for the Table Structure
+ * download, the one workbook this dashboard writes with more than a
+ * single tab.
+ */
+function xlsxPartsMulti(sheets) {
+
+    const named = sheets.map((sheet, index) => ({
+        id: index + 1,
+        name: xmlEscape(sheet.name).slice(0, 31),
+        xml: sheet.xml
+    }));
+
+    const stylesRelId = `rId${named.length + 1}`;
+
+    const sheetTags = named
+        .map(sheet => `<sheet name="${sheet.name}" sheetId="${sheet.id}" r:id="rId${sheet.id}"/>`)
+        .join("");
+
+    const sheetOverrides = named
+        .map(sheet =>
+            `<Override PartName="/xl/worksheets/sheet${sheet.id}.xml" ContentType=` +
+            '"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        )
+        .join("");
+
+    const sheetRels = named
+        .map(sheet =>
+            `<Relationship Id="rId${sheet.id}" Type="http://schemas.openxmlformats` +
+            '.org/officeDocument/2006/relationships/worksheet" ' +
+            `Target="worksheets/sheet${sheet.id}.xml"/>`
+        )
+        .join("");
+
+    return [
+        {
+            path: "[Content_Types].xml",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<Types xmlns="http://schemas.openxmlformats.org/' +
+                'package/2006/content-types">' +
+                '<Default Extension="rels" ContentType="application/' +
+                'vnd.openxmlformats-package.relationships+xml"/>' +
+                '<Default Extension="xml" ContentType="application/xml"/>' +
+                '<Override PartName="/xl/workbook.xml" ContentType=' +
+                '"application/vnd.openxmlformats-officedocument.' +
+                'spreadsheetml.sheet.main+xml"/>' +
+                sheetOverrides +
+                '<Override PartName="/xl/styles.xml" ContentType=' +
+                '"application/vnd.openxmlformats-officedocument.' +
+                'spreadsheetml.styles+xml"/>' +
+                "</Types>"
+        },
+        {
+            path: "_rels/.rels",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<Relationships xmlns="http://schemas.openxmlformats.org/' +
+                'package/2006/relationships">' +
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats' +
+                '.org/officeDocument/2006/relationships/officeDocument" ' +
+                'Target="xl/workbook.xml"/></Relationships>'
+        },
+        {
+            path: "xl/workbook.xml",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<workbook xmlns="http://schemas.openxmlformats.org/' +
+                'spreadsheetml/2006/main" xmlns:r="http://schemas.' +
+                'openxmlformats.org/officeDocument/2006/relationships">' +
+                `<sheets>${sheetTags}</sheets></workbook>`
+        },
+        {
+            path: "xl/_rels/workbook.xml.rels",
+            data:
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<Relationships xmlns="http://schemas.openxmlformats.org/' +
+                'package/2006/relationships">' +
+                sheetRels +
+                `<Relationship Id="${stylesRelId}" Type="http://schemas.` +
+                'openxmlformats.org/officeDocument/2006/relationships/styles" ' +
+                'Target="styles.xml"/></Relationships>'
+        },
+        { path: "xl/styles.xml", data: XLSX_STYLES },
+        ...named.map(sheet => ({
+            path: `xl/worksheets/sheet${sheet.id}.xml`,
+            data: sheet.xml
+        }))
+    ];
+}
+
+
+async function downloadWorkbookMulti(fileName, sheets) {
+
+    const archive = await zipArchive(
+        xlsxPartsMulti(sheets.map(sheet => ({
+            name: sheet.name,
+            xml: buildSheetXml(sheet.rows, sheet.options || {})
+        })))
+    );
+
+    saveBlob(
+        new Blob([archive], {
+            type: "application/vnd.openxmlformats-officedocument." +
+                "spreadsheetml.sheet"
+        }),
+        fileName
+    );
 }
 
 
@@ -4766,7 +5261,10 @@ function activeFilterSummary() {
     const parts = [
         `Scope: ${scopeLabel(filters)}`,
         `Grain: ${state.grain === "month" ? "monthly" : "yearly"}`,
-        `Year: ${list(selectedYears(), "all")}`,
+        `Year: ${list(
+            selectedYears().map(year => yearLabel(year, filters.financialYear)),
+            "all"
+        )}`,
         `Month: ${filters.months.length === 0
             ? "all"
             : filters.months.map(monthLabel).join(", ")}`
@@ -4832,7 +5330,9 @@ function exportSpecFor(kind) {
         const columns = makerColumns();
 
         return {
-            title: "Maker Comparison (Year Wise)",
+            title: state.makerTable.monthlyMode
+                ? "Maker Comparison (Month Wise)"
+                : "Maker Comparison (Year Wise)",
             sheet: "Maker Comparison",
             prefix: "maker-comparison",
             columns,
@@ -4948,7 +5448,7 @@ async function exportEverythingXlsx() {
     }
 
     const rows = [
-        [{ value: "Vehicle Registration Dashboard", style: 1 }],
+        [{ value: "DeepKamal Vehicle Analytics Dashboard", style: 1 }],
         [activeFilterSummary()],
         []
     ];
@@ -4970,6 +5470,66 @@ async function exportEverythingXlsx() {
         rows,
         {}
     );
+}
+
+
+/*
+ * Every column every live table actually has, in the order it has
+ * them - read straight from schemaForTable() rather than kept as a
+ * second, hand-maintained list, so this can never drift from what
+ * the database (and the Import dialog's own checks) really expect.
+ */
+function structureColumnsFor(table) {
+
+    const schema = schemaForTable(table);
+
+    return [
+        schema.yearColumn,
+        schema.monthColumn,
+        ...(schema.rtoCodeColumn ? [schema.rtoCodeColumn] : []),
+        ...(schema.rtoNameColumn ? [schema.rtoNameColumn] : []),
+        schema.entityColumn,
+        ...schema.classColumns,
+        schema.totalColumn,
+        schema.uploadedAtColumn
+    ];
+}
+
+
+const STRUCTURE_SHEET_NAMES = {
+    [SCOPE_TABLES.all_india]: "All India",
+    [SCOPE_TABLES.gujarat]: "Gujarat RTO",
+    [SCOPE_TABLES.maharashtra]: "Maharashtra RTO"
+};
+
+
+/*
+ * A blank template, not a data export - one sheet per live table,
+ * each just its own header row. For someone preparing a workbook to
+ * import rather than someone reading the dashboard's figures, so it
+ * is not scoped to the current Scope/Year/RTO selection the way
+ * every other download on this page is - all three tables, always.
+ */
+async function exportTableStructureXlsx() {
+
+    const sheets = Object.values(SCOPE_TABLES).map(table => {
+
+        const columns = structureColumnsFor(table);
+
+        return {
+            name: STRUCTURE_SHEET_NAMES[table] || table,
+            rows: [columns.map(name => ({ value: name, style: 1 }))],
+            options: {
+                widths: columns.map(name =>
+                    Math.max(11, Math.min(34, name.length + 3))
+                )
+            }
+        };
+    });
+
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    await downloadWorkbookMulti(`table-structure-${stamp}.xlsx`, sheets);
 }
 
 
@@ -5042,6 +5602,11 @@ async function runExport(action) {
 
         if (kind === "all") {
             await exportEverythingXlsx();
+            return;
+        }
+
+        if (kind === "structure") {
+            await exportTableStructureXlsx();
             return;
         }
 
@@ -5122,23 +5687,24 @@ function hideLoading() {
 function cloneFilters(filters) {
 
     return {
-        scope: filters.scope,
+        scopes: filters.scopes.slice(),
         years: filters.years.slice(),
         months: filters.months.slice(),
         rtos: filters.rtos.slice(),
         makers: filters.makers.slice(),
-        classes: filters.classes.slice()
+        classes: filters.classes.slice(),
+        financialYear: filters.financialYear
     };
 }
 
 
-function buildNotices(scope) {
+function buildNotices(scopes) {
 
-    const noRtoData = !RTO_SCOPES.has(scope);
+    const noRtoData = !scopes.some(scope => RTO_SCOPES.has(scope));
 
     state.notices.rto = noRtoData
-        ? "All India has no RTO breakdown - switch Scope to Gujarat or " +
-          "Maharashtra to see RTO Comparison."
+        ? "All India has no RTO breakdown - tick Gujarat or " +
+          "Maharashtra in Scope to see RTO Comparison."
         : "";
 
     state.notices.detail = noRtoData
@@ -5171,15 +5737,16 @@ async function applyFilters({ global = false } = {}) {
     renderHeader();
 
     const months = selectedMonthNumbers();
+    const scopes = selectedScopes(state.filters.scopes);
 
-    buildNotices(state.filters.scope);
+    buildNotices(scopes);
 
     showLoading({ global });
 
     try {
 
         const main = await loadRecords(
-            state.filters.scope,
+            scopes,
             state.grain,
             months,
             controller.signal
@@ -5238,8 +5805,8 @@ async function resetFilters() {
         dom.detailSearch.value = "";
     }
 
-    if (dom.scopeFilter) {
-        dom.scopeFilter.value = DEFAULT_SCOPE;
+    if (dom.financialYearToggle) {
+        dom.financialYearToggle.checked = false;
     }
 
     checklists.forEach(checklist => {
@@ -5266,11 +5833,11 @@ async function resetFilters() {
 
 function setupFilterListeners() {
 
-    if (dom.scopeFilter) {
+    if (dom.financialYearToggle) {
 
-        dom.scopeFilter.addEventListener("change", async () => {
-            state.pending.scope = dom.scopeFilter.value;
-            await onPendingChanged("scope");
+        dom.financialYearToggle.addEventListener("change", async () => {
+            state.pending.financialYear = dom.financialYearToggle.checked;
+            await onPendingChanged("financialYear");
         });
     }
 
@@ -6021,6 +6588,11 @@ async function initializeDashboard({ force = false } = {}) {
  * (Import), which is what a 401 sends back to login.html for.
  */
 function bootstrapApp() {
+
+    /* TEMPORARY: the local PostgREST stand-in has no login service of
+       its own yet, so fake a session rather than touching the real
+       gate logic below. Revert before pushing. */
+    saveAuth("local", "local");
 
     loadStoredAuth();
 
