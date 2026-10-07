@@ -38,15 +38,15 @@ async function handleLoginSubmit(event, dom) {
 
     try {
 
-        const accepted = await verifyCredentials(user, pass);
+        const profile = await verifyCredentials(user, pass);
 
-        if (!accepted) {
+        if (!profile) {
             dom.error.textContent = "Incorrect username or password.";
             dom.error.hidden = false;
             return;
         }
 
-        saveAuth(user, pass);
+        saveAuth(user, pass, profile);
         location.href = "index.html";
 
     } catch (error) {

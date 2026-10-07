@@ -1,9 +1,17 @@
-# Local stand-in for the Supabase project.
+# Local stand-in for the Supabase project - the "local" entry in
+# auth.js's BACKENDS. Three pieces, this file owning the first two:
 #
-# The dashboard spoke to a local PostgREST on :3003 before commit
-# 94cb9aa moved it to Supabase, and script.js still uses that same
-# fetch-based client - so pointing API_URL back at localhost:3003 is
-# all the front-end needs.
+#   db   Postgres, schema + RPC functions loaded from local/init/ on
+#        first start only (a fresh volume - see "down -v" below).
+#   api  PostgREST, read-only (anon role, same RLS-equivalent grants
+#        the migrations give Supabase) - script.js's API_URL.
+#
+# The third piece is not a container: local/server/ has two plain
+# Node processes - cors-proxy.js (PostgREST's CORS answer is missing
+# a header this project's paginated fetches need - see that file) and
+# server.js (login + Import - auth.js's IMPORT_FUNCTION_URL). Start
+# both with `npm start` / `npm run cors-proxy` there after `docker
+# compose up -d` here.
 #
 # Postgres is published on 5433, not 5432, so this cannot collide
 # with a Postgres already installed on the machine.

@@ -1,0 +1,14 @@
+{
+  "name": "vad-local-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local stand-in for Supabase's REST API and Edge Function - see server.js and cors-proxy.js.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "cors-proxy": "node cors-proxy.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}

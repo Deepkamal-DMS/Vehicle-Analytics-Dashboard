@@ -49,19 +49,22 @@
    ============================================================ */
 
 /*
- * The publishable key is safe in client-side source: it grants
- * the anon role, and each table has row level security on with
- * a SELECT-only policy. Writes are refused by the database.
+ * BACKEND/BACKENDS live in auth.js (loaded before this file on every
+ * page that needs either) since login needs the same switch and
+ * loads on pages this file does not. The cloud key is safe in
+ * client-side source either way: it grants the anon role, and every
+ * table has row level security on with a SELECT-only policy - writes
+ * are refused by the database. The local backend needs no key at
+ * all; PostgREST's anon role there has nothing else to authenticate
+ * against (see docker-compose.yml).
  */
-/* TEMPORARY local override - pointed at the docker-compose PostgREST
-   stand-in (see docker-compose.yml) while Supabase is unreachable.
-   Revert before pushing: API_URL back to Supabase's REST URL, and
-   API_HEADERS back to { apikey, Authorization }. */
-const API_URL = "http://localhost:3004";
+const API_URL = BACKENDS[BACKEND].apiUrl;
 
-const API_KEY = "sb_publishable_9IVGzYTxQDj2UoLOaBtkFw_7H5ILVGY";
+const API_KEY = BACKENDS[BACKEND].apiKey;
 
-const API_HEADERS = {};
+const API_HEADERS = API_KEY
+    ? { apikey: API_KEY, Authorization: `Bearer ${API_KEY}` }
+    : {};
 
 /* IMPORT_FUNCTION_URL and everything about auth (login state,
    verifyCredentials(), goToLogin()) now live in auth.js, loaded
@@ -765,9 +768,10 @@ function cacheDOM() {
         "importValidateButton", "importCommitButton",
         "importState", "importReport", "importResult",
 
-        /* Sits in the header, outside every card - shown once logged in.
-           Login itself is a separate page now - see login.html/login.js. */
-        "logoutButton",
+        /* Sits in the header, outside every card - shown once logged
+           in, links to profile.html. Login itself is a separate page
+           too - see login.html/login.js. */
+        "profileOpenButton", "profileOpenButtonLabel",
 
         /* Quick summary */
         "topMakersList",
@@ -6074,6 +6078,10 @@ function setupRetry() {
    and tools/IMPORT-CHECKS.md for what every check does.
    ============================================================ */
 
+/*
+ * postToImportFunction()/callAccountFunction() live in auth.js now -
+ * profile.html needs them too, and that page never loads this file.
+ */
 function importFormData(mode, file) {
 
     const form = new FormData();
@@ -6086,51 +6094,7 @@ function importFormData(mode, file) {
 
 
 async function callImportFunction(mode, file) {
-
-    const headers = {};
-
-    if (isLoggedIn()) {
-        headers.Authorization = `Basic ${btoa(`${auth.user}:${auth.pass}`)}`;
-    }
-
-    let response;
-
-    try {
-
-        response = await fetch(IMPORT_FUNCTION_URL, {
-            method: "POST",
-            headers,
-            body: importFormData(mode, file)
-        });
-
-    } catch (error) {
-        throw new Error(`Could not reach the import service: ${error.message}`);
-    }
-
-    if (response.status === 401) {
-        goToLogin("Your session ended - please log in again.");
-        throw new Error("Your session ended - please log in again.");
-    }
-
-    let body;
-
-    try {
-        body = await response.json();
-    } catch (error) {
-        throw new Error(
-            `Import service sent back something unreadable (HTTP ${response.status}).`
-        );
-    }
-
-    if (!response.ok || body.ok === false) {
-
-        const failure = new Error(body.error || `Import failed (HTTP ${response.status}).`);
-        failure.report = body.report || null;
-
-        throw failure;
-    }
-
-    return body;
+    return postToImportFunction(importFormData(mode, file));
 }
 
 
@@ -6589,27 +6553,21 @@ async function initializeDashboard({ force = false } = {}) {
  */
 function bootstrapApp() {
 
-    /* TEMPORARY: the local PostgREST stand-in has no login service of
-       its own yet, so fake a session rather than touching the real
-       gate logic below. Revert before pushing. */
-    saveAuth("local", "local");
-
     loadStoredAuth();
 
-    if (!isLoggedIn()) {
-        location.href = "login.html";
+    if (!requireSession()) {
         return;
     }
 
     cacheDOM();
 
-    if (dom.logoutButton) {
+    if (dom.profileOpenButton) {
 
-        dom.logoutButton.hidden = false;
+        dom.profileOpenButton.hidden = false;
 
-        dom.logoutButton.addEventListener("click", () => {
-            goToLogin();
-        });
+        if (dom.profileOpenButtonLabel && auth.profile && auth.profile.name) {
+            dom.profileOpenButtonLabel.textContent = auth.profile.name;
+        }
     }
 
     initializeDashboard();

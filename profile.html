@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="Your profile - DeepKamal Vehicle Analytics Dashboard"
+    >
+
+    <meta
+        name="theme-color"
+        content="#0b1f4b"
+    >
+
+    <title>Profile - DeepKamal Vehicle Analytics Dashboard</title>
+
+    <!-- Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="style.css?v=31"
+    >
+
+</head>
+
+<body>
+
+    <!-- =========================================================
+         APPLICATION HEADER
+
+         Same shell as index.html's, so arriving here still feels
+         like the same application - just "Back to Dashboard" and
+         "Log Out" instead of the dashboard's own Import/Export/
+         Table Structure/Profile buttons, none of which mean
+         anything on this page.
+         ========================================================= -->
+
+    <header class="app-header">
+
+        <div class="app-header__brand">
+
+            <div class="brand-mark" aria-hidden="true">
+                <svg
+                    viewBox="0 0 24 24"
+                    width="26"
+                    height="26"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <path d="M5 17h14"></path>
+                    <path d="M6 17l1.2-5.2a2 2 0 0 1 2-1.55h5.6a2 2 0 0 1 2 1.55L18 17"></path>
+                    <circle cx="8" cy="17.5" r="1.5"></circle>
+                    <circle cx="16" cy="17.5" r="1.5"></circle>
+                    <path d="M9 10.25l1-2h4l1 2"></path>
+                </svg>
+            </div>
+
+            <div class="app-header__titles">
+
+                <h1>PROFILE</h1>
+
+                <p class="app-header__crumbs">
+                    PERSONAL INFO <span aria-hidden="true">|</span>
+                    MANAGE LOGINS
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="app-header__meta">
+
+            <a
+                href="index.html"
+                class="export-button"
+            >
+                &larr; Back to Dashboard
+            </a>
+
+            <button
+                type="button"
+                id="profileLogoutButton"
+                class="logout-button"
+            >Log Out</button>
+
+        </div>
+
+    </header>
+
+
+    <!-- =========================================================
+         PROFILE
+         ========================================================= -->
+
+    <main class="profile-page">
+
+        <section
+            class="table-card"
+            aria-labelledby="profileInfoTitle"
+        >
+
+            <div class="table-card__head">
+                <h2 id="profileInfoTitle">Personal Info</h2>
+            </div>
+
+            <div class="profile-page__body">
+
+                <dl class="profile-info">
+
+                    <div class="profile-info__row">
+                        <dt>Name</dt>
+                        <dd id="profileName">&mdash;</dd>
+                    </div>
+
+                    <div class="profile-info__row">
+                        <dt>Username</dt>
+                        <dd id="profileUsername">&mdash;</dd>
+                    </div>
+
+                    <div class="profile-info__row">
+                        <dt>Dealership</dt>
+                        <dd id="profileDealership">&mdash;</dd>
+                    </div>
+
+                </dl>
+
+            </div>
+
+        </section>
+
+        <!--
+             Shown only for an account with canManageUsers (see
+             local/server/server.js) - hidden rather than absent so
+             the DOM nodes it populates always exist to populate.
+        -->
+        <section
+            id="profileManageSection"
+            class="table-card"
+            aria-labelledby="profileManageTitle"
+            hidden
+        >
+
+            <div class="table-card__head">
+                <h2 id="profileManageTitle">Logins</h2>
+            </div>
+
+            <div class="profile-page__body">
+
+                <h3 class="profile-manage__title">Already added</h3>
+
+                <ul id="profileAccountList" class="profile-account-list"></ul>
+
+                <h3 class="profile-manage__title">Add a login</h3>
+
+                <!--
+                     autocomplete="off" on the form plus a dedicated
+                     value per field - Chrome in particular still
+                     offers to autofill/save against "off" alone, so
+                     each field also gets the one value that actually
+                     suppresses it for that field's own purpose
+                     (new-password, not a saved one). Nothing here
+                     should ever arrive pre-filled.
+                -->
+                <form
+                    id="profileAddForm"
+                    class="login-form"
+                    autocomplete="off"
+                >
+
+                    <label class="login-form__field">
+                        Name
+                        <input
+                            type="text"
+                            id="profileAddName"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Username
+                        <input
+                            type="text"
+                            id="profileAddUsername"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Password
+                        <input
+                            type="password"
+                            id="profileAddPassword"
+                            autocomplete="new-password"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Dealership
+                        <input
+                            type="text"
+                            id="profileAddDealership"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <p id="profileAddError" class="login-form__error" hidden></p>
+                    <p id="profileAddSuccess" class="profile-manage__success" hidden></p>
+
+                    <button
+                        type="submit"
+                        id="profileAddSubmit"
+                        class="import-button import-button--primary"
+                    >
+                        Add Login
+                    </button>
+
+                </form>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- =========================================================
+         JAVASCRIPT
+         ========================================================= -->
+
+    <script src="auth.js?v=2"></script>
+    <script src="profile.js?v=1"></script>
+
+</body>
+</html>

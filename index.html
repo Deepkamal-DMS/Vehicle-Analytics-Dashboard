@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=29"
+        href="style.css?v=31"
     >
 
 </head>
@@ -339,12 +339,36 @@
             </button>
 
 
-            <button
-                type="button"
-                id="logoutButton"
-                class="logout-button"
+            <!--
+                 Its own page (profile.html), not a dialog over this
+                 one - see that page for personal info and, for an
+                 account with canManageUsers, adding further logins.
+                 Log Out lives there now, not as its own header
+                 button here.
+            -->
+            <a
+                href="profile.html"
+                id="profileOpenButton"
+                class="export-button"
                 hidden
-            >Log Out</button>
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="8" r="4"></circle>
+                    <path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"></path>
+                </svg>
+
+                <span id="profileOpenButtonLabel">Profile</span>
+            </a>
 
         </div>
 
@@ -1891,14 +1915,15 @@
     </div>
 
 
+
     <!-- =========================================================
          JAVASCRIPT
          ========================================================= -->
 
     <!-- Login itself is a separate page now - see login.html. auth.js
          is the piece the two pages share, so it loads first. -->
-    <script src="auth.js?v=1"></script>
-    <script src="script.js?v=31"></script>
+    <script src="auth.js?v=2"></script>
+    <script src="script.js?v=33"></script>
 
 </body>
 </html>
