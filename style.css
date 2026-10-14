@@ -1992,6 +1992,23 @@ svg {
     font-size: 12px;
 }
 
+.login-form__switch {
+    padding: 2px;
+
+    background: none;
+    border: none;
+
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: underline;
+}
+
+.login-form__switch:hover {
+    filter: brightness(0.85);
+}
+
 
 /* =========================================================
    PROFILE PAGE (profile.html)

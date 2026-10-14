@@ -33,7 +33,7 @@
          .modal/.login-form rules rather than duplicating them. -->
     <link
         rel="stylesheet"
-        href="style.css?v=31"
+        href="style.css?v=32"
     >
 
 </head>
@@ -99,6 +99,94 @@
                         Log In
                     </button>
 
+                    <button
+                        type="button"
+                        id="showSignupLink"
+                        class="login-form__switch"
+                    >
+                        New dealer? Create your own login
+                    </button>
+
+                </form>
+
+                <!--
+                     Hidden until "New dealer?" is clicked. Every
+                     account made here lands with canManageUsers =
+                     false server-side (see local/server/server.js's
+                     mode=signup) - this form has no field for it, and
+                     could not grant it even if one were added, since
+                     the server ignores anything but name/username/
+                     password/dealership for this mode.
+
+                     autocomplete="off" on the form plus a dedicated
+                     value per field, same reasoning as profile.html's
+                     "Add a login" form - "off" alone does not stop
+                     Chrome offering to autofill/save a password field.
+                -->
+                <form
+                    id="signupForm"
+                    class="login-form"
+                    autocomplete="off"
+                    hidden
+                >
+
+                    <label class="login-form__field">
+                        Name
+                        <input
+                            type="text"
+                            id="signupName"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Username
+                        <input
+                            type="text"
+                            id="signupUsername"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Password
+                        <input
+                            type="password"
+                            id="signupPassword"
+                            autocomplete="new-password"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Dealership
+                        <input
+                            type="text"
+                            id="signupDealership"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <p id="signupError" class="login-form__error" hidden></p>
+
+                    <button
+                        type="submit"
+                        id="signupSubmit"
+                        class="import-button import-button--primary"
+                    >
+                        Create Login
+                    </button>
+
+                    <button
+                        type="button"
+                        id="showLoginLink"
+                        class="login-form__switch"
+                    >
+                        Already have a login? Log in instead
+                    </button>
+
                 </form>
 
             </div>
@@ -112,7 +200,7 @@
          ========================================================= -->
 
     <script src="auth.js?v=2"></script>
-    <script src="login.js?v=2"></script>
+    <script src="login.js?v=3"></script>
 
 </body>
 </html>

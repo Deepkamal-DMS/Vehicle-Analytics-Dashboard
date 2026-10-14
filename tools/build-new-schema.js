@@ -16,6 +16,15 @@
 
 const { CLASS_COLUMNS, ENTITY_COLUMN, TOTAL_COLUMN, MONTHS } = require("./class-columns.js");
 
+/*
+ * '' means the shared/base dataset every visitor sees - never NULL,
+ * so it can sit in the primary key (a nullable column can't). A
+ * dealer's own private rows carry their username instead - see
+ * tools/generate-import-migration.js's p_owner_username and
+ * script.js's ownerFilterValues().
+ */
+const OWNER_COLUMN = "owner_username";
+
 function quote(name) {
     return `"${name.replace(/"/g, '""')}"`;
 }
@@ -53,6 +62,7 @@ function columnLines(hasRto) {
     });
 
     lines.push(`    , ${quote(TOTAL_COLUMN)} integer NOT NULL DEFAULT 0`);
+    lines.push(`    , ${quote(OWNER_COLUMN)} text NOT NULL DEFAULT ''`);
 
     /*
      * When this row was last loaded, not when Vahan published the
@@ -75,6 +85,7 @@ function primaryKey(hasRto) {
     }
 
     cols.push(ENTITY_COLUMN);
+    cols.push(OWNER_COLUMN);
 
     return cols.map(quote).join(", ");
 }

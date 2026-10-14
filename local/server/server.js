@@ -215,33 +215,91 @@ async function authenticate(authHeader) {
 }
 
 
+/*
+ * Shared by mode=create-account (an existing canManageUsers account
+ * adding another login) and mode=signup (anyone, unauthenticated,
+ * making their own) - same fields, same rules, same "cannot grant
+ * canManageUsers from this form" restriction either way. Only who is
+ * allowed to call it differs, and that is checked by each mode's own
+ * branch in handle(), not in here.
+ */
+async function createAccountFromForm(form) {
+
+    const name = String(form.get("name") || "").trim();
+    const username = String(form.get("username") || "").trim();
+    const password = String(form.get("password") || "");
+    const dealership = String(form.get("dealership") || "").trim();
+
+    if (!name || !username || !password) {
+        return { status: 400, body: { ok: false, error: "name, username and password are all required" } };
+    }
+
+    const { rows: existing } = await pool.query(
+        "SELECT 1 FROM accounts WHERE username = $1",
+        [username]
+    );
+
+    if (existing.length > 0) {
+        return { status: 409, body: { ok: false, error: `"${username}" is already in use` } };
+    }
+
+    const { hash, salt } = hashPassword(password);
+
+    await pool.query(
+        `INSERT INTO accounts (username, password_hash, password_salt, name, dealership, can_manage_users)
+         VALUES ($1, $2, $3, $4, $5, false)`,
+        [username, hash, salt, name, dealership]
+    );
+
+    return {
+        status: 200,
+        body: { ok: true, account: { username, name, dealership, canManageUsers: false } }
+    };
+}
+
+
 /* ============================================================
    WRITES - the one place this file differs from index.ts beyond
    requireAuth(): calling the RPCs over a direct pg connection
    instead of supabase-js's .rpc(). Same functions, same SQL.
    ============================================================ */
 
-async function writeImport(stamp, result) {
+/*
+ * '' is the shared/base dataset every visitor sees - what every
+ * import wrote before this column existed, and still what admin/Anuj
+ * write today, since they are this project's base-data curators, not
+ * dealers. Anyone else's import lands under their own username
+ * instead, visible only to them (see script.js's ownerFilterValues())
+ * - never something this form could override even if it tried, since
+ * it is derived from the authenticated account, not a request field.
+ */
+function ownerUsernameFor(account) {
+    return account.canManageUsers ? "" : account.username;
+}
+
+
+async function writeImport(stamp, result, ownerUsername) {
 
     if (stamp.scope === "all_india") {
 
         const { rows } = await pool.query(
-            "SELECT import_maker_month($1, $2, $3) AS result",
-            [stamp.month, stamp.year, JSON.stringify(result.rows)]
+            "SELECT import_maker_month($1, $2, $3, $4) AS result",
+            [stamp.month, stamp.year, JSON.stringify(result.rows), ownerUsername]
         );
 
         return rows[0].result;
     }
 
     const { rows } = await pool.query(
-        "SELECT import_rto_month($1, $2, $3, $4, $5, $6) AS result",
+        "SELECT import_rto_month($1, $2, $3, $4, $5, $6, $7) AS result",
         [
             stamp.scope,
             stamp.rtoCode,
             result.rtoName,
             stamp.month,
             stamp.year,
-            JSON.stringify(result.rows)
+            JSON.stringify(result.rows),
+            ownerUsername
         ]
     );
 
@@ -283,7 +341,7 @@ function buildReport(fileName, stamp, result) {
 }
 
 
-async function processFile(fileName, bytes) {
+async function processFile(fileName, bytes, ownerUsername) {
 
     if (bytes.length === 0) {
         return { fileName, ok: false, error: "file is empty" };
@@ -329,7 +387,7 @@ async function processFile(fileName, bytes) {
 
     try {
 
-        const write = await writeImport(stamp, result);
+        const write = await writeImport(stamp, result, ownerUsername);
 
         return { fileName, ok: true, write };
 
@@ -404,6 +462,22 @@ async function handle(req, res) {
 
     const mode = String(form.get("mode") || "preview");
 
+    /*
+     * The one mode with no account behind it yet - a dealer making
+     * their own login, not an existing canManageUsers account adding
+     * one for them. Handled before authenticate() runs at all, since
+     * there is no credential to check; createAccountFromForm() always
+     * sets canManageUsers = false regardless of who calls it, so this
+     * can never be used to self-grant it.
+     */
+    if (mode === "signup") {
+
+        const result = await createAccountFromForm(form);
+
+        json(res, result.status, { mode: "signup", ...result.body });
+        return;
+    }
+
     const account = await authenticate(req.headers.authorization);
 
     if (!account) {
@@ -446,47 +520,9 @@ async function handle(req, res) {
 
         /* mode === "create-account" */
 
-        const name = String(form.get("name") || "").trim();
-        const username = String(form.get("username") || "").trim();
-        const password = String(form.get("password") || "");
-        const dealership = String(form.get("dealership") || "").trim();
+        const result = await createAccountFromForm(form);
 
-        if (!name || !username || !password) {
-            json(res, 400, { ok: false, error: "name, username and password are all required" });
-            return;
-        }
-
-        const { rows: existing } = await pool.query(
-            "SELECT 1 FROM accounts WHERE username = $1",
-            [username]
-        );
-
-        if (existing.length > 0) {
-            json(res, 409, { ok: false, error: `"${username}" is already in use` });
-            return;
-        }
-
-        const { hash, salt } = hashPassword(password);
-
-        /*
-         * New accounts cannot themselves create further ones - the
-         * form this comes from (see script.js's profile modal) has
-         * no field for it, so there is nothing to read here either;
-         * granting that is a deliberate step taken directly in
-         * Postgres, not something this endpoint exposes.
-         */
-        await pool.query(
-            `INSERT INTO accounts (username, password_hash, password_salt, name, dealership, can_manage_users)
-             VALUES ($1, $2, $3, $4, $5, false)`,
-            [username, hash, salt, name, dealership]
-        );
-
-        json(res, 200, {
-            ok: true,
-            mode: "create-account",
-            account: { username, name, dealership, canManageUsers: false }
-        });
-
+        json(res, result.status, { mode: "create-account", ...result.body });
         return;
     }
 
@@ -500,10 +536,11 @@ async function handle(req, res) {
         }
 
         const results = [];
+        const ownerUsername = ownerUsernameFor(account);
 
         for (const file of files) {
             const bytes = new Uint8Array(await file.arrayBuffer());
-            results.push(await processFile(file.name, bytes));
+            results.push(await processFile(file.name, bytes, ownerUsername));
         }
 
         json(res, 200, { ok: true, mode: "bulk", results });
@@ -513,7 +550,7 @@ async function handle(req, res) {
     if (mode !== "preview" && mode !== "commit") {
         json(res, 400, {
             ok: false,
-            error: `mode must be "preview", "commit", "bulk", "ping", "list-accounts", or "create-account"`
+            error: `mode must be "preview", "commit", "bulk", "ping", "signup", "list-accounts", or "create-account"`
         });
         return;
     }
@@ -589,7 +626,7 @@ async function handle(req, res) {
 
     try {
 
-        const write = await writeImport(stamp, result);
+        const write = await writeImport(stamp, result, ownerUsernameFor(account));
 
         json(res, 200, { ok: true, mode: "commit", report, write });
 

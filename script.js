@@ -438,14 +438,31 @@ class RestQuery {
 
     /*
      * PostgREST wants in.("a","b") with inner quotes doubled.
+     *
+     * A single-element list whose one value is '' is a PostgREST
+     * quirk, not a bug worth routing around at every call site:
+     * in.("") silently matches nothing (confirmed - in.("","x") with
+     * a second element matches '' rows just fine), so that one case
+     * goes out as plain equality instead, which has no such problem.
      */
     in(column, values) {
+
+        if (values.length === 1) {
+            return this.eq(column, values[0]);
+        }
 
         const list = values
             .map(value => `"${String(value).replace(/"/g, '""')}"`)
             .join(",");
 
         this.params.append(column, `in.(${list})`);
+
+        return this;
+    }
+
+    eq(column, value) {
+
+        this.params.append(column, `eq.${value}`);
 
         return this;
     }
@@ -969,10 +986,59 @@ function stableOrderFor(table) {
 
     const schema = schemaForTable(table);
 
-    return [schema.yearColumn, schema.monthColumn, schema.rtoCodeColumn, schema.entityColumn]
+    /*
+     * owner_username completes the primary key on the local backend
+     * (not a column the cloud schema has at all) - without it here,
+     * a dealer's private row and the base row sharing the same
+     * year/month[/rto]/Maker would tie on every other order column,
+     * and an untied order is exactly the unstable-pagination problem
+     * this function exists to prevent.
+     */
+    return [
+        schema.yearColumn,
+        schema.monthColumn,
+        schema.rtoCodeColumn,
+        schema.entityColumn,
+        BACKEND === "local" ? "owner_username" : null
+    ]
         .filter(Boolean)
         .map(quoteColumn)
         .join(",");
+}
+
+
+/*
+ * '' is the shared/base dataset everyone sees; a dealer also sees
+ * their own private rows layered on top of it (see
+ * local/server/server.js's ownerUsernameFor() - the write side of
+ * this same split, and tools/build-new-schema.js's OWNER_COLUMN note
+ * for why '' rather than NULL). admin/Anuj never have private rows of
+ * their own, so for them this reduces to base-only, same as a visitor
+ * who is not logged in at all.
+ *
+ * Only the local backend's tables carry this column - the cloud
+ * schema was never migrated for it (see auth.js's BACKEND switch), so
+ * null here means "do not filter by it at all", not "base only".
+ */
+function ownerFilterValues() {
+
+    if (BACKEND !== "local") {
+        return null;
+    }
+
+    if (auth.user && auth.profile && !auth.profile.canManageUsers) {
+        return ["", auth.user];
+    }
+
+    return [""];
+}
+
+
+function withOwnerFilter(filters) {
+
+    const values = ownerFilterValues();
+
+    return values ? [...filters, { column: "owner_username", values }] : filters;
 }
 
 
@@ -986,7 +1052,7 @@ async function fetchPage(table, select, from, to, options = {}) {
         query = query.order(order);
     }
 
-    filters.forEach(filter => {
+    withOwnerFilter(filters).forEach(filter => {
         query = query.in(filter.column, filter.values);
     });
 
@@ -1044,7 +1110,7 @@ async function fetchRowCount(table, options = {}) {
         .from(table)
         .select("*", { count: "exact", head: true });
 
-    filters.forEach(filter => {
+    withOwnerFilter(filters).forEach(filter => {
         query = query.in(filter.column, filter.values);
     });
 
@@ -6319,6 +6385,15 @@ async function runImportCommit() {
 
         setImportState("data");
         renderImportResult(body.write || {});
+
+        /*
+         * A committed import changed rows getCachedTable() may have
+         * already cached from earlier this session - without this,
+         * the cards would keep answering from the pre-import snapshot
+         * until a full page reload, even though Apply Filters looks
+         * like it should pick up what was just written.
+         */
+        state.tableCache = new Map();
 
         /* Done - clear the form so a stale file can't be re-confirmed. */
         state.import.file = null;

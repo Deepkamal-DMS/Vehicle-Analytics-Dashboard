@@ -28,6 +28,10 @@ const { CLASS_COLUMNS, MONTHS } = require(
 
 const quoted = name => '"' + name.replace(/"/g, '""') + '"';
 
+/* '' (the default) is the shared/base dataset; see
+   tools/build-new-schema.js's own OWNER_COLUMN note. */
+const OWNER_COLUMN = "owner_username";
+
 const recordsetCols = ['"Maker" text']
     .concat(CLASS_COLUMNS.map(name => `${quoted(name)} integer`))
     .concat(['"Total" integer']);
@@ -58,17 +62,18 @@ const monthList = MONTHS.map(m => `'${m}'`).join(", ");
 
 const allIndiaInsertCols = ['"year"', '"month"', '"Maker"']
     .concat(CLASS_COLUMNS.map(quoted))
-    .concat(['"Total"']);
+    .concat(['"Total"', quoted(OWNER_COLUMN)]);
 
 const allIndiaSelectCols = ['p_year', 'p_month', 't."Maker"']
     .concat(classSelectCols)
-    .concat(['t."Total"']);
+    .concat(['t."Total"', 'p_owner_username']);
 
 const importMakerMonth = `
 CREATE OR REPLACE FUNCTION public.import_maker_month(
     p_month text,
     p_year integer,
-    p_rows jsonb
+    p_rows jsonb,
+    p_owner_username text DEFAULT ''
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -97,7 +102,14 @@ BEGIN
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
 
-    DELETE FROM "All_India_Class_Wise" WHERE "year" = p_year AND "month" = p_month;
+    /*
+     * Scoped to this one owner ('' is the shared/base dataset, same
+     * as every owner-less month before this column existed) - a
+     * dealer re-uploading a month replaces only their own prior rows
+     * for it, never another dealer's or the base's.
+     */
+    DELETE FROM "All_India_Class_Wise"
+    WHERE "year" = p_year AND "month" = p_month AND ${quoted(OWNER_COLUMN)} = p_owner_username;
     GET DIAGNOSTICS v_deleted = ROW_COUNT;
 
     INSERT INTO "All_India_Class_Wise" (${allIndiaInsertCols.join(", ")})
@@ -108,7 +120,8 @@ BEGIN
     GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
     SELECT coalesce(sum("Total"), 0) INTO v_units
-    FROM "All_India_Class_Wise" WHERE "year" = p_year AND "month" = p_month;
+    FROM "All_India_Class_Wise"
+    WHERE "year" = p_year AND "month" = p_month AND ${quoted(OWNER_COLUMN)} = p_owner_username;
 
     /*
      * A mismatch here is reported, not raised - the row is still real
@@ -121,7 +134,7 @@ BEGIN
     FROM (
         SELECT t."Maker", t."Total", (${sumExpr}) AS summed
         FROM "All_India_Class_Wise" AS t
-        WHERE t."year" = p_year AND t."month" = p_month
+        WHERE t."year" = p_year AND t."month" = p_month AND t.${quoted(OWNER_COLUMN)} = p_owner_username
     ) s
     WHERE s."Total" IS DISTINCT FROM s.summed;
 
@@ -137,13 +150,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.import_maker_month(text, integer, jsonb) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.import_maker_month(text, integer, jsonb) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.import_maker_month(text, integer, jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.import_maker_month(text, integer, jsonb, text) FROM anon, authenticated;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-        GRANT EXECUTE ON FUNCTION public.import_maker_month(text, integer, jsonb)
+        GRANT EXECUTE ON FUNCTION public.import_maker_month(text, integer, jsonb, text)
             TO service_role;
     END IF;
 END;
@@ -157,11 +170,11 @@ $$;
 
 const rtoInsertCols = ['"year"', '"month"', '"rto_code"', '"rto_name"', '"Maker"']
     .concat(CLASS_COLUMNS.map(quoted))
-    .concat(['"Total"']);
+    .concat(['"Total"', quoted(OWNER_COLUMN)]);
 
 const rtoSelectCols = ['$2', '$1', '$3', '$4', 't."Maker"']
     .concat(classSelectCols)
-    .concat(['t."Total"']);
+    .concat(['t."Total"', '$6']);
 
 const importRtoMonth = `
 CREATE OR REPLACE FUNCTION public.import_rto_month(
@@ -170,7 +183,8 @@ CREATE OR REPLACE FUNCTION public.import_rto_month(
     p_rto_name text,
     p_month text,
     p_year integer,
-    p_rows jsonb
+    p_rows jsonb,
+    p_owner_username text DEFAULT ''
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -232,9 +246,9 @@ BEGIN
      * that already loaded this same month.
      */
     EXECUTE format(
-        'DELETE FROM %I WHERE "year" = $1 AND "month" = $2 AND "rto_code" = $3',
+        'DELETE FROM %I WHERE "year" = $1 AND "month" = $2 AND "rto_code" = $3 AND ${quoted(OWNER_COLUMN)} = $4',
         v_table
-    ) USING p_year, p_month, p_rto_code;
+    ) USING p_year, p_month, p_rto_code, p_owner_username;
     GET DIAGNOSTICS v_deleted = ROW_COUNT;
 
     EXECUTE format(
@@ -244,14 +258,14 @@ BEGIN
             ${RECORDSET_ARGS}
          )',
         v_table
-    ) USING p_month, p_year, p_rto_code, p_rto_name, p_rows;
+    ) USING p_month, p_year, p_rto_code, p_rto_name, p_rows, p_owner_username;
     GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
     EXECUTE format(
         'SELECT coalesce(sum("Total"), 0) FROM %I
-         WHERE "year" = $1 AND "month" = $2 AND "rto_code" = $3',
+         WHERE "year" = $1 AND "month" = $2 AND "rto_code" = $3 AND ${quoted(OWNER_COLUMN)} = $4',
         v_table
-    ) INTO v_units USING p_year, p_month, p_rto_code;
+    ) INTO v_units USING p_year, p_month, p_rto_code, p_owner_username;
 
     EXECUTE format(
         'SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -260,11 +274,11 @@ BEGIN
          FROM (
              SELECT t."Maker", t."Total", (${sumExpr}) AS summed
              FROM %I AS t
-             WHERE t."year" = $1 AND t."month" = $2 AND t."rto_code" = $3
+             WHERE t."year" = $1 AND t."month" = $2 AND t."rto_code" = $3 AND t.${quoted(OWNER_COLUMN)} = $4
          ) s
          WHERE s."Total" IS DISTINCT FROM s.summed',
         v_table
-    ) INTO v_mismatches USING p_year, p_month, p_rto_code;
+    ) INTO v_mismatches USING p_year, p_month, p_rto_code, p_owner_username;
 
     RETURN jsonb_build_object(
         'table', v_table,
@@ -280,13 +294,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.import_rto_month(text, text, text, text, integer, jsonb) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.import_rto_month(text, text, text, text, integer, jsonb) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.import_rto_month(text, text, text, text, integer, jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.import_rto_month(text, text, text, text, integer, jsonb, text) FROM anon, authenticated;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-        GRANT EXECUTE ON FUNCTION public.import_rto_month(text, text, text, text, integer, jsonb)
+        GRANT EXECUTE ON FUNCTION public.import_rto_month(text, text, text, text, integer, jsonb, text)
             TO service_role;
     END IF;
 END;
