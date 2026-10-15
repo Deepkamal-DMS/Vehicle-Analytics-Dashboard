@@ -2011,6 +2011,19 @@ svg {
 
 
 /* =========================================================
+   DEALER CONTRIBUTION (Card 1's own-data overlay)
+   ========================================================= */
+
+.dealer-contribution__note {
+    margin: 10px 16px 14px;
+
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-style: italic;
+}
+
+
+/* =========================================================
    PROFILE PAGE (profile.html)
 
    Its own page, not a dialog over the dashboard - see that file.

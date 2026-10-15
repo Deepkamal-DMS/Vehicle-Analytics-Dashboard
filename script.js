@@ -683,6 +683,10 @@ const state = {
      */
     main: { records: [], classColumns: [] },
 
+    /* See loadDealerContribution() - empty for admin/Anuj and for
+       anyone with no private rows of their own. */
+    dealerContribution: [],
+
     /* Whole tables, keyed by name. */
     tableCache: new Map(),
 
@@ -768,6 +772,10 @@ function cacheDOM() {
         "makerTable", "makerTableHead", "makerTableBody", "makerTableFoot",
         "makerCardTitle", "makerCardMeta", "makerCardState",
         "makerPageSize", "makerPageIndicator",
+
+        /* Dealer contribution */
+        "dealerContributionCard", "dealerContributionTitle", "dealerContributionMeta",
+        "dealerContributionBody", "dealerContributionFoot", "dealerContributionNote",
 
         /* Card 2 */
         "rtoTable", "rtoTableHead", "rtoTableBody", "rtoTableFoot",
@@ -1962,6 +1970,18 @@ function sourceColumns(schema) {
         columns.push(schema.uploadedAtColumn);
     }
 
+    /*
+     * Not read by anything in the main aggregation path (aggregateToYear()'s
+     * numericColumns list is built separately and never includes it) -
+     * only loadDealerContribution() reads this, to tell a dealer's own
+     * rows apart from the shared base ones within an already-cached
+     * fetch. Absent from the cloud schema, so only requested when it
+     * can exist at all.
+     */
+    if (BACKEND === "local") {
+        columns.push("owner_username");
+    }
+
     return columns.concat(schema.classColumns);
 }
 
@@ -2158,6 +2178,214 @@ async function loadRecords(scopes, grain, months, signal) {
         classColumns: perScope.length > 0 ? perScope[0].schema.classColumns : [],
         refreshedAt
     };
+}
+
+
+/*
+ * A dealer's own month-by-month contribution against the shared base,
+ * for whichever maker(s) their own private rows actually touch -
+ * deliberately independent of loadRecords()/aggregateToYear() above,
+ * which blend base+mine into one combined figure and have no reason
+ * to track the two halves apart. A bug in this function can therefore
+ * never throw off the real Maker Comparison numbers. Reuses
+ * getCachedTable() rather than fetching again - loadRecords() already
+ * populated that same cache for the current scope(s) this call.
+ *
+ * Returns [] for admin/Anuj or anyone without private rows of their
+ * own; there is nothing to contribute if every row you can see is
+ * already the shared base.
+ *
+ * Always checks every RTO-wise scope (Gujarat, Maharashtra) and never
+ * "all_india" - regardless of whatever Scope filter is ticked for the
+ * rest of the dashboard. Comparing a dealer's units against the whole
+ * of India dilutes the percentage into something meaningless the
+ * moment their business is actually confined to one state's RTOs,
+ * which deepkamal's is; an RTO-wise comparison is the only one precise
+ * enough to mean anything. A scope with no private rows of this
+ * dealer's own (Maharashtra, for deepkamal) simply contributes nothing
+ * below, the same as it always has.
+ */
+async function loadDealerContribution() {
+
+    if (BACKEND !== "local" || !auth.user || !auth.profile || auth.profile.canManageUsers) {
+        return [];
+    }
+
+    const sections = [];
+
+    for (const scope of RTO_SCOPES) {
+
+        const table = tableFor(scope);
+        const schema = schemaForTable(table);
+        const columns = sourceColumns(schema);
+
+        /*
+         * Two small, targeted fetches instead of getCachedTable()'s
+         * whole-table one - this table can hold 37 RTOs' worth of
+         * years of history, nearly none of which this dealer's own
+         * rows could ever match. First, just this dealer's own rows
+         * (cheap - withOwnerFilter() already limits every query to
+         * base+mine, and PostgREST ANDs a second owner_username filter
+         * with it rather than widening it, so this narrows to mine
+         * alone). Then only the base rows that could possibly pair
+         * with them - same maker(s), same year(s), same RTO(s) (where
+         * this table has RTOs at all) - never a narrower set than what
+         * the grouping below already restricts itself to via myKeys,
+         * so the result is identical to scanning the whole table, just
+         * without transferring the other 95% of it to do it.
+         */
+        const myRows = await fetchAllRows(table, columns, {
+            filters: [{ column: "owner_username", values: [auth.user] }]
+        });
+
+        if (myRows.length === 0) {
+            continue;
+        }
+
+        /*
+         * Raw values, not normalizeString()'d - this filter has to
+         * match what the database actually stored character for
+         * character, where normalizing (here, just a trim()) is a
+         * display/grouping concern that has no business feeding back
+         * into an exact-match query.
+         */
+        const rawMakerList = [...new Set(myRows.map(row => row[schema.entityColumn]))];
+        const yearList = [...new Set(myRows.map(row => String(row[schema.yearColumn])))];
+
+        const baseFilters = [
+            { column: "owner_username", values: [""] },
+            { column: schema.entityColumn, values: rawMakerList },
+            { column: schema.yearColumn, values: yearList }
+        ];
+
+        if (schema.rtoCodeColumn) {
+
+            const rtoList = [...new Set(
+                myRows.map(row => row[schema.rtoCodeColumn]).filter(Boolean)
+            )];
+
+            baseFilters.push({ column: schema.rtoCodeColumn, values: rtoList });
+        }
+
+        const baseRows = await fetchAllRows(table, columns, { filters: baseFilters });
+
+        const rows = [...myRows, ...baseRows];
+
+        const makers = new Set(rawMakerList.map(normalizeString));
+
+        makers.forEach(maker => {
+
+            const myRows = rows.filter(row =>
+                row.owner_username === auth.user && normalizeString(row[schema.entityColumn]) === maker
+            );
+
+            /*
+             * Only the classes this dealer actually sold, not all 76 -
+             * "Three Wheeler (Passenger)"/"(Goods)"/"e-Rickshaw with
+             * Cart (G)" for a three-wheeler dealer, say, never every
+             * column the schema happens to define.
+             */
+            const relevantColumns = schema.classColumns.filter(col =>
+                myRows.some(row => toNumber(row[col]) > 0)
+            );
+
+            /*
+             * Exactly the (year, month[, rto]) combinations this dealer
+             * is actually active in - not every one the base dataset
+             * happens to have history for. Without this gate, a class
+             * they deal in at all (found above from myRows, which spans
+             * every year they have ever imported) would pull in every
+             * year *the base dataset* has for that maker too, most of
+             * them with "Your Units: 0" because this dealer did not
+             * exist yet - diluting OVERALL by years that have nothing
+             * to do with them.
+             */
+            const myKeys = new Set(myRows.map(row => {
+                const rto = schema.rtoCodeColumn ? (row[schema.rtoCodeColumn] || null) : null;
+                return `${row[schema.yearColumn]}-${row[schema.monthColumn]}-${rto}`;
+            }));
+
+            const byGroup = new Map();
+
+            rows.forEach(row => {
+
+                if (normalizeString(row[schema.entityColumn]) !== maker) {
+                    return;
+                }
+
+                const isMine = row.owner_username === auth.user;
+                const isBase = row.owner_username === "";
+
+                if (!isMine && !isBase) {
+                    return;
+                }
+
+                const year = row[schema.yearColumn];
+                const month = row[schema.monthColumn];
+
+                /*
+                 * RTO joins the group key wherever this table has one -
+                 * comparing a branch's own sales against that same RTO's
+                 * base, not every other Gujarat RTO's too. Grouping by
+                 * (month, class) alone here would silently divide a
+                 * branch's real contribution by the whole state's
+                 * registrations, understating it the same way comparing
+                 * against the whole of Bajaj (instead of just the classes
+                 * this dealer sells) would have.
+                 */
+                const rto = schema.rtoCodeColumn ? (row[schema.rtoCodeColumn] || null) : null;
+                const rtoName = schema.rtoNameColumn ? (row[schema.rtoNameColumn] || null) : null;
+
+                if (!myKeys.has(`${year}-${month}-${rto}`)) {
+                    return;
+                }
+
+                relevantColumns.forEach(col => {
+
+                    const key = `${year}-${month}-${rto}-${col}`;
+
+                    let entry = byGroup.get(key);
+
+                    if (!entry) {
+                        entry = { year, month, rto, rtoName, vehicleClass: col, mine: 0, base: 0 };
+                        byGroup.set(key, entry);
+                    }
+
+                    const value = toNumber(row[col]);
+
+                    if (isMine) {
+                        entry.mine += value;
+                    } else {
+                        entry.base += value;
+                    }
+                });
+            });
+
+            /*
+             * Keep a row whenever either side has units - not just
+             * entry.mine > 0. A class this dealer deals in at all but
+             * happened to sell none of in one particular month must
+             * still show that month's base figure, or OVERALL's
+             * denominator silently shrinks by whatever base recorded
+             * that month - looking like a smaller, cleaner comparison
+             * than the one actually being made.
+             */
+            const months = [...byGroup.values()]
+                .filter(entry => entry.mine > 0 || entry.base > 0)
+                .sort((a, b) =>
+                    Number(a.year) - Number(b.year) ||
+                    monthNumberOf(a.month) - monthNumberOf(b.month) ||
+                    (a.rto || "").localeCompare(b.rto || "") ||
+                    a.vehicleClass.localeCompare(b.vehicleClass)
+                );
+
+            if (months.length > 0) {
+                sections.push({ scope, maker, months });
+            }
+        });
+    }
+
+    return sections;
 }
 
 
@@ -3592,6 +3820,169 @@ function renderMakerCard() {
 }
 
 
+/*
+ * Paints state.dealerContribution (see loadDealerContribution()) -
+ * hidden entirely when it is empty, which covers both admin/Anuj
+ * (who never have private rows) and a dealer whose own maker(s) have
+ * no rows at all under the currently selected Scope(s).
+ *
+ * A month with no base row yet to compare against (the shared
+ * dataset not having caught up to this month, not a data problem of
+ * the dealer's own making) shows "No base data" rather than a
+ * misleading 100% - and is left out of the OVERALL row's percentage,
+ * though its own units still count in OVERALL's "Your Units" total.
+ */
+function renderDealerContribution() {
+
+    const sections = state.dealerContribution;
+
+    if (!dom.dealerContributionCard) {
+        return;
+    }
+
+    if (!sections || sections.length === 0) {
+        dom.dealerContributionCard.hidden = true;
+        return;
+    }
+
+    dom.dealerContributionCard.hidden = false;
+
+    if (dom.dealerContributionTitle) {
+        const dealership = (auth.profile && auth.profile.dealership) || auth.user;
+        dom.dealerContributionTitle.textContent = `${dealership}'S CONTRIBUTION`.toUpperCase();
+    }
+
+    const scopeLabelFor = id => {
+        const found = SCOPES.find(entry => entry.id === id);
+        return found ? found.label : id;
+    };
+
+    dom.dealerContributionBody.innerHTML = "";
+
+    let comparableMine = 0;
+    let comparableBase = 0;
+    let excludedMine = 0;
+    let rowCount = 0;
+
+    sections.forEach(section => {
+
+        section.months.forEach(entry => {
+
+            rowCount += 1;
+
+            const tr = document.createElement("tr");
+
+            const monthCell = document.createElement("td");
+            monthCell.textContent = `${entry.month} ${entry.year}`;
+            tr.appendChild(monthCell);
+
+            const makerCell = document.createElement("td");
+            makerCell.textContent = section.maker;
+            makerCell.title = section.maker;
+            tr.appendChild(makerCell);
+
+            const rtoCell = document.createElement("td");
+            rtoCell.textContent = entry.rto || "All India";
+            rtoCell.title = entry.rto ? (entry.rtoName || entry.rto) : "All India";
+            tr.appendChild(rtoCell);
+
+            const classCell = document.createElement("td");
+            classCell.textContent = entry.vehicleClass;
+            classCell.title = entry.vehicleClass;
+            tr.appendChild(classCell);
+
+            const mineCell = document.createElement("td");
+            mineCell.className = "numeric";
+            mineCell.textContent = formatIndianNumber(entry.mine);
+            tr.appendChild(mineCell);
+
+            const baseCell = document.createElement("td");
+            baseCell.className = "numeric";
+
+            const pctCell = document.createElement("td");
+            pctCell.className = "numeric";
+
+            const combinedCell = document.createElement("td");
+            combinedCell.className = "numeric";
+
+            if (entry.base > 0) {
+
+                const combined = entry.mine + entry.base;
+
+                baseCell.textContent = formatIndianNumber(entry.base);
+                combinedCell.textContent = formatIndianNumber(combined);
+                pctCell.textContent = formatPercentage((entry.mine / combined) * 100);
+
+                comparableMine += entry.mine;
+                comparableBase += entry.base;
+
+            } else {
+
+                baseCell.textContent = "—";
+                combinedCell.textContent = "—";
+                pctCell.textContent = "No base data";
+
+                excludedMine += entry.mine;
+            }
+
+            tr.appendChild(baseCell);
+            tr.appendChild(combinedCell);
+            tr.appendChild(pctCell);
+
+            dom.dealerContributionBody.appendChild(tr);
+        });
+    });
+
+    dom.dealerContributionFoot.innerHTML = "";
+
+    const footRow = document.createElement("tr");
+
+    const labelCell = document.createElement("td");
+    labelCell.colSpan = 4;
+    labelCell.textContent = "OVERALL";
+    footRow.appendChild(labelCell);
+
+    const mineCell = document.createElement("td");
+    mineCell.className = "numeric";
+    mineCell.textContent = formatIndianNumber(comparableMine + excludedMine);
+    footRow.appendChild(mineCell);
+
+    const baseCell = document.createElement("td");
+    baseCell.className = "numeric";
+    baseCell.textContent = formatIndianNumber(comparableBase);
+    footRow.appendChild(baseCell);
+
+    const combinedCell = document.createElement("td");
+    combinedCell.className = "numeric";
+    combinedCell.textContent = formatIndianNumber(comparableMine + comparableBase);
+    footRow.appendChild(combinedCell);
+
+    const pctCell = document.createElement("td");
+    pctCell.className = "numeric";
+    pctCell.textContent = comparableMine + comparableBase > 0
+        ? formatPercentage((comparableMine / (comparableMine + comparableBase)) * 100)
+        : "—";
+    footRow.appendChild(pctCell);
+
+    dom.dealerContributionFoot.appendChild(footRow);
+
+    if (dom.dealerContributionMeta) {
+
+        const scopeNames = [...new Set(sections.map(section => scopeLabelFor(section.scope)))];
+
+        dom.dealerContributionMeta.textContent =
+            `${scopeNames.join(" + ")} · ${rowCount} row(s)`;
+    }
+
+    if (dom.dealerContributionNote) {
+        dom.dealerContributionNote.textContent = excludedMine > 0
+            ? `OVERALL's percentage excludes month(s) with no base data yet to compare against ` +
+                `(still counted in "Your Units", shown as "No base data" above).`
+            : "";
+    }
+}
+
+
 /* ============================================================
    28. CARD 2 - COLUMNS + RENDER
    ============================================================ */
@@ -4182,6 +4573,7 @@ function renderAll() {
     renderHeader();
     renderKpis();
     renderMakerCard();
+    renderDealerContribution();
     renderRtoCard();
     renderDetailCard();
     renderSummary();
@@ -5828,6 +6220,7 @@ async function applyFilters({ global = false } = {}) {
 
         state.main = main;
         state.dataRefreshedAt = main.refreshedAt;
+        state.dealerContribution = await loadDealerContribution();
 
         deriveAll();
         renderAll();
@@ -5843,6 +6236,7 @@ async function applyFilters({ global = false } = {}) {
         console.error("Dashboard data error:", error);
 
         state.main = { records: [], classColumns: [] };
+        state.dealerContribution = [];
 
         deriveAll();
         renderAll();

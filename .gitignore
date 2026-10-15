@@ -35,3 +35,11 @@ local/.env
 # It carries invented figures for years the data does not have, so
 # it stays local rather than shipping in a public repo.
 Dashboard Semple.png
+
+# Deepkamal's real invoice data - real customer names and financial
+# figures, repo is public - stays local, same reasoning as above.
+C_INV_1310.xlsx
+Vhicle code.xlsx
+
+# Local-only backups (git history + pg_dump snapshots) - never pushed.
+backups/

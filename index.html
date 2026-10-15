@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=32"
+        href="style.css?v=33"
     >
 
 </head>
@@ -1324,6 +1324,80 @@
 
 
             <!-- =================================================
+                 DEALER CONTRIBUTION
+
+                 Shown only for a logged-in account that is not
+                 admin/Anuj and has private data of its own (see
+                 script.js's loadDealerContribution()) - hidden
+                 rather than absent so the rows it paints always
+                 have somewhere to go. Never shown to admin/Anuj,
+                 who have no private rows, or to a dealer whose own
+                 maker has no rows under the current Scope.
+                 ================================================= -->
+
+            <section
+                id="dealerContributionCard"
+                class="table-card"
+                aria-labelledby="dealerContributionTitle"
+                hidden
+            >
+
+                <div class="table-card__head">
+
+                    <span class="table-card__badge" aria-hidden="true">&starf;</span>
+
+                    <h2 id="dealerContributionTitle">
+                        YOUR CONTRIBUTION
+                    </h2>
+
+                    <div class="table-card__actions">
+
+                        <span
+                            id="dealerContributionMeta"
+                            class="table-card__meta"
+                        ></span>
+
+                    </div>
+
+                </div>
+
+                <div class="table-wrapper">
+
+                    <table class="data-table">
+
+                        <caption class="visually-hidden">
+                            This dealership's own sales, month by month, against the shared base total for the same maker
+                        </caption>
+
+                        <thead>
+                            <tr>
+                                <th style="width: 9%">MONTH</th>
+                                <th style="width: 9%">MAKER</th>
+                                <th style="width: 8%">RTO</th>
+                                <th style="width: 22%">VEHICLE TYPE</th>
+                                <th style="width: 11%">YOUR UNITS</th>
+                                <th style="width: 11%">BASE UNITS</th>
+                                <th style="width: 11%">COMBINED</th>
+                                <th style="width: 19%">CONTRIBUTION %</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="dealerContributionBody"></tbody>
+                        <tfoot id="dealerContributionFoot"></tfoot>
+
+                    </table>
+
+                </div>
+
+                <p
+                    id="dealerContributionNote"
+                    class="dealer-contribution__note"
+                ></p>
+
+            </section>
+
+
+            <!-- =================================================
                  2. RTO COMPARISON (MAKER WISE)
 
                  Always the four Gujarat RTOs the database holds,
@@ -1923,7 +1997,7 @@
     <!-- Login itself is a separate page now - see login.html. auth.js
          is the piece the two pages share, so it loads first. -->
     <script src="auth.js?v=2"></script>
-    <script src="script.js?v=34"></script>
+    <script src="script.js?v=43"></script>
 
 </body>
 </html>
