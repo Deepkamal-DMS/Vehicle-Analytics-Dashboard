@@ -1240,6 +1240,74 @@ svg {
     text-overflow: ellipsis;
 }
 
+/*
+ * One column-pair per month of history, not a bounded set like every
+ * other data-table (years, makers) - fixed layout divides the full
+ * table width evenly across however many months exist, which for
+ * several years of history squeezes each column to a few px and
+ * leaves nothing but an unreadable solid-coloured header. Auto layout
+ * lets each column take only what its own content needs instead; the
+ * surrounding .table-wrapper already scrolls horizontally for
+ * anything wider than its card.
+ */
+.data-table--dealership-breakdown {
+    table-layout: auto;
+}
+
+/*
+ * A grid item (direct child of .app-content, which is itself
+ * display: grid) defaults to min-width: auto - its content's
+ * min-content size, not 0 - so a table this wide would grow the
+ * whole grid column instead of scrolling inside its own card. Every
+ * other table-card on this page never hits this because its table
+ * stays within the column's width on its own; this is the one that
+ * needed the explicit override.
+ */
+#dealershipBreakdownContainer {
+    min-width: 0;
+}
+
+.data-table--dealership-breakdown td {
+    white-space: nowrap;
+}
+
+/*
+ * Specificity has to beat .data-table thead th's own white-space:
+ * normal (its word-break: break-word is what lets a long column
+ * name survive table-layout: fixed elsewhere) - here the layout is
+ * auto, so a wrapped "Unit"/"%" header just lets auto-layout pick a
+ * column narrower than the header needs, which is the opposite of
+ * what this table wants.
+ */
+.data-table.data-table--dealership-breakdown thead th {
+    white-space: nowrap;
+    word-break: normal;
+}
+
+/* RTO sub-header row inside a Contribution table - one table per
+   maker now holds every RTO, grouped under one of these instead of
+   its own separate table/card. */
+.data-table__group-row td {
+    background: var(--surface-muted);
+    border-top: 2px solid var(--border-strong);
+    border-bottom: 1px solid var(--border-strong);
+
+    color: var(--navy-mid);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+/* An RTO's own subtotal, or the table's grand TOTAL - same visual
+   weight as tfoot's totals row above, since both mean "this is a sum
+   of the rows above it, not a row of its own data". */
+.data-table__subtotal-row td {
+    background: var(--total-row);
+    border-top: 2px solid var(--primary-border);
+
+    color: var(--navy-mid);
+    font-weight: 700;
+}
+
 /* Data cells stay one line (truncated with a tooltip, same as
    before) - only the header label wraps. */
 .data-table tbody td,
@@ -1435,6 +1503,10 @@ svg {
 }
 
 .data-table tfoot .sticky-left {
+    background: var(--total-row);
+}
+
+.data-table__subtotal-row .sticky-left {
     background: var(--total-row);
 }
 
@@ -1807,6 +1879,13 @@ svg {
     font-size: 11px;
 }
 
+.import-form__hint {
+    margin: 0;
+
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
 .import-card__checks-link {
     padding: 0;
 
@@ -1818,6 +1897,10 @@ svg {
     font-weight: 600;
     text-decoration: underline;
     text-underline-offset: 2px;
+}
+
+.import-card__checks-link--danger {
+    color: var(--danger);
 }
 
 .import-checks {
@@ -1981,6 +2064,23 @@ svg {
     outline-offset: -1px;
 }
 
+/* A checkbox field reads left-to-right (box, then its own label
+   text), not stacked like a text field above its label. */
+.login-form__field--checkbox {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.login-form__field--checkbox input {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    padding: 0;
+    background: none;
+    border: 1px solid var(--border-strong);
+}
+
 .login-form__error {
     margin: 0;
     padding: 7px 10px;
@@ -2020,6 +2120,14 @@ svg {
     color: var(--text-muted);
     font-size: 11.5px;
     font-style: italic;
+}
+
+.dealership-breakdown__mismatch {
+    background: var(--danger-soft) !important;
+    color: var(--danger);
+    font-weight: 700;
+
+    cursor: help;
 }
 
 
@@ -2076,6 +2184,14 @@ svg {
     font-size: 13px;
     font-weight: 500;
     text-align: right;
+}
+
+.profile-page__hint {
+    margin: 0 0 16px;
+
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 .profile-manage__title {

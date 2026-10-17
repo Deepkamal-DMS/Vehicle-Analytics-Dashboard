@@ -41,5 +41,11 @@ Dashboard Semple.png
 C_INV_1310.xlsx
 Vhicle code.xlsx
 
+# Any dealer-provided source workbook dropped directly in the repo root -
+# real dealer figures, repo is public. The app itself never writes a file
+# here (the sample-file/export downloads are in-browser blobs, never
+# written to disk) - this only matches files a person drops in by hand.
+/maker_vehicleClass_*.xlsx
+
 # Local-only backups (git history + pg_dump snapshots) - never pushed.
 backups/

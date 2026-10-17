@@ -25,6 +25,20 @@ const { CLASS_COLUMNS, ENTITY_COLUMN, TOTAL_COLUMN, MONTHS } = require("./class-
  */
 const OWNER_COLUMN = "owner_username";
 
+/*
+ * 0 means "not tied to one of the owner's named dealerships" - true
+ * for every base row, and for a dealer's own rows from before this
+ * column existed (or from All India, which has no RTO and so no
+ * dealership concept at all - see dealerships.scope's CHECK). Never
+ * NULL, same reasoning as OWNER_COLUMN's ''. Real dealerships start
+ * their serial id at 1, so 0 can never collide with one. In the
+ * primary key alongside owner_username because two of one account's
+ * own dealerships can otherwise share the exact same
+ * year/month/rto_code/Maker/owner - that's the whole point of having
+ * more than one.
+ */
+const DEALERSHIP_COLUMN = "dealership_id";
+
 function quote(name) {
     return `"${name.replace(/"/g, '""')}"`;
 }
@@ -63,6 +77,7 @@ function columnLines(hasRto) {
 
     lines.push(`    , ${quote(TOTAL_COLUMN)} integer NOT NULL DEFAULT 0`);
     lines.push(`    , ${quote(OWNER_COLUMN)} text NOT NULL DEFAULT ''`);
+    lines.push(`    , ${quote(DEALERSHIP_COLUMN)} integer NOT NULL DEFAULT 0`);
 
     /*
      * When this row was last loaded, not when Vahan published the
@@ -86,6 +101,7 @@ function primaryKey(hasRto) {
 
     cols.push(ENTITY_COLUMN);
     cols.push(OWNER_COLUMN);
+    cols.push(DEALERSHIP_COLUMN);
 
     return cols.map(quote).join(", ");
 }

@@ -687,6 +687,10 @@ const state = {
        anyone with no private rows of their own. */
     dealerContribution: [],
 
+    /* See loadDealershipBreakdown() - empty unless this account has 2+
+       of its own dealerships sharing the same Maker + RTO. */
+    dealershipBreakdown: [],
+
     /* Whole tables, keyed by name. */
     tableCache: new Map(),
 
@@ -775,7 +779,8 @@ function cacheDOM() {
 
         /* Dealer contribution */
         "dealerContributionCard", "dealerContributionTitle", "dealerContributionMeta",
-        "dealerContributionBody", "dealerContributionFoot", "dealerContributionNote",
+        "dealerContributionContainer",
+        "dealershipBreakdownContainer",
 
         /* Card 2 */
         "rtoTable", "rtoTableHead", "rtoTableBody", "rtoTableFoot",
@@ -790,6 +795,7 @@ function cacheDOM() {
         "importOpenButton", "importOverlay", "importClose",
         "importChecksToggle", "importChecksPanel",
         "importForm", "importFileInput", "importFileLabel",
+        "importDealershipField", "importDealershipSelect", "importAddDealershipRow",
         "importValidateButton", "importCommitButton",
         "importState", "importReport", "importResult",
 
@@ -1972,14 +1978,16 @@ function sourceColumns(schema) {
 
     /*
      * Not read by anything in the main aggregation path (aggregateToYear()'s
-     * numericColumns list is built separately and never includes it) -
-     * only loadDealerContribution() reads this, to tell a dealer's own
-     * rows apart from the shared base ones within an already-cached
-     * fetch. Absent from the cloud schema, so only requested when it
-     * can exist at all.
+     * numericColumns list is built separately and never includes either) -
+     * only loadDealerContribution()/loadDealershipBreakdown() read
+     * these, to tell a dealer's own rows apart from the shared base
+     * ones (and, for the latter, apart from each other) within an
+     * already-cached fetch. Absent from the cloud schema, so only
+     * requested when they can exist at all.
      */
     if (BACKEND === "local") {
         columns.push("owner_username");
+        columns.push("dealership_id");
     }
 
     return columns.concat(schema.classColumns);
@@ -2212,6 +2220,26 @@ async function loadDealerContribution() {
     }
 
     const sections = [];
+    const rtoAllowed = rtoFilterSet();
+
+    /*
+     * Dealerships this account added only to track a competitor (see
+     * profile.html's Dealerships section) must never be blended into
+     * "your" contribution - a dealership_id in this set gets excluded
+     * from myRows below, the same way rows outside the RTO filter
+     * already are. Untagged rows (dealership_id 0) always count as
+     * the account's own, same as before this existed.
+     */
+    let notOwnDealershipIds = new Set();
+
+    try {
+        const body = await callAccountFunction("list-dealerships");
+        notOwnDealershipIds = new Set(
+            (body.dealerships || []).filter(d => d.isOwn === false).map(d => d.id)
+        );
+    } catch (error) {
+        console.warn("Could not load dealerships for Contribution's own/competitor filter:", error.message);
+    }
 
     for (const scope of RTO_SCOPES) {
 
@@ -2234,9 +2262,25 @@ async function loadDealerContribution() {
          * so the result is identical to scanning the whole table, just
          * without transferring the other 95% of it to do it.
          */
-        const myRows = await fetchAllRows(table, columns, {
+        let myRows = await fetchAllRows(table, columns, {
             filters: [{ column: "owner_username", values: [auth.user] }]
         });
+
+        /*
+         * The sidebar's own RTO filter (the one "RTO Comparison" and
+         * Card 1 already honour) - ticking a specific RTO there should
+         * narrow this card down to just that RTO too, same as it does
+         * everywhere else, rather than this being the one card that
+         * silently ignores it. Only applies where this table has RTOs
+         * at all (All India never does).
+         */
+        if (rtoAllowed && schema.rtoCodeColumn) {
+            myRows = myRows.filter(row => rtoAllowed.has(row[schema.rtoCodeColumn]));
+        }
+
+        if (notOwnDealershipIds.size > 0) {
+            myRows = myRows.filter(row => !notOwnDealershipIds.has(Number(row.dealership_id || 0)));
+        }
 
         if (myRows.length === 0) {
             continue;
@@ -2386,6 +2430,158 @@ async function loadDealerContribution() {
     }
 
     return sections;
+}
+
+
+/*
+ * One table per (Maker, Scope, RTO) combination where this account
+ * has 2+ of its own named dealerships (see profile.js's dealership
+ * management section) - each dealership gets its own row, Base its
+ * own row, month columns, and a TOTAL cross-checked against an
+ * independently-summed figure rather than just trusted by
+ * construction. A lone dealership (the common case) has nothing to
+ * compare against and stays out of this entirely - the existing
+ * Gujarat Contribution card above already covers it.
+ *
+ * mismatch, when true, means this account has OTHER private rows for
+ * that exact Maker/RTO/month not tagged to either compared
+ * dealership (dealership_id = 0, or some third dealership outside
+ * this group) - the rows below would then not add up to the true
+ * total, which is worth surfacing rather than silently
+ * under-reporting.
+ */
+async function loadDealershipBreakdown() {
+
+    if (BACKEND !== "local" || !auth.user || !auth.profile || auth.profile.canManageUsers) {
+        return [];
+    }
+
+    let dealerships;
+
+    try {
+        const body = await callAccountFunction("list-dealerships");
+        dealerships = body.dealerships || [];
+    } catch (error) {
+        console.warn("Could not load dealerships for the breakdown table:", error.message);
+        return [];
+    }
+
+    const rtoAllowed = rtoFilterSet();
+
+    /*
+     * A dealership can cover more than one RTO now (see
+     * dealership_rtos) - it is expanded into one entry per RTO here,
+     * so it can land in several groups at once (one per RTO it
+     * shares with a peer). Each group's row-level fetch below still
+     * filters to exactly that one rto_code, so a multi-RTO
+     * dealership's rows split by their own real RTO the same way
+     * they are already stored - only the grouping needed to expand.
+     */
+    const groups = new Map();
+
+    dealerships.forEach(dealership => {
+        (dealership.rtoCodes || []).forEach(rtoCode => {
+
+            /* Same sidebar RTO filter every other RTO-aware card
+               honours - an RTO outside it is left out of grouping
+               entirely, same as if the dealership did not cover it. */
+            if (rtoAllowed && !rtoAllowed.has(rtoCode)) {
+                return;
+            }
+
+            const key = `${dealership.scope}::${rtoCode}::${normalizeString(dealership.maker)}`;
+            const list = groups.get(key) || [];
+            list.push({ ...dealership, rtoCode });
+            groups.set(key, list);
+        });
+    });
+
+    const tables = [];
+
+    for (const group of groups.values()) {
+
+        if (group.length < 2) {
+            continue;
+        }
+
+        const { scope, rtoCode, maker } = group[0];
+        const table = tableFor(scope);
+        const schema = schemaForTable(table);
+        const columns = sourceColumns(schema);
+
+        const rows = await fetchAllRows(table, columns, {
+            filters: [
+                { column: "owner_username", values: ["", auth.user] },
+                { column: schema.rtoCodeColumn, values: [rtoCode] },
+                { column: schema.entityColumn, values: [maker] }
+            ]
+        });
+
+        const byMonth = new Map();
+        const dealershipIds = new Set(group.map(d => d.id));
+
+        rows.forEach(row => {
+
+            const year = row[schema.yearColumn];
+            const month = row[schema.monthColumn];
+            const key = `${year}-${month}`;
+
+            let entry = byMonth.get(key);
+
+            if (!entry) {
+                entry = { year, month, base: 0, flatMine: 0, byDealership: new Map() };
+                byMonth.set(key, entry);
+            }
+
+            const total = toNumber(row[schema.totalColumn]);
+
+            if (row.owner_username === "") {
+                entry.base += total;
+                return;
+            }
+
+            entry.flatMine += total;
+
+            const dealershipId = Number(row.dealership_id || 0);
+
+            if (dealershipIds.has(dealershipId)) {
+                entry.byDealership.set(dealershipId, (entry.byDealership.get(dealershipId) || 0) + total);
+            }
+        });
+
+        const months = [...byMonth.values()]
+            .map(entry => {
+
+                const groupedMine = [...entry.byDealership.values()].reduce((a, b) => a + b, 0);
+
+                return {
+                    ...entry,
+                    groupedMine,
+                    mismatch: groupedMine !== entry.flatMine
+                };
+            })
+            /*
+             * Only months where this account's own dealerships actually
+             * have something to compare - unlike the Contribution card
+             * above, there is no per-class myKeys gate here, so a bare
+             * entry.base > 0 would pull in every month the base dataset
+             * has history for (back to whenever it starts), nearly all
+             * of it "0 / 0" from before these dealerships existed. A
+             * base-only month has nothing to compare between dealerships
+             * anyway, so it is dropped rather than shown empty.
+             */
+            .filter(entry => entry.flatMine > 0)
+            .sort((a, b) =>
+                Number(a.year) - Number(b.year) ||
+                monthNumberOf(a.month) - monthNumberOf(b.month)
+            );
+
+        if (months.length > 0) {
+            tables.push({ scope, rtoCode, maker, dealerships: group, months });
+        }
+    }
+
+    return tables;
 }
 
 
@@ -3842,14 +4038,26 @@ function renderDealerContribution() {
 
     if (!sections || sections.length === 0) {
         dom.dealerContributionCard.hidden = true;
+        setExportEnabled(["contribution-xlsx", "contribution-pdf"], false);
+        if (dom.dealerContributionContainer) {
+            dom.dealerContributionContainer.innerHTML = "";
+        }
         return;
     }
 
     dom.dealerContributionCard.hidden = false;
+    setExportEnabled(["contribution-xlsx", "contribution-pdf"], true);
 
+    /*
+     * Falls through dealership -> name -> the raw username, same
+     * chain exportSpecFor("contribution") already uses - an account
+     * with its Dealership field left blank still gets something
+     * readable here rather than the bare login ("TEST@1234'S
+     * CONTRIBUTION").
+     */
     if (dom.dealerContributionTitle) {
-        const dealership = (auth.profile && auth.profile.dealership) || auth.user;
-        dom.dealerContributionTitle.textContent = `${dealership}'S CONTRIBUTION`.toUpperCase();
+        const whose = (auth.profile && (auth.profile.dealership || auth.profile.name)) || auth.user;
+        dom.dealerContributionTitle.textContent = `${whose}'S CONTRIBUTION`.toUpperCase();
     }
 
     const scopeLabelFor = id => {
@@ -3857,114 +4065,60 @@ function renderDealerContribution() {
         return found ? found.label : id;
     };
 
-    dom.dealerContributionBody.innerHTML = "";
-
-    let comparableMine = 0;
-    let comparableBase = 0;
-    let excludedMine = 0;
+    /*
+     * The export (Excel/PDF) still reads state.dealerContribution's
+     * own flat (scope, maker, months[]) shape directly via
+     * contributionExportRows() - a flat sheet is the right shape for
+     * a spreadsheet regardless of how this card displays on screen,
+     * so none of that changes. Only the on-screen render pivots it:
+     * one table per (scope, maker) - not per RTO, which would mean
+     * one table per branch as the real RTO count grows (37 in
+     * Gujarat alone) - vehicle types as rows grouped under an RTO
+     * sub-header, months as columns, same cell layout as the
+     * dealer-wise breakdown below. Ticking a specific RTO in the
+     * sidebar still narrows this down via rtoFilterSet() further up
+     * in loadDealerContribution(), same as it always did.
+     */
+    const groups = new Map();
     let rowCount = 0;
 
     sections.forEach(section => {
-
         section.months.forEach(entry => {
 
             rowCount += 1;
 
-            const tr = document.createElement("tr");
+            const key = `${section.scope}::${section.maker}`;
+            let group = groups.get(key);
 
-            const monthCell = document.createElement("td");
-            monthCell.textContent = `${entry.month} ${entry.year}`;
-            tr.appendChild(monthCell);
-
-            const makerCell = document.createElement("td");
-            makerCell.textContent = section.maker;
-            makerCell.title = section.maker;
-            tr.appendChild(makerCell);
-
-            const rtoCell = document.createElement("td");
-            rtoCell.textContent = entry.rto || "All India";
-            rtoCell.title = entry.rto ? (entry.rtoName || entry.rto) : "All India";
-            tr.appendChild(rtoCell);
-
-            const classCell = document.createElement("td");
-            classCell.textContent = entry.vehicleClass;
-            classCell.title = entry.vehicleClass;
-            tr.appendChild(classCell);
-
-            const mineCell = document.createElement("td");
-            mineCell.className = "numeric";
-            mineCell.textContent = formatIndianNumber(entry.mine);
-            tr.appendChild(mineCell);
-
-            const baseCell = document.createElement("td");
-            baseCell.className = "numeric";
-
-            const pctCell = document.createElement("td");
-            pctCell.className = "numeric";
-
-            const combinedCell = document.createElement("td");
-            combinedCell.className = "numeric";
-
-            if (entry.base > 0) {
-
-                const combined = entry.mine + entry.base;
-
-                baseCell.textContent = formatIndianNumber(entry.base);
-                combinedCell.textContent = formatIndianNumber(combined);
-                pctCell.textContent = formatPercentage((entry.mine / combined) * 100);
-
-                comparableMine += entry.mine;
-                comparableBase += entry.base;
-
-            } else {
-
-                baseCell.textContent = "—";
-                combinedCell.textContent = "—";
-                pctCell.textContent = "No base data";
-
-                excludedMine += entry.mine;
+            if (!group) {
+                group = { scope: section.scope, maker: section.maker, entries: [] };
+                groups.set(key, group);
             }
 
-            tr.appendChild(baseCell);
-            tr.appendChild(combinedCell);
-            tr.appendChild(pctCell);
-
-            dom.dealerContributionBody.appendChild(tr);
+            group.entries.push(entry);
         });
     });
 
-    dom.dealerContributionFoot.innerHTML = "";
+    if (dom.dealerContributionContainer) {
+        dom.dealerContributionContainer.innerHTML = "";
+    }
 
-    const footRow = document.createElement("tr");
+    const groupList = [...groups.values()].sort((a, b) =>
+        scopeLabelFor(a.scope).localeCompare(scopeLabelFor(b.scope)) ||
+        a.maker.localeCompare(b.maker)
+    );
 
-    const labelCell = document.createElement("td");
-    labelCell.colSpan = 4;
-    labelCell.textContent = "OVERALL";
-    footRow.appendChild(labelCell);
+    groupList.forEach((group, groupIndex) => {
+        renderOneContributionTable(group, scopeLabelFor(group.scope));
 
-    const mineCell = document.createElement("td");
-    mineCell.className = "numeric";
-    mineCell.textContent = formatIndianNumber(comparableMine + excludedMine);
-    footRow.appendChild(mineCell);
-
-    const baseCell = document.createElement("td");
-    baseCell.className = "numeric";
-    baseCell.textContent = formatIndianNumber(comparableBase);
-    footRow.appendChild(baseCell);
-
-    const combinedCell = document.createElement("td");
-    combinedCell.className = "numeric";
-    combinedCell.textContent = formatIndianNumber(comparableMine + comparableBase);
-    footRow.appendChild(combinedCell);
-
-    const pctCell = document.createElement("td");
-    pctCell.className = "numeric";
-    pctCell.textContent = comparableMine + comparableBase > 0
-        ? formatPercentage((comparableMine / (comparableMine + comparableBase)) * 100)
-        : "—";
-    footRow.appendChild(pctCell);
-
-    dom.dealerContributionFoot.appendChild(footRow);
+        if (groupIndex < groupList.length - 1) {
+            const spacer = document.createElement("div");
+            spacer.style.height = "16px";
+            if (dom.dealerContributionContainer) {
+                dom.dealerContributionContainer.appendChild(spacer);
+            }
+        }
+    });
 
     if (dom.dealerContributionMeta) {
 
@@ -3973,13 +4127,701 @@ function renderDealerContribution() {
         dom.dealerContributionMeta.textContent =
             `${scopeNames.join(" + ")} · ${rowCount} row(s)`;
     }
+}
 
-    if (dom.dealerContributionNote) {
-        dom.dealerContributionNote.textContent = excludedMine > 0
-            ? `OVERALL's percentage excludes month(s) with no base data yet to compare against ` +
-                `(still counted in "Your Units", shown as "No base data" above).`
-            : "";
+
+/*
+ * A cell where there are no "Others" (see renderOneContributionTable()'s
+ * own Base->Others renaming) to compare against yet shows "No others
+ * data" (still-real units, just nothing to measure a share against)
+ * rather than a misleading 100% - and "—" where there is neither,
+ * matching the dealer-wise breakdown's own "nothing here" convention.
+ */
+/*
+ * comparableMine/base drive the actual percentage (only the portion
+ * that has something to compare against). totalMine - which defaults
+ * to comparableMine, the common case where a single cell is either
+ * comparable or not, never a mix - decides "No others data" vs "—": a
+ * TOTAL row/column can sum months that are a mix of both, where
+ * comparableMine alone would wrongly read as "nothing happened" even
+ * though real excluded units exist.
+ */
+function contributionPercentCell(comparableMine, base, totalMine = comparableMine) {
+
+    if (base > 0) {
+        return dealershipPercentCell(comparableMine, comparableMine + base);
     }
+
+    const td = document.createElement("td");
+    td.className = "numeric";
+    td.textContent = totalMine > 0 ? "No others data" : "—";
+
+    return td;
+}
+
+
+/*
+ * Sums whichever entries are handed to it (an RTO's own, or every RTO
+ * combined) for one (year, month) - split into the comparable portion
+ * (base > 0, counts toward the % maths) and the excluded portion
+ * (base = 0, "No base data" - still real units, nothing to compare
+ * them against yet). Shared by both the per-RTO subtotal row and the
+ * grand TOTAL row below, so the two can never drift out of sync.
+ */
+function sumEntriesForMonth(entries, year, month) {
+
+    let mine = 0;
+    let base = 0;
+    let excludedMine = 0;
+
+    entries.forEach(entry => {
+
+        /*
+         * String comparison, not ===: entry.year comes straight off
+         * the fetched row (a number), while year here was parsed back
+         * out of a "${year}-${month}" key (always a string) - the
+         * same implicit coercion the key itself already relies on, so
+         * this stays consistent with monthKeys/cellFor elsewhere in
+         * this function rather than introducing its own rule.
+         */
+        if (String(entry.year) !== String(year) || entry.month !== month) {
+            return;
+        }
+
+        if (entry.base > 0) {
+            mine += entry.mine;
+            base += entry.base;
+        } else {
+            excludedMine += entry.mine;
+        }
+    });
+
+    return { mine, base, excludedMine };
+}
+
+
+/*
+ * One table for one (scope, maker) - every RTO this account has data
+ * for, grouped under its own sub-header row rather than split into
+ * separate tables. One table per RTO was the first cut of this, but
+ * does not scale - Gujarat alone has 37, and a table per branch would
+ * mean 37 cards to scroll past. Vehicle types stay the row unit
+ * within each RTO, same reasoning as before: a Three Wheeler's market
+ * has nothing to do with a Motorcycle's, so each keeps its own %
+ * rather than sharing one combined "Base" row. A specific RTO can
+ * still be isolated via the sidebar's own RTO filter, upstream in
+ * loadDealerContribution() - this just stops forcing that choice on
+ * every viewer by default.
+ */
+function renderOneContributionTable(group, scopeLabel) {
+
+    const rtoGroups = new Map();
+
+    group.entries.forEach(entry => {
+
+        const key = entry.rto || "";
+        let rtoGroup = rtoGroups.get(key);
+
+        if (!rtoGroup) {
+            rtoGroup = { rto: entry.rto, rtoName: entry.rtoName, entries: [] };
+            rtoGroups.set(key, rtoGroup);
+        }
+
+        rtoGroup.entries.push(entry);
+    });
+
+    const rtoList = [...rtoGroups.values()].sort((a, b) => (a.rto || "").localeCompare(b.rto || ""));
+
+    const monthKeys = [...new Set(group.entries.map(entry => `${entry.year}-${entry.month}`))];
+
+    const months = monthKeys
+        .map(key => {
+            const [year, month] = key.split("-");
+            return { year, month };
+        })
+        .sort((a, b) =>
+            Number(a.year) - Number(b.year) ||
+            monthNumberOf(a.month) - monthNumberOf(b.month)
+        );
+
+    const section = document.createElement("section");
+    section.className = "table-card";
+
+    const head = document.createElement("div");
+    head.className = "table-card__head";
+
+    const badge = document.createElement("span");
+    badge.className = "table-card__badge";
+    badge.setAttribute("aria-hidden", "true");
+    badge.textContent = "★";
+    head.appendChild(badge);
+
+    const title = document.createElement("h2");
+    title.textContent = `${group.maker} (${scopeLabel})`;
+    head.appendChild(title);
+
+    /*
+     * The grand TOTAL (every RTO, every month combined) already lives
+     * in the table's own bottom-right corner - but reaching it means
+     * scrolling past up to ten months of columns, which makes it easy
+     * to miss entirely. Showing it here too means it is visible the
+     * instant the card renders, no scrolling required. Filled in once
+     * grandMine/grandBase are known, at the end of this function.
+     */
+    const meta = document.createElement("span");
+    meta.className = "table-card__meta";
+    head.appendChild(meta);
+
+    section.appendChild(head);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "table-wrapper";
+
+    const table = document.createElement("table");
+    table.className = "data-table data-table--dealership-breakdown";
+
+    const thead = document.createElement("thead");
+
+    const headRow1 = document.createElement("tr");
+    const classHeadCell = document.createElement("th");
+    classHeadCell.rowSpan = 2;
+    classHeadCell.className = "sticky-left";
+    classHeadCell.textContent = "VEHICLE TYPE";
+    headRow1.appendChild(classHeadCell);
+
+    months.forEach(({ year, month }) => {
+        const th = document.createElement("th");
+        th.colSpan = 2;
+        th.textContent = `${month} ${year}`;
+        headRow1.appendChild(th);
+    });
+
+    const totalHeadCell = document.createElement("th");
+    totalHeadCell.colSpan = 2;
+    totalHeadCell.textContent = "TOTAL";
+    headRow1.appendChild(totalHeadCell);
+
+    thead.appendChild(headRow1);
+
+    const headRow2 = document.createElement("tr");
+
+    months.concat([null]).forEach(() => {
+
+        const unitTh = document.createElement("th");
+        unitTh.className = "numeric";
+        unitTh.textContent = "Unit";
+        headRow2.appendChild(unitTh);
+
+        const pctTh = document.createElement("th");
+        pctTh.className = "numeric";
+        pctTh.textContent = "%";
+        headRow2.appendChild(pctTh);
+    });
+
+    thead.appendChild(headRow2);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    let anyNoBaseData = false;
+
+    let grandMine = 0;
+    let grandBase = 0;
+    let grandExcludedMine = 0;
+
+    rtoList.forEach(rtoGroup => {
+
+        const rtoLabel = rtoGroup.rto
+            ? `${rtoGroup.rto}${rtoGroup.rtoName ? ` — ${rtoGroup.rtoName}` : ""}`
+            : "All India";
+
+        const groupRow = document.createElement("tr");
+        groupRow.className = "data-table__group-row";
+
+        const groupCell = document.createElement("td");
+        groupCell.colSpan = (months.length + 1) * 2 + 1;
+        groupCell.textContent = rtoLabel;
+        groupRow.appendChild(groupCell);
+
+        tbody.appendChild(groupRow);
+
+        const classes = [...new Set(rtoGroup.entries.map(entry => entry.vehicleClass))].sort();
+
+        const cellFor = new Map();
+
+        rtoGroup.entries.forEach(entry => {
+            cellFor.set(`${entry.vehicleClass}::${entry.year}-${entry.month}`, entry);
+        });
+
+        classes.forEach(className => {
+
+            const tr = document.createElement("tr");
+
+            const nameCell = document.createElement("td");
+            nameCell.className = "sticky-left";
+            nameCell.textContent = className;
+            nameCell.title = className;
+            tr.appendChild(nameCell);
+
+            let rowMine = 0;
+            let rowBase = 0;
+            let rowExcludedMine = 0;
+
+            months.forEach(({ year, month }) => {
+
+                const entry = cellFor.get(`${className}::${year}-${month}`);
+                const mine = entry ? entry.mine : 0;
+                const base = entry ? entry.base : 0;
+
+                tr.appendChild(dealershipUnitCell(mine));
+                tr.appendChild(contributionPercentCell(mine, base));
+
+                if (base > 0) {
+                    rowMine += mine;
+                    rowBase += base;
+                } else {
+                    rowExcludedMine += mine;
+                    if (mine > 0) {
+                        anyNoBaseData = true;
+                    }
+                }
+            });
+
+            tr.appendChild(dealershipUnitCell(rowMine + rowExcludedMine));
+            tr.appendChild(contributionPercentCell(rowMine, rowBase, rowMine + rowExcludedMine));
+
+            tbody.appendChild(tr);
+        });
+
+        /* This RTO's own subtotal - summed from its own entries only,
+           not the whole group, so it is unaffected by any other RTO
+           in the table. */
+        const subtotalRow = document.createElement("tr");
+        subtotalRow.className = "data-table__subtotal-row";
+
+        const subtotalNameCell = document.createElement("td");
+        subtotalNameCell.className = "sticky-left";
+        subtotalNameCell.textContent = `TOTAL — ${rtoGroup.rto || "All India"}`;
+        subtotalRow.appendChild(subtotalNameCell);
+
+        let rtoTotalMine = 0;
+        let rtoTotalBase = 0;
+        let rtoTotalExcludedMine = 0;
+
+        months.forEach(({ year, month }) => {
+
+            const { mine, base, excludedMine } = sumEntriesForMonth(rtoGroup.entries, year, month);
+
+            subtotalRow.appendChild(dealershipUnitCell(mine + excludedMine));
+            subtotalRow.appendChild(contributionPercentCell(mine, base, mine + excludedMine));
+
+            rtoTotalMine += mine;
+            rtoTotalBase += base;
+            rtoTotalExcludedMine += excludedMine;
+        });
+
+        subtotalRow.appendChild(dealershipUnitCell(rtoTotalMine + rtoTotalExcludedMine));
+        subtotalRow.appendChild(contributionPercentCell(rtoTotalMine, rtoTotalBase, rtoTotalMine + rtoTotalExcludedMine));
+
+        tbody.appendChild(subtotalRow);
+
+        grandMine += rtoTotalMine;
+        grandBase += rtoTotalBase;
+        grandExcludedMine += rtoTotalExcludedMine;
+    });
+
+    const totalRow = document.createElement("tr");
+    totalRow.className = "data-table__subtotal-row";
+
+    const totalNameCell = document.createElement("td");
+    totalNameCell.className = "sticky-left";
+    totalNameCell.textContent = "TOTAL";
+    totalRow.appendChild(totalNameCell);
+
+    months.forEach(({ year, month }) => {
+
+        const { mine, base, excludedMine } = sumEntriesForMonth(group.entries, year, month);
+
+        totalRow.appendChild(dealershipUnitCell(mine + excludedMine));
+        totalRow.appendChild(contributionPercentCell(mine, base, mine + excludedMine));
+    });
+
+    totalRow.appendChild(dealershipUnitCell(grandMine + grandExcludedMine));
+    totalRow.appendChild(contributionPercentCell(grandMine, grandBase, grandMine + grandExcludedMine));
+
+    tbody.appendChild(totalRow);
+
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    section.appendChild(wrapper);
+
+    const grandTotalUnits = grandMine + grandExcludedMine;
+    const grandCombined = grandMine + grandBase;
+
+    meta.textContent = grandCombined > 0
+        ? `Overall: ${formatIndianNumber(grandTotalUnits)} units · ${formatPercentage((grandMine / grandCombined) * 100)}`
+        : `Overall: ${formatIndianNumber(grandTotalUnits)} units`;
+
+    const note = document.createElement("p");
+    note.className = "dealer-contribution__note";
+    note.textContent =
+        "Each vehicle type's % is its own share of that type's market, so rows do not add up to their RTO's " +
+        "subtotal, or RTOs to the grand TOTAL - every subtotal is this account's combined share across every " +
+        "type (or every RTO) instead." +
+        (anyNoBaseData
+            ? ` "No others data" means there is nothing yet to compare that cell's units against (still counted in Unit).`
+            : "");
+    section.appendChild(note);
+
+    if (dom.dealerContributionContainer) {
+        dom.dealerContributionContainer.appendChild(section);
+    }
+}
+
+
+function dealershipPercentCell(units, combined) {
+
+    const td = document.createElement("td");
+    td.className = "numeric";
+    td.textContent = combined > 0 ? formatPercentage((units / combined) * 100) : "—";
+
+    return td;
+}
+
+
+function dealershipUnitCell(units) {
+
+    const td = document.createElement("td");
+    td.className = "numeric";
+    td.textContent = formatIndianNumber(units);
+
+    return td;
+}
+
+
+/*
+ * One table per entry in state.dealershipBreakdown (see
+ * loadDealershipBreakdown()) - dealerships as rows, months as
+ * columns, matching the reference layout this was built from. Built
+ * entirely in JS, not static HTML, since the month columns are
+ * dynamic per account.
+ */
+/*
+ * A flat sheet - one row per (dealership-or-base, month) - rather
+ * than the on-screen grid: a spreadsheet reader filters/sorts/pivots
+ * a flat table far more easily than one that is already pivoted, same
+ * reasoning as contributionExportRows() staying flat despite its own
+ * on-screen table being a grid too.
+ */
+function dealershipBreakdownExportRows(group) {
+
+    const rows = [];
+
+    group.dealerships.forEach(dealership => {
+        group.months.forEach(entry => {
+
+            const units = entry.byDealership.get(dealership.id) || 0;
+            const combined = entry.base + entry.groupedMine;
+
+            rows.push({
+                dealer: dealership.name,
+                month: `${entry.month} ${entry.year}`,
+                units,
+                combined,
+                pct: combined > 0 ? toNumber(((units / combined) * 100).toFixed(2)) : 0
+            });
+        });
+    });
+
+    group.months.forEach(entry => {
+
+        const combined = entry.base + entry.groupedMine;
+
+        rows.push({
+            dealer: "Others",
+            month: `${entry.month} ${entry.year}`,
+            units: entry.base,
+            combined,
+            pct: combined > 0 ? toNumber(((entry.base / combined) * 100).toFixed(2)) : 0
+        });
+    });
+
+    return rows;
+}
+
+
+function dealershipBreakdownColumns() {
+
+    return [
+        { key: "dealer", label: "Dealer", raw: row => row.dealer, text: row => row.dealer },
+        { key: "month", label: "Month", raw: row => row.month, text: row => row.month },
+        {
+            key: "units", label: "Unit", numeric: true,
+            raw: row => row.units, text: row => formatIndianNumber(row.units)
+        },
+        {
+            key: "combined", label: "Combined", numeric: true,
+            raw: row => row.combined, text: row => formatIndianNumber(row.combined)
+        },
+        {
+            key: "pct", label: "Share %", numeric: true,
+            raw: row => row.pct, text: row => formatPercentage(row.pct)
+        }
+    ];
+}
+
+
+function dealershipBreakdownExportSpec(group, scopeLabelText) {
+
+    const rows = dealershipBreakdownExportRows(group);
+
+    return {
+        title: `Dealer-wise: ${group.maker} @ ${group.rtoCode} (${scopeLabelText})`,
+        sheet: "Dealer-wise",
+        prefix: "dealer-wise",
+        columns: dealershipBreakdownColumns(),
+        rows,
+        totals: null,
+        labelWidth: 28,
+        scopeOverride: scopeLabelText,
+        summary: `${group.maker} @ ${group.rtoCode} (${scopeLabelText}) · ` +
+            `Comparison: each dealership's units vs. this RTO's combined total, by month`
+    };
+}
+
+
+function renderDealershipBreakdown() {
+
+    if (!dom.dealershipBreakdownContainer) {
+        return;
+    }
+
+    dom.dealershipBreakdownContainer.innerHTML = "";
+
+    const tables = state.dealershipBreakdown;
+
+    if (!tables || tables.length === 0) {
+        return;
+    }
+
+    tables.forEach((group, groupIndex) => {
+
+        const section = document.createElement("section");
+        section.className = "table-card";
+
+        const head = document.createElement("div");
+        head.className = "table-card__head";
+
+        const badge = document.createElement("span");
+        badge.className = "table-card__badge";
+        badge.setAttribute("aria-hidden", "true");
+        badge.textContent = "⚑";
+        head.appendChild(badge);
+
+        const scopeLabel = (SCOPES.find(entry => entry.id === group.scope) || {}).label || group.scope;
+
+        const title = document.createElement("h2");
+        title.textContent = `Dealer-wise: ${group.maker} @ ${group.rtoCode} (${scopeLabel})`;
+        head.appendChild(title);
+
+        const actions = document.createElement("div");
+        actions.className = "table-card__actions";
+
+        const xlsxButton = document.createElement("button");
+        xlsxButton.type = "button";
+        xlsxButton.className = "download-button";
+        xlsxButton.title = "Download this table as an Excel file";
+        xlsxButton.textContent = "Excel";
+        xlsxButton.addEventListener("click", () => {
+            exportSpecXlsx(dealershipBreakdownExportSpec(group, scopeLabel));
+        });
+        actions.appendChild(xlsxButton);
+
+        const pdfButton = document.createElement("button");
+        pdfButton.type = "button";
+        pdfButton.className = "download-button";
+        pdfButton.title = "Download this table as a PDF";
+        pdfButton.textContent = "PDF";
+        pdfButton.addEventListener("click", () => {
+            exportSpecPdf(dealershipBreakdownExportSpec(group, scopeLabel));
+        });
+        actions.appendChild(pdfButton);
+
+        head.appendChild(actions);
+
+        section.appendChild(head);
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "table-wrapper";
+
+        const table = document.createElement("table");
+        table.className = "data-table data-table--dealership-breakdown";
+
+        const thead = document.createElement("thead");
+
+        const headRow1 = document.createElement("tr");
+        const dealerHeadCell = document.createElement("th");
+        dealerHeadCell.rowSpan = 2;
+        dealerHeadCell.textContent = "DEALER";
+        headRow1.appendChild(dealerHeadCell);
+
+        group.months.forEach(entry => {
+            const th = document.createElement("th");
+            th.colSpan = 2;
+            th.textContent = `${entry.month} ${entry.year}`;
+            headRow1.appendChild(th);
+        });
+
+        const totalHeadCell = document.createElement("th");
+        totalHeadCell.colSpan = 2;
+        totalHeadCell.textContent = "TOTAL";
+        headRow1.appendChild(totalHeadCell);
+
+        thead.appendChild(headRow1);
+
+        const headRow2 = document.createElement("tr");
+
+        group.months.concat([null]).forEach(() => {
+            const unitTh = document.createElement("th");
+            unitTh.className = "numeric";
+            unitTh.textContent = "Unit";
+            headRow2.appendChild(unitTh);
+
+            const pctTh = document.createElement("th");
+            pctTh.className = "numeric";
+            pctTh.textContent = "%";
+            headRow2.appendChild(pctTh);
+        });
+
+        thead.appendChild(headRow2);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+
+        let anyMismatch = false;
+
+        group.dealerships.forEach(dealership => {
+
+            const tr = document.createElement("tr");
+
+            const nameCell = document.createElement("td");
+            nameCell.textContent = dealership.name;
+            nameCell.title = dealership.name;
+            tr.appendChild(nameCell);
+
+            let dealershipTotalUnits = 0;
+            let dealershipTotalCombined = 0;
+
+            group.months.forEach(entry => {
+
+                const units = entry.byDealership.get(dealership.id) || 0;
+                const combined = entry.base + entry.groupedMine;
+
+                dealershipTotalUnits += units;
+                dealershipTotalCombined += combined;
+
+                tr.appendChild(dealershipUnitCell(units));
+                tr.appendChild(dealershipPercentCell(units, combined));
+            });
+
+            tr.appendChild(dealershipUnitCell(dealershipTotalUnits));
+            tr.appendChild(dealershipPercentCell(dealershipTotalUnits, dealershipTotalCombined));
+
+            tbody.appendChild(tr);
+        });
+
+        /*
+         * The shared base layer - admin/Anuj's own data for this same
+         * Maker/RTO, the part of "everyone" that isn't one of this
+         * account's own dealerships. Labelled "Others" on screen, per
+         * the user: these are unidentified sellers (no account, no
+         * name, nothing this dashboard actually knows about them
+         * individually) - "Base" read as if it meant something more
+         * specific than that. entry.base/baseTotalUnits etc. keep
+         * their existing internal names below; only the user-visible
+         * label changes.
+         */
+        const baseRow = document.createElement("tr");
+        const baseNameCell = document.createElement("td");
+        baseNameCell.textContent = "Others";
+        baseRow.appendChild(baseNameCell);
+
+        let baseTotalUnits = 0;
+        let baseTotalCombined = 0;
+
+        group.months.forEach(entry => {
+
+            const combined = entry.base + entry.groupedMine;
+
+            baseTotalUnits += entry.base;
+            baseTotalCombined += combined;
+
+            baseRow.appendChild(dealershipUnitCell(entry.base));
+            baseRow.appendChild(dealershipPercentCell(entry.base, combined));
+        });
+
+        baseRow.appendChild(dealershipUnitCell(baseTotalUnits));
+        baseRow.appendChild(dealershipPercentCell(baseTotalUnits, baseTotalCombined));
+        tbody.appendChild(baseRow);
+
+        const totalRow = document.createElement("tr");
+        const totalNameCell = document.createElement("td");
+        totalNameCell.textContent = "TOTAL";
+        totalRow.appendChild(totalNameCell);
+
+        let grandUnits = 0;
+        let grandCombined = 0;
+
+        group.months.forEach(entry => {
+
+            const combined = entry.base + entry.groupedMine;
+
+            if (entry.mismatch) {
+                anyMismatch = true;
+            }
+
+            grandUnits += combined;
+            grandCombined += combined;
+
+            const unitCell = dealershipUnitCell(combined);
+
+            if (entry.mismatch) {
+                unitCell.classList.add("dealership-breakdown__mismatch");
+                unitCell.title =
+                    `This account has other private data for ${group.maker} @ ${group.rtoCode} ` +
+                    `in ${entry.month} ${entry.year} not tagged to any dealership shown here ` +
+                    `(${formatIndianNumber(entry.flatMine - entry.groupedMine)} unit(s) unaccounted for).`;
+            }
+
+            totalRow.appendChild(unitCell);
+            totalRow.appendChild(dealershipPercentCell(combined, combined));
+        });
+
+        totalRow.appendChild(dealershipUnitCell(grandUnits));
+        totalRow.appendChild(dealershipPercentCell(grandUnits, grandCombined));
+        tbody.appendChild(totalRow);
+
+        table.appendChild(tbody);
+        wrapper.appendChild(table);
+        section.appendChild(wrapper);
+
+        if (anyMismatch) {
+
+            const note = document.createElement("p");
+            note.className = "dealer-contribution__note";
+            note.textContent =
+                "⚑ Highlighted month(s) have private data for this Maker/RTO not tagged to " +
+                "any dealership above - hover the highlighted cell for details.";
+            section.appendChild(note);
+        }
+
+        dom.dealershipBreakdownContainer.appendChild(section);
+
+        if (groupIndex < tables.length - 1) {
+            const spacer = document.createElement("div");
+            spacer.style.height = "16px";
+            dom.dealershipBreakdownContainer.appendChild(spacer);
+        }
+    });
 }
 
 
@@ -4257,6 +5099,118 @@ function detailTotalsRow(rows) {
         yoy: null,
         rank: null
     };
+}
+
+
+/*
+ * Export support for the Contribution card - see loadDealerContribution()/
+ * renderDealerContribution(). Flattens state.dealerContribution's nested
+ * sections into plain rows, same shape the other three cards' column
+ * descriptors already expect, so exportSpecFor()/sheetFor()/widthsFor()
+ * need no changes to handle a fourth kind.
+ */
+function contributionExportRows() {
+
+    const rows = [];
+
+    (state.dealerContribution || []).forEach(section => {
+        section.months.forEach(entry => {
+
+            const hasBase = entry.base > 0;
+            const combined = entry.mine + entry.base;
+
+            rows.push({
+                month: `${entry.month} ${entry.year}`,
+                maker: section.maker,
+                rto: entry.rto || "",
+                vehicleClass: entry.vehicleClass,
+                mine: entry.mine,
+                base: hasBase ? entry.base : "No others data",
+                combined: hasBase ? combined : "No others data",
+                pct: hasBase ? toNumber((entry.mine / combined * 100).toFixed(2)) : "No others data"
+            });
+        });
+    });
+
+    return rows;
+}
+
+
+/* Same OVERALL arithmetic as renderDealerContribution()'s footer - months
+   with no base data still count toward "Your Units" but are left out of
+   the percentage, exactly as shown on screen. */
+function contributionTotalsRow(rowCount) {
+
+    let totalMine = 0;
+    let comparableMine = 0;
+    let comparableBase = 0;
+
+    (state.dealerContribution || []).forEach(section => {
+        section.months.forEach(entry => {
+
+            totalMine += entry.mine;
+
+            if (entry.base > 0) {
+                comparableMine += entry.mine;
+                comparableBase += entry.base;
+            }
+        });
+    });
+
+    const combined = comparableMine + comparableBase;
+
+    return {
+        month: "OVERALL",
+        maker: "",
+        rto: "",
+        vehicleClass: `${formatIndianNumber(rowCount)} rows`,
+        mine: totalMine,
+        base: comparableBase,
+        combined,
+        pct: combined > 0 ? toNumber((comparableMine / combined * 100).toFixed(2)) : null
+    };
+}
+
+
+/*
+ * "No base data"/null sentinels pass through raw() untouched (the xlsx
+ * path reads these directly), but text() - the PDF path - needs its
+ * own formatting per field: formatPercentage()/formatIndianNumber()
+ * would turn that same sentinel into a misleading "0.00%"/"0" instead
+ * of leaving it as the words it actually is.
+ */
+function contributionNumericText(value, formatter) {
+    return typeof value === "string" ? value : formatter(value);
+}
+
+
+function contributionColumns() {
+
+    return [
+        { key: "month", label: "Month", raw: row => row.month, text: row => row.month },
+        { key: "maker", label: "Maker", raw: row => row.maker, text: row => row.maker },
+        { key: "rto", label: "RTO", raw: row => row.rto, text: row => row.rto },
+        {
+            key: "vehicleClass", label: "Vehicle Type",
+            raw: row => row.vehicleClass, text: row => row.vehicleClass
+        },
+        {
+            key: "mine", label: "Your Units", numeric: true,
+            raw: row => row.mine, text: row => formatIndianNumber(row.mine)
+        },
+        {
+            key: "base", label: "Others Units", numeric: true,
+            raw: row => row.base, text: row => contributionNumericText(row.base, formatIndianNumber)
+        },
+        {
+            key: "combined", label: "Combined", numeric: true,
+            raw: row => row.combined, text: row => contributionNumericText(row.combined, formatIndianNumber)
+        },
+        {
+            key: "pct", label: "Contribution %", numeric: true,
+            raw: row => row.pct, text: row => contributionNumericText(row.pct, formatPercentage)
+        }
+    ];
 }
 
 
@@ -4574,6 +5528,7 @@ function renderAll() {
     renderKpis();
     renderMakerCard();
     renderDealerContribution();
+    renderDealershipBreakdown();
     renderRtoCard();
     renderDetailCard();
     renderSummary();
@@ -5750,11 +6705,20 @@ function activeFilterSummary() {
 }
 
 
-function exportFileName(prefix, extension) {
+/*
+ * scopeText, when given, overrides the sidebar's own Scope filter -
+ * needed for the Contribution card, whose export always reflects
+ * Gujarat (see loadDealerContribution()) regardless of whatever Scope
+ * happens to be ticked for the rest of the dashboard. Without this, a
+ * file full of Gujarat-only figures could be named
+ * "contribution-all-india-....xlsx", which is backwards from what is
+ * actually inside it.
+ */
+function exportFileName(prefix, extension, scopeText = null) {
 
     const stamp = new Date().toISOString().slice(0, 10);
 
-    const scope = scopeLabel(state.filters)
+    const scope = (scopeText || scopeLabel(state.filters))
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "");
@@ -5819,6 +6783,51 @@ function exportSpecFor(kind) {
         };
     }
 
+    if (kind === "contribution") {
+
+        const columns = contributionColumns();
+        const rows = contributionExportRows();
+
+        /*
+         * dealership falls through to name, then the raw username -
+         * an account with no single dealership name set (see
+         * Profile's Dealerships section, where "whose" now lives)
+         * still gets something readable here rather than a blank or
+         * the bare login ("test@1234's Contribution").
+         */
+        const dealership = (auth.profile && (auth.profile.dealership || auth.profile.name)) || auth.user;
+
+        const scopeNames = [...new Set(
+            (state.dealerContribution || []).map(section => {
+                const found = SCOPES.find(entry => entry.id === section.scope);
+                return found ? found.label : section.scope;
+            })
+        )];
+
+        const monthsPresent = [...new Set(rows.map(row => row.month))];
+
+        return {
+            title: `${dealership}'s Contribution`,
+            sheet: "Contribution",
+            prefix: "contribution",
+            columns,
+            rows,
+            totals: contributionTotalsRow(rows.length),
+            labelWidth: 20,
+            scopeOverride: scopeNames.join(" + ") || "gujarat",
+            /*
+             * Never activeFilterSummary() - this export always reflects
+             * Gujarat and whatever months this dealer actually has data
+             * for, regardless of the sidebar's own Scope/Year/Month
+             * filters, which this card has never respected in the first
+             * place (see loadDealerContribution()).
+             */
+            summary: `Scope: ${scopeNames.join(" + ") || "Gujarat"} (RTO-wise) · ` +
+                `Comparison: your units vs. shared base, same RTO + vehicle class + month · ` +
+                `Months: ${monthsPresent[0] || "—"} to ${monthsPresent[monthsPresent.length - 1] || "—"}`
+        };
+    }
+
     const columns = detailColumns();
     const rows = state.detailTable.visible || state.detailTable.rows;
 
@@ -5840,7 +6849,7 @@ function sheetFor(spec, { heading = true } = {}) {
 
     if (heading) {
         rows.push([{ value: spec.title, style: 1 }]);
-        rows.push([activeFilterSummary()]);
+        rows.push([spec.summary || activeFilterSummary()]);
         rows.push([
             `${formatIndianNumber(spec.rows.length)} rows · every filtered ` +
             "row, not just the page on screen"
@@ -5878,20 +6887,30 @@ function widthsFor(spec) {
 }
 
 
-async function exportCardXlsx(kind) {
-
-    const spec = exportSpecFor(kind);
+/*
+ * Takes a spec directly rather than a kind - exportCardXlsx() below is
+ * just this applied to exportSpecFor(kind)'s result, but the dealer-
+ * wise breakdown's per-RTO-group export (see
+ * dealershipBreakdownExportSpec()) has no fixed "kind" to look up,
+ * since how many groups exist is dynamic per account.
+ */
+async function exportSpecXlsx(spec) {
 
     if (spec.rows.length === 0) {
         return;
     }
 
     await downloadWorkbook(
-        exportFileName(spec.prefix, "xlsx"),
+        exportFileName(spec.prefix, "xlsx", spec.scopeOverride),
         spec.sheet.slice(0, 31),
         sheetFor(spec),
         { widths: widthsFor(spec) }
     );
+}
+
+
+async function exportCardXlsx(kind) {
+    await exportSpecXlsx(exportSpecFor(kind));
 }
 
 
@@ -5995,9 +7014,191 @@ async function exportTableStructureXlsx() {
 }
 
 
-async function exportCardPdf(kind) {
+/*
+ * A real, uploadable example of the exact shape the Import dialog
+ * expects - not the internal database columns exportTableStructureXlsx()
+ * above shows, which is a different thing (those three tables have no
+ * single-file equivalent - a real Vahan export has no year/month/RTO
+ * columns at all; that information lives only in its title row and its
+ * own filename, cross-checked against each other by validate.js's
+ * verifyTitle()). January 2025 is used throughout deliberately - a
+ * real past month, far from anything this dashboard already holds, so
+ * someone who uploads it unedited sees it land somewhere obviously
+ * separate rather than silently overwriting real data.
+ */
+async function exportSampleImportXlsx() {
 
-    const spec = exportSpecFor(kind);
+    const header = ["Maker", ...VEHICLE_CLASS_COLUMNS, "Total"]
+        .map(name => ({ value: name, style: 1 }));
+
+    const exampleRow = maker => {
+
+        const passenger = 420;
+        const goods = 35;
+
+        const values = VEHICLE_CLASS_COLUMNS.map(name => {
+            if (name === "Three Wheeler (Passenger)") return passenger;
+            if (name === "Three Wheeler (Goods)") return goods;
+            return 0;
+        });
+
+        return [maker, ...values, passenger + goods];
+    };
+
+    const dataSheet = {
+        name: "Sample Data",
+        rows: [
+            [{
+                value: "Maker and Vehicle Class Data for All State (01 Jan 2025 to 31 Jan 2025)",
+                style: 1
+            }],
+            header,
+            exampleRow("EXAMPLE MOTORS LTD"),
+            exampleRow("SAMPLE AUTO INDIA LTD")
+        ],
+        options: {
+            widths: [28, ...VEHICLE_CLASS_COLUMNS.map(() => 13), 11]
+        }
+    };
+
+    const instructionLines = [
+        "How to use this file",
+        "",
+        "1. \"Sample Data\" is a real, uploadable example - delete the two " +
+            "example rows (EXAMPLE MOTORS LTD / SAMPLE AUTO INDIA LTD) and " +
+            "replace them with your own Maker totals before uploading.",
+        "2. \"Maker\" is always the first column and \"Total\" always the " +
+            "last - every column between them is one vehicle class. Leave a " +
+            "class at 0 if you have none of it; do not delete its column.",
+        "3. One row per Maker. The same Maker listed twice in one sheet is " +
+            "rejected.",
+        "4. Every number is a whole unit count, and \"Total\" must equal " +
+            "the sum of that row's class columns.",
+        "5. Row 1 (above the column headers) must say the exact month and " +
+            "year you are importing - for All India: \"Maker and Vehicle " +
+            "Class Data for All State (01 <Mon> <YYYY> to <last day> <Mon> " +
+            "<YYYY>)\". Change the dates to match your data; the rest of " +
+            "the wording must stay exactly as shown.",
+        "6. For a Gujarat or Maharashtra RTO file instead of All India, " +
+            "Row 1 must instead start \"RTO (<RTO NAME> - <RTO CODE>) Wise " +
+            "Maker and Vehicle Class Data for Gujarat (...)\" or \"... for " +
+            "Maharashtra (...)\" - matching wording a real Vahan RTO-wise " +
+            "export already uses.",
+        "7. Rename the file to match what Row 1 says: " +
+            "maker_vehicleClass_All RTO_<Mon><YY>.xlsx for All India, or " +
+            "maker_vehicleClass_GJ01_<Mon><YY>.xlsx / " +
+            "maker_vehicleClass_MH01_<Mon><YY>.xlsx for a specific RTO. " +
+            "The Import dialog checks the filename's month/year (and RTO, " +
+            "for an RTO file) against Row 1 and blocks anything that " +
+            "disagrees.",
+        "8. One file covers exactly one month (and, for an RTO file, one " +
+            "RTO) - only that month's data is replaced on import; " +
+            "everything else already in the dashboard is left untouched."
+    ];
+
+    const instructionsSheet = {
+        name: "Instructions",
+        rows: instructionLines.map((line, index) => [
+            index === 0 ? { value: line, style: 1 } : line
+        ]),
+        options: { widths: [100] }
+    };
+
+    /*
+     * The filename itself has to follow the same pattern it teaches -
+     * it is the first thing validate.js checks, before it ever looks
+     * at what is inside. Downloading this under some other name would
+     * make the sample fail the very check it exists to demonstrate.
+     */
+    await downloadWorkbookMulti("maker_vehicleClass_All RTO_Jan25.xlsx", [dataSheet, instructionsSheet]);
+}
+
+
+/*
+ * The second, "bulk" shape - several RTOs and/or months in one sheet,
+ * for a dealership that covers more than one RTO (see profile.html's
+ * Dealerships section). Recognised by its header alone (see
+ * looksLikeBulkWorkbook() in validate.js), not a filename pattern -
+ * there is no real-world export already using a name for this shape
+ * the way the real Vahan export forces one for the single-RTO sample
+ * above, so none is required here either.
+ */
+async function exportBulkSampleImportXlsx() {
+
+    const header = ["Year", "RTO", "Month", "Maker", ...VEHICLE_CLASS_COLUMNS, "Total"]
+        .map(name => ({ value: name, style: 1 }));
+
+    const exampleRow = (year, rto, month, maker, passenger, goods) => {
+
+        const values = VEHICLE_CLASS_COLUMNS.map(name => {
+            if (name === "Three Wheeler (Passenger)") return passenger;
+            if (name === "Three Wheeler (Goods)") return goods;
+            return 0;
+        });
+
+        return [year, rto, month, maker, ...values, passenger + goods];
+    };
+
+    const dataSheet = {
+        name: "Sample Data",
+        rows: [
+            header,
+            exampleRow(2026, "GJ01", "Jan", "EXAMPLE MOTORS LTD", 420, 35),
+            exampleRow(2026, "GJ01", "Feb", "EXAMPLE MOTORS LTD", 390, 30),
+            exampleRow(2026, "GJ27", "Jan", "EXAMPLE MOTORS LTD", 210, 18),
+            exampleRow(2026, "GJ27", "Feb", "EXAMPLE MOTORS LTD", 195, 15)
+        ],
+        options: {
+            widths: [7, 9, 8, 28, ...VEHICLE_CLASS_COLUMNS.map(() => 13), 11]
+        }
+    };
+
+    const instructionLines = [
+        "How to use this file",
+        "",
+        "1. \"Sample Data\" is a real, uploadable example - delete the four " +
+            "example rows and replace them with your own, as many as you " +
+            "need. One row is one Maker's totals for one RTO and one month.",
+        "2. Unlike the single-RTO sample file, there is no title row and " +
+            "nothing in the filename matters - this shape is recognised by " +
+            "its header row alone (\"Year\", \"RTO\", \"Month\", \"Maker\", " +
+            "..., \"Total\"), so name the file whatever you like.",
+        "3. \"Year\" is a plain 4-digit number. \"RTO\" is a code like " +
+            "\"GJ01\" or \"MH01\". \"Month\" is a 3-letter name like \"Jan\".",
+        "4. \"Maker\" is always the 4th column and \"Total\" always the " +
+            "last - every column between them is one vehicle class. Leave a " +
+            "class at 0 if you have none of it; do not delete its column.",
+        "5. One row per (RTO, Month, Maker) combination - the same Maker " +
+            "twice for the same RTO and month is rejected, but the same " +
+            "Maker in a different month or RTO is fine (see the two GJ01 " +
+            "rows and two GJ27 rows above).",
+        "6. Every number is a whole unit count, and \"Total\" must equal " +
+            "the sum of that row's class columns.",
+        "7. When uploading, pick the dealership this file is for in the " +
+            "Import dialog - every RTO code used in the file must already " +
+            "be registered to that dealership (see Profile's Dealerships " +
+            "section), or the import is rejected and tells you which " +
+            "RTO(s) are missing.",
+        "8. Each (RTO, Month, Year) in the file replaces only that RTO's " +
+            "data for that month - everything else already in the " +
+            "dashboard, including other RTOs' or months' data for the same " +
+            "dealership, is left untouched."
+    ];
+
+    const instructionsSheet = {
+        name: "Instructions",
+        rows: instructionLines.map((line, index) => [
+            index === 0 ? { value: line, style: 1 } : line
+        ]),
+        options: { widths: [100] }
+    };
+
+    await downloadWorkbookMulti("maker_vehicleClass_Bulk_Sample.xlsx", [dataSheet, instructionsSheet]);
+}
+
+
+/* Same spec-not-kind split as exportSpecXlsx()/exportCardXlsx(). */
+async function exportSpecPdf(spec) {
 
     if (spec.rows.length === 0) {
         return;
@@ -6031,13 +7232,18 @@ async function exportCardPdf(kind) {
     });
 
     await downloadPdf(
-        exportFileName(spec.prefix, "pdf"),
+        exportFileName(spec.prefix, "pdf", spec.scopeOverride),
         spec.title,
-        `${activeFilterSummary()}  ·  ${spec.rows.length} rows`,
+        `${spec.summary || activeFilterSummary()}  ·  ${spec.rows.length} rows`,
         sheet,
         widths,
         { lead: 1, footRows: spec.totals ? [sheet.length - 1] : [] }
     );
+}
+
+
+async function exportCardPdf(kind) {
+    await exportSpecPdf(exportSpecFor(kind));
 }
 
 
@@ -6058,9 +7264,28 @@ function setExportEnabled(kinds, enabled) {
 
 async function runExport(action) {
 
-    const [kind, format] = action.split("-");
-
     try {
+
+        /*
+         * Checked against the untouched action string, before the
+         * kind/format split below - both of these contain a hyphen of
+         * their own ("sample-import", "sample-bulk"), which that split
+         * would otherwise cut at (kind="sample", format="import"/
+         * "bulk"), either missing both entirely or colliding with each
+         * other depending on check order. Full-string equality here
+         * sidesteps the split altogether for these two.
+         */
+        if (action === "sample-import") {
+            await exportSampleImportXlsx();
+            return;
+        }
+
+        if (action === "sample-bulk") {
+            await exportBulkSampleImportXlsx();
+            return;
+        }
+
+        const [kind, format] = action.split("-");
 
         if (kind === "all") {
             await exportEverythingXlsx();
@@ -6221,6 +7446,7 @@ async function applyFilters({ global = false } = {}) {
         state.main = main;
         state.dataRefreshedAt = main.refreshedAt;
         state.dealerContribution = await loadDealerContribution();
+        state.dealershipBreakdown = await loadDealershipBreakdown();
 
         deriveAll();
         renderAll();
@@ -6237,6 +7463,7 @@ async function applyFilters({ global = false } = {}) {
 
         state.main = { records: [], classColumns: [] };
         state.dealerContribution = [];
+        state.dealershipBreakdown = [];
 
         deriveAll();
         renderAll();
@@ -6549,6 +7776,17 @@ function importFormData(mode, file) {
     form.append("mode", mode);
     form.append("file", file, file.name);
 
+    /*
+     * "0"/absent both mean "not a specific dealership" server-side
+     * (see resolveDealershipId() in local/server/server.js) - only
+     * sent when the field is actually showing, so a cloud-backend
+     * import (which never populates this select at all) never sends
+     * a dealership_id the Edge Function has no idea what to do with.
+     */
+    if (dom.importDealershipSelect && !dom.importDealershipField.hidden) {
+        form.append("dealership_id", dom.importDealershipSelect.value);
+    }
+
     return form;
 }
 
@@ -6612,23 +7850,42 @@ function resetImportOutcome() {
 }
 
 
+/*
+ * Shared by both report shapes - report.bulk distinguishes the
+ * multi-RTO/multi-month shape (see buildBulkReport() in server.js)
+ * from the real Vahan export's single-month one, only in the head and
+ * stats; structural problems and sum mismatches already read fine
+ * either way (a bulk mismatch just carries rto/month/year too, shown
+ * when present).
+ */
 function renderImportReport(report) {
 
     if (!dom.importReport) {
         return;
     }
 
-    const coverage = report.partialMonth
-        ? ` &middot; partial month, through day ${report.coverageEndDay}`
-        : "";
+    const head = report.bulk
+        ? `<div class="import-report__head">
+                <strong>${escapeHtml(report.fileName)}</strong>
+                <span>${escapeHtml(report.dealershipName || "")} &middot; ` +
+                    `${formatIndianNumber(report.groupCount)} RTO/month group(s)</span>
+            </div>`
+        : (() => {
+            const coverage = report.partialMonth
+                ? ` &middot; partial month, through day ${report.coverageEndDay}`
+                : "";
+            return `<div class="import-report__head">
+                <strong>${escapeHtml(report.fileName)}</strong>
+                <span>${escapeHtml(report.month)} ${report.year}${coverage}</span>
+            </div>`;
+        })();
+
+    const rowsLabel = report.bulk ? "rows" : "makers";
 
     const parts = [
-        `<div class="import-report__head">
-            <strong>${escapeHtml(report.fileName)}</strong>
-            <span>${escapeHtml(report.month)} ${report.year}${coverage}</span>
-        </div>`,
+        head,
         `<ul class="import-report__stats">
-            <li><strong>${formatIndianNumber(report.rowCount)}</strong> makers</li>
+            <li><strong>${formatIndianNumber(report.rowCount)}</strong> ${rowsLabel}</li>
             <li><strong>${formatIndianNumber(report.units)}</strong> total registrations</li>
             <li>${formatIndianNumber(report.blankRowsSkipped)} blank row(s) skipped</li>
         </ul>`
@@ -6652,11 +7909,16 @@ function renderImportReport(report) {
 
     if (report.sumMismatches.shown.length > 0) {
 
-        const rows = report.sumMismatches.shown.map(mismatch =>
-            `<li>${escapeHtml(mismatch.maker)}: Total is ` +
-            `${formatIndianNumber(mismatch.total)}, class columns sum to ` +
-            `${formatIndianNumber(mismatch.summed)}</li>`
-        ).join("");
+        const rows = report.sumMismatches.shown.map(mismatch => {
+
+            const where = mismatch.rto
+                ? ` (${escapeHtml(mismatch.rto)}, ${escapeHtml(mismatch.month)} ${mismatch.year})`
+                : "";
+
+            return `<li>${escapeHtml(mismatch.maker)}${where}: Total is ` +
+                `${formatIndianNumber(mismatch.total)}, class columns sum to ` +
+                `${formatIndianNumber(mismatch.summed)}</li>`;
+        }).join("");
 
         const omitted = report.sumMismatches.omitted > 0
             ? `<li>&hellip; and ${formatIndianNumber(report.sumMismatches.omitted)} more</li>`
@@ -6665,7 +7927,7 @@ function renderImportReport(report) {
         parts.push(
             `<div class="import-report__warnings">
                 <strong>Total doesn't match its own class columns for these ` +
-                    `makers - not blocked, but worth a look:</strong>
+                    `rows - not blocked, but worth a look:</strong>
                 <ul>${rows}${omitted}</ul>
             </div>`
         );
@@ -6676,9 +7938,38 @@ function renderImportReport(report) {
 }
 
 
+/*
+ * A bulk commit's write is an array (one import_rto_month() result
+ * per RTO/month group - see writeBulkImport() in server.js), not the
+ * single object a real-Vahan-format commit returns. Summed across the
+ * array for one combined line rather than listing every group, which
+ * could be dozens of lines for a file covering many RTOs and months.
+ */
 function renderImportResult(write) {
 
     if (!dom.importResult) {
+        return;
+    }
+
+    if (Array.isArray(write)) {
+
+        const totals = write.reduce((acc, group) => ({
+            inserted: acc.inserted + (group.inserted || 0),
+            deleted: acc.deleted + (group.deleted || 0),
+            units: acc.units + (group.units || 0)
+        }), { inserted: 0, deleted: 0, units: 0 });
+
+        dom.importResult.innerHTML = `
+            <div class="import-result__ok">
+                <strong>Imported.</strong>
+                ${formatIndianNumber(write.length)} RTO/month group(s),
+                ${formatIndianNumber(totals.inserted)} maker row(s),
+                ${formatIndianNumber(totals.units)} total registrations
+                (replacing ${formatIndianNumber(totals.deleted)} previous row(s) across those groups).
+            </div>
+        `;
+
+        dom.importResult.hidden = false;
         return;
     }
 
@@ -6757,12 +8048,16 @@ async function runImportCommit() {
         return;
     }
 
-    const monthYear = `${report.month} ${report.year}`;
+    const monthYear = report.bulk
+        ? `${formatIndianNumber(report.groupCount)} RTO/month group(s)`
+        : `${report.month} ${report.year}`;
 
-    if (!window.confirm(
-        `This replaces every existing row for ${monthYear} in ` +
-        `Maker_Class_Wise_${report.month}. Continue?`
-    )) {
+    const confirmMessage = report.bulk
+        ? `This replaces every existing row for "${report.dealershipName}" across ` +
+            `${monthYear}. Continue?`
+        : `This replaces every existing row for ${monthYear} in Maker_Class_Wise_${report.month}. Continue?`;
+
+    if (!window.confirm(confirmMessage)) {
         return;
     }
 
@@ -6865,6 +8160,70 @@ function openImportModal() {
 
     if (dom.importOverlay) {
         dom.importOverlay.hidden = false;
+    }
+
+    populateImportDealershipSelect();
+}
+
+
+/*
+ * Not awaited by openImportModal() - the dialog opens immediately,
+ * same as always, and this fills the picker in a moment behind it
+ * rather than holding the dialog open-click up on a network call.
+ * Hidden again on any failure (cloud backend, a 401, anything) so a
+ * stale list from a previous account can never linger into this one.
+ */
+async function populateImportDealershipSelect() {
+
+    if (!dom.importDealershipField || !dom.importDealershipSelect) {
+        return;
+    }
+
+    dom.importDealershipField.hidden = true;
+
+    if (dom.importAddDealershipRow) {
+        dom.importAddDealershipRow.hidden = true;
+    }
+
+    try {
+
+        const body = await callAccountFunction("list-dealerships");
+        const dealerships = body.dealerships || [];
+
+        /*
+         * The link stays visible even with zero dealerships - that is
+         * exactly when someone most needs to find it. Only the picker
+         * below it needs 1+ to be worth showing.
+         */
+        if (dom.importAddDealershipRow) {
+            dom.importAddDealershipRow.hidden = false;
+        }
+
+        if (dealerships.length === 0) {
+            return;
+        }
+
+        dom.importDealershipSelect.innerHTML = "";
+
+        const noneOption = document.createElement("option");
+        noneOption.value = "0";
+        noneOption.textContent = "Not a specific dealership";
+        dom.importDealershipSelect.appendChild(noneOption);
+
+        dealerships.forEach(dealership => {
+
+            const option = document.createElement("option");
+            option.value = String(dealership.id);
+            option.textContent =
+                `${dealership.name} (${dealership.maker} · ${(dealership.rtoCodes || []).join(", ")})`;
+
+            dom.importDealershipSelect.appendChild(option);
+        });
+
+        dom.importDealershipField.hidden = false;
+
+    } catch (error) {
+        console.warn("Could not load dealerships for the Import dialog:", error.message);
     }
 }
 

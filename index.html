@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=33"
+        href="style.css?v=43"
     >
 
 </head>
@@ -1357,44 +1357,55 @@
                             class="table-card__meta"
                         ></span>
 
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="contribution-xlsx"
+                            title="Download this table as an Excel file"
+                            disabled
+                        >
+                            Excel
+                        </button>
+
+                        <button
+                            type="button"
+                            class="download-button"
+                            data-export="contribution-pdf"
+                            title="Download this table as a PDF"
+                            disabled
+                        >
+                            PDF
+                        </button>
+
                     </div>
 
                 </div>
 
-                <div class="table-wrapper">
-
-                    <table class="data-table">
-
-                        <caption class="visually-hidden">
-                            This dealership's own sales, month by month, against the shared base total for the same maker
-                        </caption>
-
-                        <thead>
-                            <tr>
-                                <th style="width: 9%">MONTH</th>
-                                <th style="width: 9%">MAKER</th>
-                                <th style="width: 8%">RTO</th>
-                                <th style="width: 22%">VEHICLE TYPE</th>
-                                <th style="width: 11%">YOUR UNITS</th>
-                                <th style="width: 11%">BASE UNITS</th>
-                                <th style="width: 11%">COMBINED</th>
-                                <th style="width: 19%">CONTRIBUTION %</th>
-                            </tr>
-                        </thead>
-
-                        <tbody id="dealerContributionBody"></tbody>
-                        <tfoot id="dealerContributionFoot"></tfoot>
-
-                    </table>
-
-                </div>
-
-                <p
-                    id="dealerContributionNote"
-                    class="dealer-contribution__note"
-                ></p>
+                <!--
+                     One table per (Maker, RTO) this account has data
+                     for - vehicle types as rows, months as columns,
+                     same layout as the dealer-wise breakdown below.
+                     Built entirely in JS since both axes are dynamic -
+                     see renderDealerContribution().
+                -->
+                <div id="dealerContributionContainer"></div>
 
             </section>
+
+
+            <!-- =================================================
+                 DEALER-WISE BREAKDOWN
+
+                 One table per (Maker, RTO) where this account has 2+
+                 of its own named dealerships - see profile.html's
+                 Dealerships section and script.js's
+                 loadDealershipBreakdown(). Built entirely in JS since
+                 the month columns are dynamic; empty/hidden for
+                 everyone with 0 or 1 dealership per group, which is
+                 most accounts, most of the time.
+                 ================================================= -->
+
+            <div id="dealershipBreakdownContainer"></div>
 
 
             <!-- =================================================
@@ -1847,7 +1858,20 @@
                         class="import-card__checks-link"
                         aria-expanded="false"
                         aria-controls="importChecksPanel"
-                    >what gets checked</button>.
+                    >what gets checked</button>. New to this format?
+                    <button
+                        type="button"
+                        class="import-card__checks-link"
+                        data-export="sample-import"
+                    >Download a sample file</button>
+                    to see the exact shape expected. Dealership covers more
+                    than one RTO?
+                    <button
+                        type="button"
+                        class="import-card__checks-link"
+                        data-export="sample-bulk"
+                    >Download a bulk-format sample</button>
+                    instead - one sheet for several RTOs/months at once.
                 </p>
 
                 <div
@@ -1940,6 +1964,40 @@
                         >
                     </label>
 
+                    <!--
+                         Shown only once list-dealerships (see
+                         local/server/server.js) comes back with at
+                         least one entry - most imports (admin/Anuj's,
+                         and a dealer's own before they have set up any
+                         dealership) have nothing to pick here and stay
+                         exactly as before.
+                    -->
+                    <label
+                        for="importDealershipSelect"
+                        id="importDealershipField"
+                        class="login-form__field"
+                        hidden
+                    >
+                        Which of your dealerships is this for?
+                        <select id="importDealershipSelect">
+                            <option value="0">Not a specific dealership</option>
+                        </select>
+                    </label>
+
+                    <!--
+                         Shown whenever list-dealerships comes back at
+                         all (even zero results) - unlike the picker
+                         above, this stays visible with no dealerships
+                         yet, since that is exactly when someone most
+                         needs to find this link. Points at Profile
+                         rather than duplicating the Add Dealership
+                         form here.
+                    -->
+                    <p id="importAddDealershipRow" class="import-form__hint" hidden>
+                        Don't see the dealership you want?
+                        <a href="profile.html#profileDealershipsSection" class="import-card__checks-link">Add a dealership</a>
+                    </p>
+
                     <div class="import-form__actions">
 
                         <button
@@ -1997,7 +2055,7 @@
     <!-- Login itself is a separate page now - see login.html. auth.js
          is the piece the two pages share, so it loads first. -->
     <script src="auth.js?v=2"></script>
-    <script src="script.js?v=43"></script>
+    <script src="script.js?v=68"></script>
 
 </body>
 </html>

@@ -57,7 +57,7 @@ const RTO_TITLE_PATTERN = /^RTO \((.+) - ([A-Z]{2}\d+)\)\s+Wise/;
  * always has one ("GJ01") - both names for the same RTO, normalized
  * here so the cross-check compares like with like.
  */
-function normalizeRtoCode(code) {
+export function normalizeRtoCode(code) {
 
     const match = /^([A-Z]{2})0*(\d+)$/.exec(code);
 
@@ -169,6 +169,174 @@ function toCount(value) {
     }
 
     return 0;
+}
+
+
+/*
+ * The "bulk" shape: one sheet covering several RTOs/months/years at
+ * once for a single dealership, rather than the real Vahan export's
+ * one-file-one-month(-one-RTO) shape above. Recognised by its header
+ * alone, not a filename pattern - there is no fixed filename a tool
+ * like Excel would already be producing for this (unlike the real
+ * export's), so nothing is gained by inventing one to match against.
+ * Row 0 is the header itself; there is no separate title row, since
+ * each row already states its own Year/RTO/Month.
+ */
+const BULK_HEADER_PREFIX = ["Year", "RTO", "Month"];
+
+export function looksLikeBulkWorkbook(sheet) {
+
+    if (sheet.length === 0) {
+        return false;
+    }
+
+    const header = sheet[0];
+
+    return BULK_HEADER_PREFIX.every((name, index) => header[index] === name)
+        && header[3] === ENTITY_COLUMN;
+}
+
+
+/*
+ * Same return shape as validateWorkbook() below, except rows are
+ * {year, rtoCode, month, row} - each one carries its own stamp,
+ * because unlike a single-RTO file, a bulk file's rows do not all
+ * share one. The caller (server.js) groups them by (rtoCode, month,
+ * year) and calls import_rto_month() once per group, exactly the way
+ * several small single-RTO files would have been committed one at a
+ * time.
+ */
+export function validateBulkWorkbook(fileName, sheet) {
+
+    const structural = [];
+    const sumMismatches = [];
+
+    if (sheet.length < 2) {
+        return {
+            fatal: "fewer than two rows", structural, sumMismatches,
+            blanks: 0, rows: [], units: 0
+        };
+    }
+
+    const header = sheet[0];
+
+    if (!looksLikeBulkWorkbook(sheet)) {
+        return {
+            fatal: `header does not start with "Year", "RTO", "Month", ${JSON.stringify(ENTITY_COLUMN)}`,
+            structural, sumMismatches, blanks: 0, rows: [], units: 0
+        };
+    }
+
+    if (header[header.length - 1] !== TOTAL_COLUMN) {
+        return {
+            fatal: `header does not end with ${TOTAL_COLUMN}`,
+            structural, sumMismatches, blanks: 0, rows: [], units: 0
+        };
+    }
+
+    const positionOf = new Map();
+
+    for (let index = 4; index < header.length - 1; index += 1) {
+
+        const name = header[index];
+
+        if (!KNOWN_CLASSES.has(name)) {
+            structural.push(
+                `unknown vehicle class ${JSON.stringify(name)} - this workbook ` +
+                `cannot be imported until it is added to tools/class-columns.js`
+            );
+            continue;
+        }
+
+        if (positionOf.has(name)) {
+            structural.push(`duplicate column ${JSON.stringify(name)}`);
+            continue;
+        }
+
+        positionOf.set(name, index);
+    }
+
+    const rows = [];
+    const seen = new Set();
+    let blanks = 0;
+    let units = 0;
+
+    for (let index = 1; index < sheet.length; index += 1) {
+
+        const source = sheet[index];
+        const maker = cleanMaker(source[3]);
+        const rto = cleanMaker(source[1]);
+        const month = String(source[2] || "").trim();
+        const yearRaw = source[0];
+
+        if (maker === "" && rto === "" && (yearRaw === null || yearRaw === undefined || yearRaw === "")) {
+            blanks += 1;
+            continue;
+        }
+
+        const rowLabel = `row ${index + 1}`;
+
+        if (maker === "") {
+            structural.push(`${rowLabel}: missing ${ENTITY_COLUMN}`);
+            continue;
+        }
+
+        if (rto === "") {
+            structural.push(`${rowLabel}: missing RTO`);
+            continue;
+        }
+
+        const year = Number(yearRaw);
+
+        if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+            structural.push(`${rowLabel}: invalid Year ${JSON.stringify(yearRaw)}`);
+            continue;
+        }
+
+        if (!MONTHS.includes(month)) {
+            structural.push(`${rowLabel}: invalid Month ${JSON.stringify(month)}`);
+            continue;
+        }
+
+        const dedupeKey = `${rto}::${year}::${month}::${maker}`;
+
+        if (seen.has(dedupeKey)) {
+            structural.push(`${maker} appears more than once for ${rto} ${month} ${year}`);
+            continue;
+        }
+
+        if (/[\r\n]/.test(maker)) {
+            structural.push(`${JSON.stringify(maker)} contains a newline`);
+            continue;
+        }
+
+        seen.add(dedupeKey);
+
+        const row = { [ENTITY_COLUMN]: maker };
+        let summed = 0;
+
+        for (const name of CLASS_COLUMNS) {
+
+            const at = positionOf.get(name);
+            const value = at === undefined ? 0 : toCount(source[at]);
+
+            row[name] = value;
+            summed += value;
+        }
+
+        const total = toCount(source[header.length - 1]);
+
+        row[TOTAL_COLUMN] = total;
+
+        if (summed !== total) {
+            sumMismatches.push({ maker, total, summed, rto, month, year });
+        }
+
+        rows.push({ year, rtoCode: rto, month, row });
+        units += total;
+    }
+
+    return { fatal: null, structural, sumMismatches, blanks, rows, units };
 }
 
 

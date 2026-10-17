@@ -102,8 +102,9 @@ CREATE TABLE "All_India_Class_Wise" (
     , "Power Tiller (Commercial)" integer NOT NULL DEFAULT 0
     , "Total" integer NOT NULL DEFAULT 0
     , "owner_username" text NOT NULL DEFAULT ''
+    , "dealership_id" integer NOT NULL DEFAULT 0
     , "uploaded_at" timestamptz NOT NULL DEFAULT now()
-    , PRIMARY KEY ("year", "month", "Maker", "owner_username")
+    , PRIMARY KEY ("year", "month", "Maker", "owner_username", "dealership_id")
 );
 
 ALTER TABLE "All_India_Class_Wise" ENABLE ROW LEVEL SECURITY;
@@ -199,8 +200,9 @@ CREATE TABLE "Gujarat_RTO_Class_Wise" (
     , "Power Tiller (Commercial)" integer NOT NULL DEFAULT 0
     , "Total" integer NOT NULL DEFAULT 0
     , "owner_username" text NOT NULL DEFAULT ''
+    , "dealership_id" integer NOT NULL DEFAULT 0
     , "uploaded_at" timestamptz NOT NULL DEFAULT now()
-    , PRIMARY KEY ("year", "month", "rto_code", "Maker", "owner_username")
+    , PRIMARY KEY ("year", "month", "rto_code", "Maker", "owner_username", "dealership_id")
 );
 
 ALTER TABLE "Gujarat_RTO_Class_Wise" ENABLE ROW LEVEL SECURITY;
@@ -296,8 +298,9 @@ CREATE TABLE "Maharashtra_RTO_Class_Wise" (
     , "Power Tiller (Commercial)" integer NOT NULL DEFAULT 0
     , "Total" integer NOT NULL DEFAULT 0
     , "owner_username" text NOT NULL DEFAULT ''
+    , "dealership_id" integer NOT NULL DEFAULT 0
     , "uploaded_at" timestamptz NOT NULL DEFAULT now()
-    , PRIMARY KEY ("year", "month", "rto_code", "Maker", "owner_username")
+    , PRIMARY KEY ("year", "month", "rto_code", "Maker", "owner_username", "dealership_id")
 );
 
 ALTER TABLE "Maharashtra_RTO_Class_Wise" ENABLE ROW LEVEL SECURITY;

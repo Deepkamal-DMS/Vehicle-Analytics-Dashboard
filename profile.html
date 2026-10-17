@@ -31,7 +31,7 @@
 
     <link
         rel="stylesheet"
-        href="style.css?v=33"
+        href="style.css?v=43"
     >
 
 </head>
@@ -118,11 +118,18 @@
 
             <div class="table-card__head">
                 <h2 id="profileInfoTitle">Personal Info</h2>
+                <div class="table-card__actions">
+                    <button
+                        type="button"
+                        id="profileInfoEditToggle"
+                        class="import-card__checks-link"
+                    >Edit</button>
+                </div>
             </div>
 
             <div class="profile-page__body">
 
-                <dl class="profile-info">
+                <dl class="profile-info" id="profileInfoView">
 
                     <div class="profile-info__row">
                         <dt>Name</dt>
@@ -140,6 +147,94 @@
                     </div>
 
                 </dl>
+
+                <!--
+                     Every account can edit its own login (see
+                     server.js's update-account mode) - not gated by
+                     canManageUsers, unlike the Logins section below,
+                     which is about editing OTHER accounts.
+                -->
+                <form
+                    id="profileInfoEditForm"
+                    class="login-form"
+                    autocomplete="off"
+                    hidden
+                >
+
+                    <label class="login-form__field">
+                        Name
+                        <input
+                            type="text"
+                            id="profileInfoEditName"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Username
+                        <input
+                            type="text"
+                            id="profileInfoEditUsername"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Password
+                        <input
+                            type="password"
+                            id="profileInfoEditPassword"
+                            autocomplete="new-password"
+                        >
+                        <span class="profile-page__hint">
+                            Leave blank to keep the current password.
+                        </span>
+                    </label>
+
+                    <label class="login-form__field">
+                        Dealership
+                        <input
+                            type="text"
+                            id="profileInfoEditDealership"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <p id="profileInfoEditError" class="login-form__error" hidden></p>
+
+                    <div class="table-card__actions">
+
+                        <button
+                            type="submit"
+                            id="profileInfoEditSubmit"
+                            class="import-button import-button--primary"
+                        >
+                            Save Changes
+                        </button>
+
+                        <button
+                            type="button"
+                            id="profileInfoEditCancel"
+                            class="import-button"
+                        >
+                            Cancel
+                        </button>
+
+                    </div>
+
+                </form>
+
+                <!--
+                     A sibling of the form/view, not inside either -
+                     it needs to stay visible across the switch back
+                     to the read-only view on a successful save (see
+                     exitInfoEditMode() in profile.js), unlike
+                     profileInfoEditError, which only ever applies
+                     while the form itself is still open.
+                -->
+                <p id="profileInfoSuccess" class="profile-manage__success" hidden></p>
 
             </div>
 
@@ -167,7 +262,7 @@
 
                 <ul id="profileAccountList" class="profile-account-list"></ul>
 
-                <h3 class="profile-manage__title">Add a login</h3>
+                <h3 class="profile-manage__title" id="profileAddFormTitle">Add a login</h3>
 
                 <!--
                      autocomplete="off" on the form plus a dedicated
@@ -177,6 +272,12 @@
                      suppresses it for that field's own purpose
                      (new-password, not a saved one). Nothing here
                      should ever arrive pre-filled.
+
+                     Doubles as the Edit form - clicking "Edit" on an
+                     existing login (see profile.js's enterEditMode())
+                     fills these same fields and switches the submit
+                     button to "Save Changes" rather than duplicating
+                     the whole form a second time.
                 -->
                 <form
                     id="profileAddForm"
@@ -210,8 +311,10 @@
                             type="password"
                             id="profileAddPassword"
                             autocomplete="new-password"
-                            required
                         >
+                        <span class="profile-page__hint" id="profileAddPasswordHint" hidden>
+                            Leave blank to keep the current password.
+                        </span>
                     </label>
 
                     <label class="login-form__field">
@@ -226,12 +329,119 @@
                     <p id="profileAddError" class="login-form__error" hidden></p>
                     <p id="profileAddSuccess" class="profile-manage__success" hidden></p>
 
+                    <div class="table-card__actions">
+
+                        <button
+                            type="submit"
+                            id="profileAddSubmit"
+                            class="import-button import-button--primary"
+                        >
+                            Add Login
+                        </button>
+
+                        <button
+                            type="button"
+                            id="profileAddCancel"
+                            class="import-button"
+                            hidden
+                        >
+                            Cancel
+                        </button>
+
+                    </div>
+
+                </form>
+
+            </div>
+
+        </section>
+
+        <!--
+             Shown for every account, not gated by canManageUsers -
+             every dealer manages their own dealerships, never anyone
+             else's (see local/server/server.js's createDealershipFromForm()).
+        -->
+        <section
+            id="profileDealershipsSection"
+            class="table-card"
+            aria-labelledby="profileDealershipsTitle"
+        >
+
+            <div class="table-card__head">
+                <h2 id="profileDealershipsTitle">Dealerships</h2>
+            </div>
+
+            <div class="profile-page__body">
+
+                <p class="profile-page__hint">
+                    One Maker per dealership, and one or more RTOs - most
+                    dealerships cover just one, but a combined one (say
+                    "Ahmedabad Region") can cover several at once, so a file
+                    naming any of them can be uploaded against it directly.
+                    Two of your own dealerships sharing a Maker and an RTO
+                    (say, two separate licenses in the same city) will have
+                    their contribution figures compared against each other
+                    on the dashboard.
+                </p>
+
+                <h3 class="profile-manage__title">Already added</h3>
+
+                <ul id="profileDealershipList" class="profile-account-list"></ul>
+
+                <h3 class="profile-manage__title">Add a dealership</h3>
+
+                <form id="profileDealershipForm" class="login-form" autocomplete="off">
+
+                    <label class="login-form__field">
+                        Name
+                        <input
+                            type="text"
+                            id="dealershipName"
+                            autocomplete="off"
+                            placeholder="e.g. Ahmedabad Showroom 2"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Maker
+                        <input
+                            type="text"
+                            id="dealershipMaker"
+                            autocomplete="off"
+                            placeholder="e.g. BAJAJ AUTO LTD"
+                            required
+                        >
+                    </label>
+
+                    <label class="login-form__field">
+                        Scope
+                        <select id="dealershipScope" required>
+                            <option value="gujarat">Gujarat</option>
+                            <option value="maharashtra">Maharashtra</option>
+                        </select>
+                    </label>
+
+                    <label class="login-form__field">
+                        RTO Code(s)
+                        <input
+                            type="text"
+                            id="dealershipRto"
+                            autocomplete="off"
+                            placeholder="e.g. GJ01, or GJ01, GJ27, GJ38 for a combined one"
+                            required
+                        >
+                    </label>
+
+                    <p id="dealershipAddError" class="login-form__error" hidden></p>
+                    <p id="dealershipAddSuccess" class="profile-manage__success" hidden></p>
+
                     <button
                         type="submit"
-                        id="profileAddSubmit"
+                        id="dealershipAddSubmit"
                         class="import-button import-button--primary"
                     >
-                        Add Login
+                        Add Dealership
                     </button>
 
                 </form>
@@ -248,7 +458,7 @@
          ========================================================= -->
 
     <script src="auth.js?v=2"></script>
-    <script src="profile.js?v=1"></script>
+    <script src="profile.js?v=5"></script>
 
 </body>
 </html>
