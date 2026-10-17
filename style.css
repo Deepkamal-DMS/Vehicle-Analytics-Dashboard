@@ -1068,6 +1068,20 @@ svg {
     border-bottom: 1px solid var(--border-soft);
 }
 
+.dealership-breakdown__toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+
+    margin: 0 0 10px;
+
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    font-weight: 600;
+
+    cursor: pointer;
+}
+
 .table-card__badge {
     display: grid;
     place-items: center;

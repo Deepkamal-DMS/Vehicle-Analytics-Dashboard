@@ -711,7 +711,11 @@ const state = {
             sortKey: "registration",
             sortDir: "desc",
             search: ""
-        }
+        },
+        /* Off by default - a combined-across-RTOs table is extra
+           context, not the main view, and should only take up room
+           once asked for (see renderDealershipBreakdown()). */
+        dealershipBreakdown: { showCombined: false }
     },
 
     searchTimer: null,
@@ -781,6 +785,7 @@ function cacheDOM() {
         "dealerContributionCard", "dealerContributionTitle", "dealerContributionMeta",
         "dealerContributionContainer",
         "dealershipBreakdownContainer",
+        "dealershipBreakdownCombinedToggleWrap", "dealershipBreakdownCombinedToggle",
 
         /* Card 2 */
         "rtoTable", "rtoTableHead", "rtoTableBody", "rtoTableFoot",
@@ -2577,7 +2582,92 @@ async function loadDealershipBreakdown() {
             );
 
         if (months.length > 0) {
-            tables.push({ scope, rtoCode, maker, dealerships: group, months });
+            tables.push({ scope, rtoCode, maker, dealerships: group, months, rawByMonth: byMonth });
+        }
+    }
+
+    /*
+     * A dealership can share the same Maker/scope across several RTOs
+     * at once (e.g. Dealer 1/2/3's own combined dealerships, each one
+     * dealership_id covering GJ01+GJ27+GJ38 together - see
+     * dealership_rtos) - each RTO still gets its own table above, but
+     * nothing sums a dealer's total across all of them, which is its
+     * own real question ("what's Dealer 1's Ahmedabad total", not just
+     * their GJ01 number). This builds one extra "combined" table per
+     * Maker/scope that currently has 2+ RTO tables (same RTO filter
+     * already applied above - only whatever is actually showing gets
+     * combined), reused in the exact same shape as a normal table by
+     * merging each member RTO's raw per-month data before the same
+     * flatMine>0/sort filtering above is re-applied - so the same
+     * render/export code handles it with no changes of its own.
+     */
+    const byMakerScope = new Map();
+
+    tables.forEach(table => {
+        const key = `${table.scope}::${normalizeString(table.maker)}`;
+        const list = byMakerScope.get(key) || [];
+        list.push(table);
+        byMakerScope.set(key, list);
+    });
+
+    for (const members of byMakerScope.values()) {
+
+        if (members.length < 2) {
+            continue;
+        }
+
+        const { scope, maker } = members[0];
+
+        const dealershipsById = new Map();
+
+        members.forEach(member => {
+            member.dealerships.forEach(dealership => {
+                dealershipsById.set(dealership.id, dealership);
+            });
+        });
+
+        const mergedByMonth = new Map();
+
+        members.forEach(member => {
+            member.rawByMonth.forEach((entry, key) => {
+
+                let merged = mergedByMonth.get(key);
+
+                if (!merged) {
+                    merged = { year: entry.year, month: entry.month, base: 0, flatMine: 0, byDealership: new Map() };
+                    mergedByMonth.set(key, merged);
+                }
+
+                merged.base += entry.base;
+                merged.flatMine += entry.flatMine;
+
+                entry.byDealership.forEach((units, dealershipId) => {
+                    merged.byDealership.set(dealershipId, (merged.byDealership.get(dealershipId) || 0) + units);
+                });
+            });
+        });
+
+        const combinedMonths = [...mergedByMonth.values()]
+            .map(entry => {
+                const groupedMine = [...entry.byDealership.values()].reduce((a, b) => a + b, 0);
+                return { ...entry, groupedMine, mismatch: groupedMine !== entry.flatMine };
+            })
+            .filter(entry => entry.flatMine > 0)
+            .sort((a, b) =>
+                Number(a.year) - Number(b.year) ||
+                monthNumberOf(a.month) - monthNumberOf(b.month)
+            );
+
+        if (combinedMonths.length > 0) {
+
+            const rtoLabel = members.map(member => member.rtoCode).sort().join("+");
+
+            tables.push({
+                scope, rtoCode: rtoLabel, maker,
+                dealerships: [...dealershipsById.values()],
+                months: combinedMonths,
+                combined: true
+            });
         }
     }
 
@@ -4574,8 +4664,12 @@ function dealershipBreakdownExportSpec(group, scopeLabelText) {
 
     const rows = dealershipBreakdownExportRows(group);
 
+    const label = group.combined
+        ? `${group.maker} — ${group.rtoCode} (${scopeLabelText})`
+        : `${group.maker} @ ${group.rtoCode} (${scopeLabelText})`;
+
     return {
-        title: `Dealer-wise: ${group.maker} @ ${group.rtoCode} (${scopeLabelText})`,
+        title: group.combined ? "Dealer-wise Total" : `Dealer-wise: ${label}`,
         sheet: "Dealer-wise",
         prefix: "dealer-wise",
         columns: dealershipBreakdownColumns(),
@@ -4583,8 +4677,8 @@ function dealershipBreakdownExportSpec(group, scopeLabelText) {
         totals: null,
         labelWidth: 28,
         scopeOverride: scopeLabelText,
-        summary: `${group.maker} @ ${group.rtoCode} (${scopeLabelText}) · ` +
-            `Comparison: each dealership's units vs. this RTO's combined total, by month`
+        summary: `${label} · ` +
+            `Comparison: each dealership's units vs. ${group.combined ? "these RTOs'" : "this RTO's"} combined total, by month`
     };
 }
 
@@ -4597,9 +4691,26 @@ function renderDealershipBreakdown() {
 
     dom.dealershipBreakdownContainer.innerHTML = "";
 
-    const tables = state.dealershipBreakdown;
+    const allTables = state.dealershipBreakdown;
 
-    if (!tables || tables.length === 0) {
+    /*
+     * The toggle itself only appears when there is something for it to
+     * show - most accounts have 0 or 1 dealership per Maker/RTO and
+     * will never have a combined table at all, so there is nothing to
+     * opt into. Checking it just re-renders already-loaded data (see
+     * its own change listener in bootstrapApp()) - no refetch.
+     */
+    const hasCombined = Boolean(allTables && allTables.some(table => table.combined));
+
+    if (dom.dealershipBreakdownCombinedToggleWrap) {
+        dom.dealershipBreakdownCombinedToggleWrap.hidden = !hasCombined;
+    }
+
+    const showCombined = state.view.dealershipBreakdown.showCombined;
+
+    const tables = (allTables || []).filter(table => !table.combined || showCombined);
+
+    if (tables.length === 0) {
         return;
     }
 
@@ -4620,7 +4731,9 @@ function renderDealershipBreakdown() {
         const scopeLabel = (SCOPES.find(entry => entry.id === group.scope) || {}).label || group.scope;
 
         const title = document.createElement("h2");
-        title.textContent = `Dealer-wise: ${group.maker} @ ${group.rtoCode} (${scopeLabel})`;
+        title.textContent = group.combined
+            ? "Dealer-wise Total"
+            : `Dealer-wise: ${group.maker} @ ${group.rtoCode} (${scopeLabel})`;
         head.appendChild(title);
 
         const actions = document.createElement("div");
@@ -7529,6 +7642,21 @@ function setupFilterListeners() {
         dom.financialYearToggle.addEventListener("change", async () => {
             state.pending.financialYear = dom.financialYearToggle.checked;
             await onPendingChanged("financialYear");
+        });
+    }
+
+    /*
+     * Display-only, not a data filter - state.dealershipBreakdown
+     * already has the combined table computed (see
+     * loadDealershipBreakdown()), so this just re-renders what is
+     * already loaded rather than going through onPendingChanged()/
+     * applyFilters().
+     */
+    if (dom.dealershipBreakdownCombinedToggle) {
+
+        dom.dealershipBreakdownCombinedToggle.addEventListener("change", () => {
+            state.view.dealershipBreakdown.showCombined = dom.dealershipBreakdownCombinedToggle.checked;
+            renderDealershipBreakdown();
         });
     }
 

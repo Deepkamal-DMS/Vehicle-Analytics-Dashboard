@@ -39,7 +39,7 @@
     -->
     <link
         rel="stylesheet"
-        href="style.css?v=43"
+        href="style.css?v=44"
     >
 
 </head>
@@ -1405,6 +1405,26 @@
                  most accounts, most of the time.
                  ================================================= -->
 
+            <!--
+                 Opt-in, not automatic - whenever 2+ of this account's
+                 dealerships share a Maker/scope across several RTOs
+                 (see loadDealershipBreakdown()'s own comment), a
+                 combined-across-RTOs table is available alongside the
+                 normal per-RTO ones, but it only renders once this is
+                 checked. Hidden by default, and unhidden only if such
+                 a table actually exists for the current data - most
+                 accounts never have one to show. Checking/unchecking
+                 just re-renders already-loaded data, no refetch.
+            -->
+            <label
+                id="dealershipBreakdownCombinedToggleWrap"
+                class="dealership-breakdown__toggle"
+                hidden
+            >
+                <input type="checkbox" id="dealershipBreakdownCombinedToggle">
+                Show combined RTO totals
+            </label>
+
             <div id="dealershipBreakdownContainer"></div>
 
 
@@ -2055,7 +2075,7 @@
     <!-- Login itself is a separate page now - see login.html. auth.js
          is the piece the two pages share, so it loads first. -->
     <script src="auth.js?v=2"></script>
-    <script src="script.js?v=68"></script>
+    <script src="script.js?v=71"></script>
 
 </body>
 </html>
