@@ -133,11 +133,22 @@ function verifyPassword(password, hash, salt) {
 
 
 /* ============================================================
-   ACCOUNTS - the admin and Anuj accounts are hard-coded here only
-   as a one-time seed, run once against an empty table; every
-   account after that, including these two from then on, lives
-   only in Postgres. See local/init/25-accounts.sql.
+   ACCOUNTS - admin and Anuj are the two seed accounts, run once
+   against an empty table; every account after that, including
+   these two from then on, lives only in Postgres (see
+   local/init/25-accounts.sql). Usernames are fixed defaults, but
+   passwords are deliberately NEVER a literal in this file - this
+   file is committed to a public repo, and a real password string
+   here would be a credential leak the moment it's pushed, seed or
+   not. Each one comes from this folder's own .env (gitignored, see
+   .env.example) instead; if SEED_*_PASSWORD is not set there, a
+   random one is generated and printed once below, since first run
+   against a brand new database must still produce a working login.
    ============================================================ */
+
+function randomPassword() {
+    return crypto.randomBytes(18).toString("base64url");
+}
 
 async function ensureSeedAccounts() {
 
@@ -148,19 +159,35 @@ async function ensureSeedAccounts() {
     }
 
     const seeds = [
-        { username: "admin", password: "admin", name: "Admin", dealership: "", canManageUsers: true },
-        { username: "Anuj", password: "Deepkamal@ADMIN123", name: "Anuj", dealership: "", canManageUsers: true }
+        {
+            username: process.env.SEED_ADMIN_USERNAME || "admin",
+            password: process.env.SEED_ADMIN_PASSWORD,
+            name: "Admin", dealership: "", canManageUsers: true
+        },
+        {
+            username: process.env.SEED_ANUJ_USERNAME || "Anuj",
+            password: process.env.SEED_ANUJ_PASSWORD,
+            name: "Anuj", dealership: "", canManageUsers: true
+        }
     ];
 
     for (const seed of seeds) {
 
-        const { hash, salt } = hashPassword(seed.password);
+        const generated = !seed.password;
+        const password = seed.password || randomPassword();
+        const { hash, salt } = hashPassword(password);
 
         await pool.query(
             `INSERT INTO accounts (username, password_hash, password_salt, name, dealership, can_manage_users)
              VALUES ($1, $2, $3, $4, $5, $6)`,
             [seed.username, hash, salt, seed.name, seed.dealership, seed.canManageUsers]
         );
+
+        if (generated) {
+            console.log(
+                `Seeded "${seed.username}" with a generated password (shown once, write it down): ${password}`
+            );
+        }
     }
 
     console.log(`Seeded ${seeds.length} account(s): ${seeds.map(s => s.username).join(", ")}`);
